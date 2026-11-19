@@ -19,10 +19,10 @@ final class Conversions
 
     /**
      * @param bool $isZeroLiteral the value is the literal 0 (which converts to any enum)
-     * @param bool $isArgument the value is passed to a parameter; runtime string methods are
-     *                         declared with string parameters where C# has char overloads
+     * @param bool $charAsString the target is a parameter of the runtime library, whose string
+     *                           parameters stand for C#'s char overloads too ("a,b".Split(','))
      */
-    public function isImplicit(Type $from, Type $to, bool $isZeroLiteral = false, bool $isArgument = false): bool
+    public function isImplicit(Type $from, Type $to, bool $isZeroLiteral = false, bool $charAsString = false): bool
     {
         if ($to->isUnknown() || $to->kind === 'typeparam' || $to->kind === 'void') {
             return true;
@@ -44,7 +44,7 @@ final class Conversions
             'int' => in_array($to->kind, ['int', 'float'], true) || ($isZeroLiteral && $this->isEnum($to)),
             'float', 'bool' => $to->kind === $from->kind,
             'array' => in_array($to->kind, ['array', 'iterable'], true),
-            'char' => in_array($to->kind, ['char', 'int', 'float'], true) || ($isArgument && $to->isString()),
+            'char' => in_array($to->kind, ['char', 'int', 'float'], true) || ($charAsString && $to->isString()),
             'string' => in_array($to->kind, ['string', 'iterable'], true),
             'closure' => $to->kind === 'closure' || ($to->isClass() && strcasecmp((string) $to->class, 'Closure') === 0),
             'iterable' => !$this->isPrimitive($to),
@@ -63,11 +63,10 @@ final class Conversions
         if (($from->isInt() && $this->isEnum($to)) || ($this->isEnum($from) && $to->isInt())) {
             return true;
         }
-        if ($from->isClass() && $to->isClass()) {
-            return $this->symbols->isSubtypeOf((string) $to->class, (string) $from->class);
-        }
+        $fromSymbol = $this->symbols->symbolForType($from);
+        $toSymbol = $this->symbols->symbolForType($to);
 
-        return false;
+        return $fromSymbol !== null && $toSymbol !== null && $this->symbols->isSubtypeOf($toSymbol->fqn, $fromSymbol->fqn);
     }
 
     /** Types whose variables cannot hold null unless declared nullable (numbers, bool, char, enums). */
@@ -95,7 +94,8 @@ final class Conversions
             return $fromSymbol === null || $toSymbol === null || $this->symbols->isSubtypeOf($fromSymbol->fqn, $toSymbol->fqn);
         }
         if ($to->kind === 'iterable') {
-            return $fromSymbol === null || $fromSymbol->external;
+            // Collections, including project classes derived from them (class Bag : List<int>).
+            return $fromSymbol === null || $fromSymbol->external || $this->symbols->isSubtypeOf($fromSymbol->fqn, 'Traversable');
         }
         if ($to->kind === 'closure') {
             return $fromSymbol === null || strcasecmp($fromSymbol->fqn, 'Closure') === 0;

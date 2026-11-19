@@ -108,6 +108,33 @@ final class SymbolTable
         return null;
     }
 
+    /**
+     * Interfaces of the type, of its base classes and their base interfaces (each once).
+     *
+     * @return list<TypeSymbol>
+     */
+    public function interfacesOf(TypeSymbol $type): array
+    {
+        $queue = [];
+        for ($current = $type; $current !== null; $current = $current->baseClass !== null ? $this->find($current->baseClass) : null) {
+            array_push($queue, ...$current->interfaces);
+        }
+        $seen = [];
+        $result = [];
+        while ($queue !== []) {
+            $fqn = array_shift($queue);
+            $interface = $this->find($fqn);
+            if ($interface === null || isset($seen[strtolower($fqn)])) {
+                continue;
+            }
+            $seen[strtolower($fqn)] = true;
+            $result[] = $interface;
+            array_push($queue, ...$interface->interfaces);
+        }
+
+        return $result;
+    }
+
     /** Finds a member on the type, its base classes and its interfaces. */
     public function findMember(TypeSymbol $type, string $name): ?MemberSymbol
     {
@@ -272,7 +299,10 @@ final class SymbolTable
             }
             $doc = (string) $method->getDocComment();
             $this->docFile = $method->getFileName() ?: null;
-            $type = $this->docTag($doc, 'return', $symbol) ?? $this->reflectionType($method->getReturnType(), $symbol);
+            // "@sharp-return char" states a C# type PHP has no name for; "@return" is the PHP view.
+            $type = $this->docTag($doc, 'sharp-return', $symbol)
+                ?? $this->docTag($doc, 'return', $symbol)
+                ?? $this->reflectionType($method->getReturnType(), $symbol);
             $params = $this->reflectionParams($method, $symbol);
             $member = new MemberSymbol('method', $method->getName(), $method->isStatic(), $type, $symbol, $params);
             // Properties and methods live in different PHP namespaces (List.Count vs. list.Count()).
@@ -285,25 +315,30 @@ final class SymbolTable
     /** @return list<ParameterSymbol> */
     private function reflectionParams(ReflectionMethod $method, TypeSymbol $symbol): array
     {
-        // "@param T $item" refines untyped (mixed) parameters of generic runtime classes.
-        $docTypes = [];
-        if (preg_match_all('/@param\s+(\S+(?:\s*<[^>\r\n]*>)?)\s+&?(?:\.\.\.)?\$(\w+)/', (string) $method->getDocComment(), $m, PREG_SET_ORDER)) {
-            foreach ($m as [, $spec, $name]) {
-                $docTypes[$name] = $spec;
+        // "@param T $item" refines untyped (mixed) parameters of generic runtime classes; for an out
+        // parameter, "@param-out T $value" is the type of what the method stores (out var x).
+        $docTypes = ['param' => [], 'param-out' => []];
+        if (preg_match_all('/@(param|param-out)\s+(\S+(?:\s*<[^>\r\n]*>)?)\s+&?(?:\.\.\.)?\$(\w+)/', (string) $method->getDocComment(), $m, PREG_SET_ORDER)) {
+            foreach ($m as [, $tag, $spec, $name]) {
+                $docTypes[$tag][$name] = $spec;
             }
         }
         $params = [];
         foreach ($method->getParameters() as $parameter) {
             $type = $this->reflectionType($parameter->getType(), $symbol);
-            if ($type->isUnknown() && isset($docTypes[$parameter->getName()])) {
-                $type = $this->docType($docTypes[$parameter->getName()], $symbol);
+            $name = $parameter->getName();
+            $spec = $parameter->isPassedByReference()
+                ? $docTypes['param-out'][$name] ?? $docTypes['param'][$name] ?? null
+                : $docTypes['param'][$name] ?? null;
+            if ($spec !== null && ($type->isUnknown() || $parameter->isPassedByReference())) {
+                $type = $this->docType($spec, $symbol);
             }
             $params[] = new ParameterSymbol(
                 $parameter->getName(),
                 $type,
                 $parameter->isPassedByReference() ? 'ref' : ($parameter->isVariadic() ? 'params' : null),
                 $parameter->isOptional(),
-                $this->isNumericUnion($parameter->getType()),
+                $this->isNumericUnion($parameter->getType()) || preg_match('/@sharp-char-as-int\s+\$' . $name . '\b/', (string) $method->getDocComment()) === 1,
             );
         }
 

@@ -31,10 +31,28 @@ final class ErrorHandler
         });
     }
 
-    /** PHP's wording for using null as an object or array ("Attempt to read property "Name" on null"). */
+    /**
+     * PHP's wording for using null as an object, array or collection: "Attempt to read property
+     * "Name" on null", "foreach() argument must be of type array|object, null given", or null
+     * passed as the receiver of a runtime helper (\mb_strlen($s) for s.Length, String_::ToUpper($s)).
+     */
     public static function isNullAccess(string $message): bool
     {
-        return preg_match('/ on null$|^Trying to access array offset on (value of type )?null$/', $message) === 1;
+        return preg_match('/ on null$|^Trying to access array offset on (value of type )?null$|^foreach\(\) argument must be of type array\|object, null given$/', $message) === 1
+            || preg_match('/^(mb_\w+|count|SharpPhp\\\\Runtime\\\\[\w\\\\]+::\w+)\(\): Argument #1 \(\$\w+\) must be of type [^,]+, null given/', $message) === 1;
+    }
+
+    /**
+     * A PHP engine error that means C#'s NullReferenceException, as one; any other throwable unchanged.
+     * Generated code calls it where a catch clause needs the C# exception type.
+     */
+    public static function translate(\Throwable $e): \Throwable
+    {
+        if ($e instanceof \Error && self::isNullAccess($e->getMessage())) {
+            return (new NullReferenceException())->withLocation($e->getFile(), $e->getLine());
+        }
+
+        return $e;
     }
 
     public static function restore(): void

@@ -26,6 +26,7 @@ final class Double
         return $value;
     }
 
+    /** @param-out float $result */
     public static function TryParse(?string $s, ?float &$result): bool
     {
         $value = $s === null ? false : filter_var(trim($s), FILTER_VALIDATE_FLOAT);

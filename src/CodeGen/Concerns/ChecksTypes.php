@@ -17,25 +17,39 @@ use SharpPhp\Syntax\Node;
  */
 trait ChecksTypes
 {
-    /** Emits $e for a slot of type $target, rejecting values C# would not implicitly convert. */
-    private function convert(Expr $e, Type $target, ?int $argument = null): Emitted
+    /**
+     * Emits $e for a slot of type $target, rejecting values C# would not implicitly convert.
+     *
+     * @param ?int $argument 1-based argument position, for "Argument 2: cannot convert ..."
+     * @param bool $runtimeParameter the slot is a parameter of the runtime library, whose string
+     *                               parameters stand for C#'s char overloads too
+     */
+    private function convert(Expr $e, Type $target, ?int $argument = null, bool $runtimeParameter = false): Emitted
     {
-        $value = $this->expr($e, $target);
-        $this->requireConvertible($value, $target, $e, $argument);
+        return $this->converted($this->expr($e, $target), $target, $e, $argument, $runtimeParameter);
+    }
+
+    /** Like convert(), for a value that has already been emitted. */
+    private function converted(Emitted $value, Type $target, Node $at, ?int $argument = null, bool $runtimeParameter = false): Emitted
+    {
+        $isZero = $value->type->isInt() && $value->intValue === 0;
+        if (!$this->conversions->isImplicit($value->type, $target, $isZero, $runtimeParameter)) {
+            throw $this->conversionError($value, $target, $at, $argument);
+        }
+        // Color c = 0;  =>  Color::from(0)
+        if ($isZero && $this->conversions->isEnum($target)) {
+            return Emitted::value($this->classRef((string) $target->class) . '::from(0)', $target->withNullable(false));
+        }
 
         return $value;
     }
 
-    /** @param ?int $argument 1-based argument position, for "Argument 2: cannot convert ..." */
-    private function requireConvertible(Emitted $value, Type $target, Node $at, ?int $argument = null): void
+    private function conversionError(Emitted $value, Type $target, Node $at, ?int $argument): \SharpPhp\Compiler\CompileError
     {
-        if ($this->conversions->isImplicit($value->type, $target, $value->code === '0', $argument !== null)) {
-            return;
-        }
         $from = $value->type->describe();
         $to = $target->describe();
 
-        throw match (true) {
+        return match (true) {
             $argument !== null => $this->error('SP1503', "Argument $argument: cannot convert from '$from' to '$to'", $at),
             $value->type->isNull() => $this->error('SP0037', "Cannot convert null to '$to' because it is a non-nullable value type", $at),
             $this->conversions->isExplicit($value->type, $target) => $this->error('SP0266', "Cannot implicitly convert type '$from' to '$to'. An explicit conversion exists (are you missing a cast?)", $at),

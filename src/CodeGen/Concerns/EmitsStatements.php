@@ -5,9 +5,15 @@ declare(strict_types=1);
 namespace SharpPhp\CodeGen\Concerns;
 
 use SharpPhp\CodeGen\Emitted;
+use SharpPhp\Semantics\MemberSymbol;
 use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\Type;
 use SharpPhp\Syntax\Block;
+use SharpPhp\Syntax\UnaryExpr;
+use SharpPhp\Syntax\NameExpr;
+use SharpPhp\Syntax\MemberAccessExpr;
+use SharpPhp\Syntax\Expr;
+use SharpPhp\Syntax\BinaryExpr;
 use SharpPhp\Syntax\BreakStmt;
 use SharpPhp\Syntax\ContinueStmt;
 use SharpPhp\Syntax\DoStmt;
@@ -66,7 +72,7 @@ trait EmitsStatements
             $s instanceof ContinueStmt => $this->continueStatement($s),
             $s instanceof ThrowStmt => $this->throwStatement($s),
             $s instanceof TryStmt => $this->tryStatement($s),
-            $s instanceof YieldStmt => $this->w->line($s->value === null ? 'return;' : 'yield ' . $this->expr($s->value)->code . ';'),
+            $s instanceof YieldStmt => $this->yieldStatement($s),
             $s instanceof EmptyStmt => null,
             default => throw $this->error('SP1010', 'Unsupported statement', $s),
         };
@@ -127,70 +133,139 @@ trait EmitsStatements
         return $this->convert($expr, Type::bool())->code;
     }
 
+    /** switch (flag) { case true: ... case false: ... } handles every bool. */
+    private function coversTrueAndFalse(SwitchStmt $s): bool
+    {
+        $values = [];
+        foreach ($s->sections as $section) {
+            foreach ($section->labels as $label) {
+                $expr = $label->isConstantCase() && $label->when === null ? $label->pattern?->expr : null;
+                if ($expr instanceof LiteralExpr && $expr->kind === 'bool') {
+                    $values[$expr->value ? 'true' : 'false'] = true;
+                }
+            }
+        }
+
+        return count($values) === 2;
+    }
+
+    /**
+     * Whether a condition is a C# constant expression equal to true: the literal, a const field
+     * (while (Forever)) or !, && and || over those. Such loops only end through break.
+     */
+    private function isConstantTrue(Expr $condition): bool
+    {
+        return $this->constantCondition($condition, 0) === true;
+    }
+
+    private function constantCondition(Expr $e, int $depth): ?bool
+    {
+        if ($depth > 16) {
+            return null; // const fields referring to each other in a cycle
+        }
+        $value = $this->evaluateConstant($e);
+        if (is_bool($value)) {
+            return $value;
+        }
+        if ($e instanceof UnaryExpr && $e->operator === '!' && !$e->postfix) {
+            $operand = $this->constantCondition($e->operand, $depth + 1);
+
+            return $operand === null ? null : !$operand;
+        }
+        if ($e instanceof BinaryExpr && ($e->operator === '&&' || $e->operator === '||')) {
+            $left = $this->constantCondition($e->left, $depth + 1);
+            $right = $this->constantCondition($e->right, $depth + 1);
+            if ($left === null || $right === null) {
+                return null;
+            }
+
+            return $e->operator === '&&' ? $left && $right : $left || $right;
+        }
+        $constant = $this->constantMember($e)?->constantValue;
+
+        return $constant !== null ? $this->constantCondition($constant, $depth + 1) : null;
+    }
+
+    /** The const field that Verbose or Config.Verbose refers to, if it is one. */
+    private function constantMember(Expr $e): ?MemberSymbol
+    {
+        $member = match (true) {
+            $e instanceof NameExpr && $this->scope->lookup($e->name) === null && $this->class !== null
+                => $this->symbols->findMember($this->class, $e->name),
+            $e instanceof MemberAccessExpr && $e->target instanceof NameExpr && $this->scope->lookup($e->target->name) === null
+                => ($type = $this->resolver->findClass($e->target->name, $this->ctx)) !== null ? $this->symbols->findMember($type, $e->name) : null,
+            default => null,
+        };
+
+        return $member?->kind === 'const' ? $member : null;
+    }
+
     private function ifStatement(IfStmt $s): void
     {
-        $this->w->line('if (' . $this->condition($s->condition) . ') {');
-        $before = $this->assignments->save();
         $outcomes = [];
-        $this->body($s->then);
-        if ($this->flow->endReachable($s->then)) {
-            $outcomes[] = $this->assignments->save();
-        }
-        $last = $s;
-        $else = $s->else;
-        while ($else instanceof IfStmt) {
-            $this->assignments->restore($before);
-            $this->w->sourceLine = $else->line;
-            $this->w->line('} elseif (' . $this->condition($else->condition) . ') {');
-            $before = $this->assignments->save();
-            $this->body($else->then);
-            if ($this->flow->endReachable($else->then)) {
-                $outcomes[] = $this->assignments->save();
+        $clause = $s;
+        $keyword = 'if';
+        while (true) {
+            $this->w->sourceLine = $clause->line;
+            $this->w->line(($keyword === 'if' ? 'if (' : '} elseif (') . $this->condition($clause->condition) . ') {');
+            $whenFalse = $this->flow->save();
+            if ($this->isConstantTrue($clause->condition)) {
+                $whenFalse = null; // the remaining clauses never run
             }
-            $last = $else;
-            $else = $else->else;
+            $this->body($clause->then);
+            $outcomes[] = $this->flow->save();
+            $this->flow->restore($whenFalse);
+            if (!$clause->else instanceof IfStmt) {
+                break;
+            }
+            $clause = $clause->else;
+            $keyword = 'elseif';
         }
-        $this->assignments->restore($before);
-        if ($else !== null) {
+        if ($clause->else !== null) {
             $this->w->line('} else {');
-            $this->body($else);
-            if ($this->flow->endReachable($else)) {
-                $outcomes[] = $this->assignments->save();
-            }
-        } elseif (!$this->flow->isConstantTrue($last->condition)) {
-            $outcomes[] = $before;
+            $this->body($clause->else);
         }
-        $this->assignments->merge($outcomes);
+        $outcomes[] = $this->flow->save();
+        $this->flow->merge($outcomes);
         $this->w->line('}');
     }
 
-    private function loopBody(Stmt $body): void
+    /**
+     * Emits a loop body as a jump target for break/continue.
+     *
+     * @return array{breaks: list<array<string, true>>, continues: list<array<string, true>>} flow states recorded by its jumps
+     */
+    private function loopBody(Stmt $body): array
     {
         $this->fn->breakables[] = 'loop';
+        $this->flow->enterJumpTarget('loop');
         try {
             $this->body($body);
         } finally {
             array_pop($this->fn->breakables);
         }
+
+        return $this->flow->exitJumpTarget();
     }
 
     private function whileStatement(WhileStmt $s): void
     {
         $this->w->line('while (' . $this->condition($s->condition) . ') {');
-        $before = $this->assignments->save();
-        $this->loopBody($s->body);
-        if (!$this->flow->isConstantTrue($s->condition)) {
-            $this->assignments->restore($before); // the body may not run at all
-        }
+        $whenFalse = $this->isConstantTrue($s->condition) ? null : $this->flow->save();
+        $jumps = $this->loopBody($s->body);
+        $this->flow->merge([$whenFalse, ...$jumps['breaks']]);
         $this->w->line('}');
     }
 
     private function doStatement(DoStmt $s): void
     {
         $this->w->line('do {');
-        $this->loopBody($s->body);
+        $jumps = $this->loopBody($s->body);
+        $this->flow->merge([$this->flow->save(), ...$jumps['continues']]); // the condition is reached from both
         $this->w->sourceLine = $s->condition->line;
         $this->w->line('} while (' . $this->condition($s->condition) . ');');
+        $whenFalse = $this->isConstantTrue($s->condition) ? null : $this->flow->save();
+        $this->flow->merge([$whenFalse, ...$jumps['breaks']]);
     }
 
     private function forStatement(ForStmt $s): void
@@ -212,14 +287,24 @@ trait EmitsStatements
                 $init[] = $this->effect($expr);
             }
             $condition = $s->condition !== null ? $this->condition($s->condition) : '';
-            $before = $this->assignments->save();
-            $iterators = array_map(fn ($e): string => $this->effect($e), $s->iterators);
+            $whenFalse = $s->condition === null || $this->isConstantTrue($s->condition) ? null : $this->flow->save();
+
+            // The iterators run after the body, so they are analysed after it: the body goes to its own writer.
+            $outer = $this->w;
+            $this->w = new \SharpPhp\CodeGen\CodeWriter();
+            $this->w->sourceLine = $outer->sourceLine;
+            try {
+                $jumps = $this->loopBody($s->body);
+                $this->flow->merge([$this->flow->save(), ...$jumps['continues']]);
+                $iterators = array_map(fn ($e): string => $this->effect($e), $s->iterators);
+                $body = $this->w;
+            } finally {
+                $this->w = $outer;
+            }
+            $this->flow->merge([$whenFalse, ...$jumps['breaks']]);
 
             $this->w->line('for (' . implode(', ', $init) . '; ' . $condition . '; ' . implode(', ', $iterators) . ') {');
-            $this->loopBody($s->body);
-            if ($s->condition !== null && !$this->flow->isConstantTrue($s->condition)) {
-                $this->assignments->restore($before);
-            }
+            $this->w->append($body);
             $this->w->line('}');
         });
     }
@@ -246,9 +331,9 @@ trait EmitsStatements
             }
 
             $this->w->line("foreach ($source as $target) {");
-            $before = $this->assignments->save();
-            $this->loopBody($s->body);
-            $this->assignments->restore($before);
+            $empty = $this->flow->save(); // the collection may be empty
+            $jumps = $this->loopBody($s->body);
+            $this->flow->merge([$empty, ...$jumps['breaks']]);
             $this->w->line('}');
         });
     }
@@ -292,17 +377,17 @@ trait EmitsStatements
             $this->w->line('switch (true) {');
         }
 
-        $before = $this->assignments->save();
-        $outcomes = [];
-        $hasDefault = false;
+        $before = $this->flow->save();
+        $catchAll = false;
         $this->fn->breakables[] = 'switch';
+        $this->flow->enterJumpTarget('switch');
         try {
             $this->w->indent();
             foreach ($s->sections as $section) {
                 $this->w->sourceLine = $section->line;
-                $this->assignments->restore($before);
+                $this->flow->restore($before);
                 foreach ($section->labels as $label) {
-                    $hasDefault = $hasDefault || $this->flow->isCatchAll($label);
+                    $catchAll = $catchAll || !$label->isConstantCase();
                 }
                 $this->inScope(function () use ($section, $simple, $subject): void {
                     foreach ($section->labels as $label) {
@@ -325,32 +410,45 @@ trait EmitsStatements
                     $this->statements($section->statements);
                     $this->w->outdent();
                 });
-                if ($this->flow->sectionExits($section)) {
-                    $outcomes[] = $this->assignments->save();
+                if ($this->flow->isReachable()) {
+                    // PHP would silently fall through into the next case.
+                    throw $this->error('SP0163', 'Control cannot fall through from one case label to another; end the section with break, return or throw', $section->labels[array_key_last($section->labels)] ?? $section);
                 }
             }
             $this->w->outdent();
         } finally {
             array_pop($this->fn->breakables);
         }
-        if (!$hasDefault) {
-            $outcomes[] = $before;
-        }
-        $this->assignments->merge($outcomes);
+        $jumps = $this->flow->exitJumpTarget();
+        $catchAll = $catchAll || ($subject->type->isBool() && $this->coversTrueAndFalse($s));
+        // Without a catch-all label no section may run. Non-constant patterns (case < 0: ... case >= 0:)
+        // can be exhaustive; that is not analysed, so they count as covering every value.
+        $this->flow->merge([$catchAll ? null : $before, ...$jumps['breaks']]);
         $this->w->line('}');
+    }
+
+    private function yieldStatement(YieldStmt $s): void
+    {
+        if ($s->value === null) {
+            $this->w->line('return;'); // yield break
+            $this->flow->markUnreachable();
+
+            return;
+        }
+        $this->w->line('yield ' . $this->expr($s->value)->code . ';');
     }
 
     private function returnStatement(ReturnStmt $s): void
     {
         if ($s->value === null) {
             $this->w->line('return;');
-
-            return;
-        }
-        if ($this->fn->returnType->kind === 'void') {
+        } elseif ($this->fn->returnType->kind === 'void') {
             throw $this->error('SP0127', 'Since this method returns void, a return keyword must not be followed by an object expression', $s);
+        } else {
+            $this->w->line('return ' . $this->convert($s->value, $this->fn->returnType)->code . ';');
         }
-        $this->w->line('return ' . $this->convert($s->value, $this->fn->returnType)->code . ';');
+        $this->requireOutParamsAssigned($s);
+        $this->flow->markUnreachable();
     }
 
     private function breakStatement(BreakStmt $s): void
@@ -359,6 +457,7 @@ trait EmitsStatements
             throw $this->error('SP0139', 'No enclosing loop out of which to break or continue', $s);
         }
         $this->w->line('break;');
+        $this->flow->jumpBreak();
     }
 
     private function continueStatement(ContinueStmt $s): void
@@ -367,6 +466,7 @@ trait EmitsStatements
         for ($i = count($this->fn->breakables) - 1; $i >= 0; $i--) {
             if ($this->fn->breakables[$i] === 'loop') {
                 $this->w->line($levels === 1 ? 'continue;' : "continue $levels;");
+                $this->flow->jumpContinue();
 
                 return;
             }
@@ -380,6 +480,7 @@ trait EmitsStatements
     {
         if ($s->value !== null) {
             $this->w->line('throw ' . $this->expr($s->value)->code . ';');
+            $this->flow->markUnreachable();
 
             return;
         }
@@ -388,17 +489,29 @@ trait EmitsStatements
             throw $this->error('SP0156', 'A throw statement with no arguments is not allowed outside of a catch clause', $s);
         }
         $this->w->line("throw $variable;");
+        $this->flow->markUnreachable();
     }
 
     private function tryStatement(TryStmt $s): void
     {
         $this->w->line('try {');
-        $before = $this->assignments->save();
-        $outcomes = [];
-        $this->body($s->body);
-        if ($this->flow->endReachable($s->body)) {
-            $outcomes[] = $this->assignments->save();
+        $before = $this->flow->save();
+        // A PHP engine error that stands for NullReferenceException ("... on null") must reach the
+        // catch clause for that type; an inner try turns it into the C# exception first.
+        $translate = $this->catchesSpecificExceptions($s);
+        if ($translate) {
+            $this->w->indent();
+            $this->w->line('try {');
         }
+        $this->body($s->body);
+        if ($translate) {
+            $error = $this->fn->temp('error');
+            $this->w->line("} catch (\\Error $error) {");
+            $this->w->line('    throw ' . $this->runtime('ErrorHandler') . "::translate($error);");
+            $this->w->line('}');
+            $this->w->outdent();
+        }
+        $outcomes = [$this->flow->save()];
 
         foreach ($s->catches as $catch) {
             $this->w->sourceLine = $catch->line;
@@ -409,13 +522,17 @@ trait EmitsStatements
                 throw $this->error('SP0155', "The type caught or thrown must be derived from System.Exception", $catch->type ?? $catch);
             }
 
-            $this->assignments->restore($before); // the exception may come before any assignment in the try block
+            $this->flow->restore($before); // the exception may come before any assignment in the try block
             $variable = $catch->variable !== null ? '$' . $catch->variable : $this->fn->temp('e');
             $this->w->line('} catch (' . $this->catchTypes((string) $type->class) . " $variable) {");
             $this->w->indent();
             $this->inScope(function () use ($catch, $type, $variable): void {
                 if ($catch->variable !== null) {
                     $this->declareLocal($catch->variable, $type, $catch);
+                    if ($this->catchTypes((string) $type->class) === '\\Throwable') {
+                        // catch (Exception e) also receives PHP engine errors: give e the C# type.
+                        $this->w->line("$variable = " . $this->runtime('ErrorHandler') . "::translate($variable);");
+                    }
                 }
                 $this->fn->catchVariables[] = $variable;
                 try {
@@ -430,20 +547,33 @@ trait EmitsStatements
                 }
             });
             $this->w->outdent();
-            if ($this->flow->endReachable($catch->body)) {
-                $outcomes[] = $this->assignments->save();
-            }
+            $outcomes[] = $this->flow->save();
         }
-        $this->assignments->merge($outcomes);
+        $this->flow->merge($outcomes);
 
         if ($s->finally !== null) {
-            $afterTry = $this->assignments->save();
-            $this->assignments->restore($before);
+            $afterTry = $this->flow->save();
+            $this->flow->restore($before);
             $this->w->line('} finally {');
             $this->body($s->finally);
-            $this->assignments->applyFinally($before, $afterTry);
+            $this->flow->applyFinally($before, $afterTry);
         }
         $this->w->line('}');
+    }
+
+    /** Whether a catch clause names an exception type other than System.Exception (which catches everything). */
+    private function catchesSpecificExceptions(TryStmt $s): bool
+    {
+        foreach ($s->catches as $catch) {
+            if ($catch->type !== null) {
+                $type = $this->resolveType($catch->type);
+                if ($type->isClass() && $this->catchTypes((string) $type->class) !== '\\Throwable') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function catchTypes(string $fqn): string

@@ -39,13 +39,13 @@ final class Char
         return preg_match('/^\p{Ll}$/u', $c) === 1;
     }
 
-    /** @return char */
+    /** @sharp-return char */
     public static function ToUpper(string $c): string
     {
         return mb_strtoupper($c);
     }
 
-    /** @return char */
+    /** @sharp-return char */
     public static function ToLower(string $c): string
     {
         return mb_strtolower($c);

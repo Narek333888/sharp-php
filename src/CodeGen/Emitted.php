@@ -31,8 +31,8 @@ final class Emitted
         public readonly ?string $namespace = null,
         /** For values: name of the local variable this expression is, if any. */
         public readonly ?string $local = null,
-        /** For char literals: the character's code, so 'A' can be used as the number 65. */
-        public readonly ?int $charCode = null,
+        /** For int literals their value; for char literals the character's code ('A' => 65). */
+        public readonly ?int $intValue = null,
         /** For static properties with accessors: the class prefix ("self::", "Config::") of get_X()/set_X(). */
         public readonly ?string $receiver = null,
     ) {

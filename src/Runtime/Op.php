@@ -186,19 +186,28 @@ final class Op
     }
 
     /**
-     * Default ordering (Comparer<T>.Default): IComparable objects use their CompareTo,
-     * everything else PHP's <=>. Returns -1, 0 or 1.
+     * Default ordering (Comparer<T>.Default): null first, enums by value, IComparable objects by
+     * CompareTo, strings like .NET's culture-aware comparer (letters case-insensitively, then
+     * lowercase first; digits as text: "10" < "9"), numbers numerically. Returns -1, 0 or 1.
      */
     public static function compare(mixed $a, mixed $b): int
     {
-        if (is_object($a) && method_exists($a, 'CompareTo')) {
-            return $a->CompareTo($b) <=> 0;
-        }
-        if (is_object($b) && method_exists($b, 'CompareTo')) {
-            return -($b->CompareTo($a) <=> 0);
-        }
+        return match (true) {
+            $a === $b => 0,
+            $a === null => -1,
+            $b === null => 1,
+            $a instanceof \BackedEnum && $b instanceof \BackedEnum => $a->value <=> $b->value,
+            is_object($a) && method_exists($a, 'CompareTo') => $a->CompareTo($b) <=> 0,
+            is_object($b) && method_exists($b, 'CompareTo') => -($b->CompareTo($a) <=> 0),
+            is_string($a) && is_string($b) => self::compareStrings($a, $b),
+            default => $a <=> $b,
+        };
+    }
 
-        return $a <=> $b;
+    /** string.Compare(a, b): case-insensitive order first; on a tie, lowercase sorts before uppercase. */
+    public static function compareStrings(string $a, string $b): int
+    {
+        return (strcmp(mb_strtolower($a), mb_strtolower($b)) <=> 0) ?: (strcmp($b, $a) <=> 0);
     }
 
     /**
@@ -219,20 +228,25 @@ final class Op
         $class = new \ReflectionClass($source);
         $copy = $class->newInstanceWithoutConstructor();
         for ($current = $class; $current !== false; $current = $current->getParentClass()) {
-            $values = [];
+            $stored = [];
+            $accessors = []; // properties with accessor bodies: set through their init/set accessor
             foreach ($current->getProperties() as $property) {
-                if ($property->isStatic() || $property->isVirtual() || $property->getDeclaringClass()->getName() !== $current->getName()) {
+                $name = $property->getName();
+                if ($property->isStatic() || $property->getDeclaringClass()->getName() !== $current->getName()) {
                     continue;
                 }
-                $name = $property->getName();
-                if (array_key_exists($name, $changes)) {
-                    $values[$name] = $changes[$name];
+                if ($property->isVirtual()) {
+                    if (array_key_exists($name, $changes)) {
+                        $accessors[$name] = $changes[$name];
+                    }
+                } elseif (array_key_exists($name, $changes)) {
+                    $stored[$name] = $changes[$name];
                 } elseif ($property->isInitialized($source)) {
-                    $values[$name] = $property->getValue($source);
+                    $stored[$name] = $property->getValue($source);
                 }
             }
-            (\Closure::bind(static function () use ($copy, $values): void {
-                foreach ($values as $name => $value) {
+            (\Closure::bind(static function () use ($copy, $stored, $accessors): void {
+                foreach ([...$stored, ...$accessors] as $name => $value) {
                     $copy->$name = $value;
                 }
             }, null, $current->getName()))();
@@ -272,10 +286,32 @@ final class Op
     public static function init(object $object, array $values): object
     {
         foreach ($values as $name => $value) {
-            $object->$name = $value;
+            // The compiler checked that the setter is accessible where the initializer is written;
+            // assign from the declaring class's scope so private(set)/protected(set) work too.
+            $declaring = property_exists($object, $name) ? (new \ReflectionProperty($object, $name))->getDeclaringClass()->getName() : $object::class;
+            (\Closure::bind(static function () use ($object, $name, $value): void {
+                $object->$name = $value;
+            }, null, $declaring))();
         }
 
         return $object;
+    }
+
+    /**
+     * d[key] += value / d[key]++ on a collection. PHP cannot change an ArrayAccess element in place
+     * ("Indirect modification of overloaded element"), so the element is read, changed and written back.
+     *
+     * @param \ArrayAccess<mixed, mixed> $target
+     * @param \Closure(mixed): mixed $change computes the new value from the old one
+     * @param bool $returnOld true for postfix d[key]++ used as a value
+     */
+    public static function update(\ArrayAccess $target, mixed $key, \Closure $change, bool $returnOld = false): mixed
+    {
+        $old = $target[$key];
+        $new = $change($old);
+        $target[$key] = $new;
+
+        return $returnOld ? $old : $new;
     }
 
     /**

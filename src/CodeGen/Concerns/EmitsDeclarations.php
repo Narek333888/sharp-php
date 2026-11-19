@@ -7,9 +7,11 @@ namespace SharpPhp\CodeGen\Concerns;
 use SharpPhp\CodeGen\FunctionContext;
 use SharpPhp\Compiler\Declarator;
 use SharpPhp\Semantics\Names;
+use SharpPhp\Semantics\ParameterSymbol;
 use SharpPhp\Semantics\Type;
 use SharpPhp\Semantics\TypeSymbol;
 use SharpPhp\Syntax\Accessor;
+use SharpPhp\Syntax\Block;
 use SharpPhp\Syntax\ArrayCreationExpr;
 use SharpPhp\Syntax\BinaryExpr;
 use SharpPhp\Syntax\CompilationUnit;
@@ -145,14 +147,26 @@ trait EmitsDeclarations
             $this->emitMethod($method, false);
         }
 
-        if ($symbol->isRecord && !isset($symbol->members['ToString']) && $decl->recordParams !== []) {
+        if ($symbol->isRecord && !isset($symbol->members['ToString'])) {
             if ($sections++ > 0) {
                 $this->w->blank();
             }
             $this->emitRecordToString($decl);
         }
+        if ($symbol->isRecord && !isset($symbol->members['Equals'])) {
+            $this->w->blank();
+            $this->emitObjectMember('Equals', 'return $other instanceof self && $other::class === static::class && $this == $other;');
+        }
+        foreach ($this->objectMembersRequiredByInterfaces($symbol) as $name) {
+            $this->w->blank();
+            $this->emitObjectMember($name, match ($name) {
+                'ToString' => 'return ' . $this->runtime('TypeName') . '::ofClass(static::class);',
+                'Equals' => 'return $this === $other;',
+                default => 'return \\spl_object_id($this);',
+            });
+        }
 
-        if (isset($symbol->members['ToString']) || ($symbol->isRecord && $decl->recordParams !== [])) {
+        if (isset($symbol->members['ToString']) || $symbol->isRecord) {
             $toString = $symbol->members['ToString'] ?? null;
             if ($toString === null || ($toString->kind === 'method' && !$toString->isStatic && $toString->params === [])) {
                 $this->w->blank();
@@ -183,6 +197,11 @@ trait EmitsDeclarations
         $visibility = Declarator::visibility($field->modifiers);
         $static = in_array('static', $field->modifiers, true);
         $readonly = in_array('readonly', $field->modifiers, true) && !$static;
+        // A C# readonly array field still has assignable elements, which PHP's readonly forbids;
+        // the compiler already rejects assignments to the field itself.
+        if ($readonly && $this->resolveType($field->type)->kind === 'array') {
+            $readonly = false;
+        }
 
         foreach ($field->declarators as $declarator) {
             $this->w->sourceLine = $declarator->line;
@@ -331,12 +350,12 @@ trait EmitsDeclarations
 
                         return;
                     }
-                    if ($isGet && $this->flow->endReachable($accessor->body)) {
-                        throw $this->error('SP0161', "'{$this->class->csharpName()}.$name.get': not all code paths return a value", $accessor);
-                    }
                     $this->w->line($isGet ? 'get {' : 'set {');
                     $this->w->indent();
                     $this->statements($accessor->body->statements);
+                    if ($isGet) {
+                        $this->requireReturnOnAllPaths($accessor->body, "'{$this->class?->csharpName()}.$name.get'", $accessor);
+                    }
                     $this->w->outdent();
                     $this->w->line('}');
                 });
@@ -385,10 +404,10 @@ trait EmitsDeclarations
 
                         return;
                     }
-                    if ($isGet && $this->flow->endReachable($accessor->body)) {
-                        throw $this->error('SP0161', "'{$this->class->csharpName()}.$name.get': not all code paths return a value", $accessor);
-                    }
                     $this->statements($accessor->body->statements);
+                    if ($isGet) {
+                        $this->requireReturnOnAllPaths($accessor->body, "'{$this->class?->csharpName()}.$name.get'", $accessor);
+                    }
                 });
             });
             $this->w->outdent();
@@ -466,7 +485,7 @@ trait EmitsDeclarations
             if ($baseParams !== null) {
                 $this->checkArguments($constructor->initializerArgs, $baseParams, Names::csharpName((string) $symbol->baseClass), $this->baseConstructorSignature($symbol, $baseParams), $constructor, constructor: true);
             }
-            [$args] = $this->arguments($constructor->initializerArgs, $baseParams ?? []);
+            [$args] = $this->arguments($constructor->initializerArgs, $baseParams ?? [], runtime: $this->symbols->find((string) $symbol->baseClass)?->external ?? false);
             $this->w->line("parent::__construct($args);");
         } elseif ($symbol->baseClass !== null && $this->symbols->hasConstructor($symbol->baseClass)) {
             $baseParams = $this->baseConstructorParams($symbol);
@@ -492,9 +511,10 @@ trait EmitsDeclarations
     /** @param list<\SharpPhp\Semantics\ParameterSymbol> $params */
     private function baseConstructorSignature(TypeSymbol $symbol, array $params): string
     {
-        $base = Names::csharpName((string) $symbol->baseClass);
+        $base = $this->symbols->find((string) $symbol->baseClass);
+        $name = Names::csharpName((string) $symbol->baseClass);
 
-        return $this->signature($base . '.' . substr($base, (int) strrpos('.' . $base, '.')), $params);
+        return $this->signature($name . '.' . ($base?->shortName() ?? $name), $params);
     }
 
     /**
@@ -567,19 +587,41 @@ trait EmitsDeclarations
                     return;
                 }
 
-                if ($method->body !== null && !$isGenerator && $member->type->kind !== 'void' && $this->flow->endReachable($method->body)) {
-                    $params = implode(', ', array_map(static fn ($p): string => $p->type->describe(), $member->params));
-                    throw $this->error('SP0161', "'{$this->class->csharpName()}.{$method->name}($params)': not all code paths return a value", $method);
-                }
-
                 $this->w->line($signature);
                 $this->w->line('{');
                 $this->w->indent();
                 $this->methodBody($method, $member->type);
+                $this->requireOutParamsAssigned($method);
+                if ($method->body !== null && $member->type->kind !== 'void') {
+                    $params = ParameterSymbol::describeTypes($member->params);
+                    $this->requireReturnOnAllPaths($method->body, "'{$this->class?->csharpName()}.{$method->name}($params)'", $method);
+                }
                 $this->w->outdent();
                 $this->w->line('}');
             });
         });
+    }
+
+    /** Before the method returns (or at its reachable end), every out parameter must be assigned. */
+    private function requireOutParamsAssigned(Node $at): void
+    {
+        if (!$this->flow->isReachable() || $this->fn === null) {
+            return;
+        }
+        foreach ($this->fn->outParams as $name) {
+            if ($this->flow->isUnassigned($this->scope, $name)) {
+                throw $this->error('SP0177', "The out parameter '$name' must be assigned to before control leaves the current method", $at);
+            }
+        }
+    }
+
+    /** After a non-void body: its end must be unreachable (iterators excepted), or C# reports CS0161. */
+    private function requireReturnOnAllPaths(Block $body, string $what, Node $at): void
+    {
+        $isIterator = NodeFinder::contains($body, static fn (Node $n): bool => $n instanceof YieldStmt);
+        if ($this->flow->isReachable() && !$isIterator) {
+            throw $this->error('SP0161', "$what: not all code paths return a value", $at);
+        }
     }
 
     private function methodBody(MethodDecl $method, Type $returnType): void
@@ -655,10 +697,50 @@ trait EmitsDeclarations
 
             $decl = $this->typeDecl($type);
             $parts[] = ($decl !== null ? $decl . ' ' : '') . $prefix . '$' . $param->name . $default;
-            $this->declareLocal($param->name, $localType, $param);
+            $this->declareLocal($param->name, $localType, $param, assigned: $param->modifier !== 'out');
+            if ($param->modifier === 'out' && $this->fn !== null) {
+                $this->fn->outParams[] = $param->name;
+            }
         }
 
         return implode(', ', $parts);
+    }
+
+    /**
+     * System.Object members (ToString, Equals, GetHashCode) that an interface of a non-record
+     * class redeclares but the class does not: C# objects always have them, PHP classes must
+     * define them to implement the interface.
+     *
+     * @return list<string>
+     */
+    private function objectMembersRequiredByInterfaces(TypeSymbol $symbol): array
+    {
+        if ($symbol->isRecord) {
+            return [];
+        }
+        $required = [];
+        foreach ($this->symbols->interfacesOf($symbol) as $interface) {
+            foreach (['ToString', 'Equals', 'GetHashCode'] as $name) {
+                if (isset($interface->members[$name]) && $this->symbols->findMember($symbol, $name)?->owner->isInterface() !== false) {
+                    $required[$name] = true;
+                }
+            }
+        }
+
+        return array_keys($required);
+    }
+
+    /** A System.Object member with the given body (signatures as in Op::str/Op::equals). */
+    private function emitObjectMember(string $name, string $body): void
+    {
+        $this->w->line(match ($name) {
+            'ToString' => 'public function ToString(): string',
+            'Equals' => 'public function Equals(mixed $other): bool',
+            default => 'public function GetHashCode(): int',
+        });
+        $this->w->line('{');
+        $this->w->line('    ' . $body);
+        $this->w->line('}');
     }
 
     private function emitRecordToString(TypeDecl $decl): void
@@ -938,6 +1020,9 @@ trait EmitsDeclarations
     }
 
     /**
+     * Runs $callback with $context as the current function. Methods, accessors and constructors
+     * also start a fresh flow state; lambdas (which have a parent) see the enclosing one.
+     *
      * @template R
      * @param callable(): R $callback
      * @return R
@@ -947,7 +1032,7 @@ trait EmitsDeclarations
         $outer = $this->fn;
         $this->fn = $context;
         try {
-            return $callback();
+            return $context->parent === null ? $this->flow->inFunction($callback) : $callback();
         } finally {
             $this->fn = $outer;
         }

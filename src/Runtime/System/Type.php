@@ -11,6 +11,7 @@ use SharpPhp\Runtime\TypeName;
  *
  * There is one instance per type name, so typeof(A) == x.GetType() compares by identity.
  * Generic arguments are erased at runtime: typeof(List<int>) is "System.Collections.Generic.List".
+ * Values only know their PHP type: 5L.GetType() is System.Int32 (typeof(long) is System.Int64).
  */
 final class Type
 {
@@ -31,12 +32,16 @@ final class Type
     {
     }
 
-    /** typeof(T): a PHP class name or a primitive spec ("int", "string", ...). */
-    public static function of(string $classOrSpec): self
+    /** typeof(Person): the C# type of a PHP class. */
+    public static function ofClass(string $class): self
     {
-        $known = class_exists($classOrSpec) || interface_exists($classOrSpec) || enum_exists($classOrSpec);
+        return self::named(TypeName::ofClass($class));
+    }
 
-        return self::named($known ? TypeName::ofClass($classOrSpec) : TypeName::ofSpec($classOrSpec));
+    /** typeof(long), typeof(int[]): a type without a PHP class, by its .NET name ("System.Int64"). */
+    public static function named(string $fullName): self
+    {
+        return self::$types[$fullName] ??= new self($fullName);
     }
 
     /** value.GetType() */
@@ -47,11 +52,6 @@ final class Type
         }
 
         return self::named(TypeName::of($value));
-    }
-
-    private static function named(string $fullName): self
-    {
-        return self::$types[$fullName] ??= new self($fullName);
     }
 
     public function Equals(mixed $other): bool

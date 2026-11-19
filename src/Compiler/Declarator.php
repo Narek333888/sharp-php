@@ -208,6 +208,7 @@ final class Declarator
                         visibility: self::visibility($member->modifiers, $defaultVisibility),
                     );
                     $field->isReadonly = in_array('readonly', $member->modifiers, true);
+                    $field->constantValue = $member->isConst ? $declarator->init : null;
                     $this->add($symbol, $field, $file, $declarator);
                 }
             } elseif ($member instanceof PropertyDecl) {
@@ -305,7 +306,10 @@ final class Declarator
     /** @param list<string> $modifiers */
     public static function visibility(array $modifiers, string $default = 'private'): string
     {
-        if (in_array('public', $modifiers, true) || in_array('internal', $modifiers, true) && !in_array('protected', $modifiers, true) && !in_array('private', $modifiers, true)) {
+        // A SharpPHP project is one assembly: internal and protected internal mean public,
+        // private protected means protected.
+        $internal = in_array('internal', $modifiers, true) && !in_array('private', $modifiers, true);
+        if (in_array('public', $modifiers, true) || $internal) {
             return 'public';
         }
         if (in_array('protected', $modifiers, true)) {

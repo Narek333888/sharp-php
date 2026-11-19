@@ -76,7 +76,7 @@ final class String_
             return ($a === null ? 0 : 1) - ($b === null ? 0 : 1);
         }
 
-        return ($ignoreCase ? strcasecmp($a, $b) : strcmp($a, $b)) <=> 0;
+        return $ignoreCase ? strcmp(mb_strtolower($a), mb_strtolower($b)) <=> 0 : Op::compareStrings($a, $b);
     }
 
     public static function Equals(?string $a, ?string $b): bool
@@ -218,7 +218,10 @@ final class String_
         return mb_substr($s, 0, $startIndex) . ($count === null ? '' : mb_substr($s, $startIndex + $count));
     }
 
-    /** @return char[] */
+    /**
+     * @return list<string> one-character strings
+     * @sharp-return char[]
+     */
     public static function ToCharArray(string $s): array
     {
         return mb_str_split($s);

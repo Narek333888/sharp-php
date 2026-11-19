@@ -14,4 +14,10 @@ final class SwitchLabel extends Node
         public readonly ?Expr $when,
     ) {
     }
+
+    /** "case 1:" / "case Color.Red:": a single constant, which cannot make a switch cover every value. */
+    public function isConstantCase(): bool
+    {
+        return $this->pattern !== null && $this->pattern->kind === 'constant';
+    }
 }

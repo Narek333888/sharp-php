@@ -22,12 +22,15 @@ final class ImplementationVerifier
 {
     /** Runtime interfaces that do not declare their method in PHP (see IComparable), with the method C# requires. */
     private const IMPLIED_INTERFACE_METHODS = [
-        Names::RUNTIME_NAMESPACE . '\\System\\IComparable' => 'CompareTo(T)',
-        Names::RUNTIME_NAMESPACE . '\\System\\IEquatable' => 'Equals(T)',
+        Names::RUNTIME_NAMESPACE . '\\System\\IComparable' => 'CompareTo',
+        Names::RUNTIME_NAMESPACE . '\\System\\IEquatable' => 'Equals',
     ];
 
-    /** System.Object members that records get generated implementations of. */
-    private const RECORD_GENERATED = ['ToString', 'Equals', 'GetHashCode'];
+    /**
+     * System.Object members: every C# object has them, so an interface that redeclares one
+     * (string ToString();) is satisfied without a declaration; the emitter then generates it.
+     */
+    private const OBJECT_MEMBERS = ['ToString', 'Equals', 'GetHashCode'];
 
     public function __construct(
         private readonly SymbolTable $symbols,
@@ -68,19 +71,23 @@ final class ImplementationVerifier
             }
         }
 
-        foreach ($this->allInterfaces($symbol) as $interface) {
+        foreach ($this->symbols->interfacesOf($symbol) as $interface) {
             $implied = self::IMPLIED_INTERFACE_METHODS[$interface->fqn] ?? null;
-            if ($implied !== null && $this->mostDerived($symbol, (string) strstr($implied, '(', true)) === null) {
-                throw $this->error('SP0535', "'$name' does not implement interface member '{$interface->csharpName()}<T>.$implied'", $file, $decl);
+            if ($implied !== null && !$this->isGenerated($symbol, $implied) && $this->mostDerived($symbol, $implied) === null) {
+                throw $this->error('SP0535', "'$name' does not implement interface member '{$interface->csharpName()}<T>.$implied(T)'", $file, $decl);
             }
             foreach ($interface->members as $member) {
                 if ($member->isStatic || !in_array($member->kind, ['method', 'property'], true)) {
                     continue;
                 }
-                if ($symbol->isRecord && in_array($member->name, self::RECORD_GENERATED, true)) {
+                if ($this->isGenerated($symbol, $member->name)) {
                     continue;
                 }
-                if ($this->mostDerived($symbol, $member->name) === null) {
+                $implementation = $this->mostDerived($symbol, $member->name, caseInsensitive: $interface->external);
+                if ($implementation !== null && $implementation->isStatic) {
+                    throw $this->error('SP0736', "'{$implementation->displayName()}' cannot implement interface member '{$member->displayName()}' because it is static", $file, $decl);
+                }
+                if ($implementation === null || !$this->matches($implementation, $member)) {
                     throw $this->error('SP0535', "'$name' does not implement interface member '{$member->displayName()}'", $file, $decl);
                 }
             }
@@ -92,11 +99,22 @@ final class ImplementationVerifier
         return $symbol->baseClass !== null ? $this->symbols->find($symbol->baseClass) : null;
     }
 
-    /** The member a call on $symbol reaches: declared on the class itself or on the nearest base class. */
-    private function mostDerived(TypeSymbol $symbol, string $name): ?MemberSymbol
+    /**
+     * The member a call on $symbol reaches: declared on the class itself or on the nearest base class.
+     *
+     * @param bool $caseInsensitive match like PHP does (implementing a PHP interface such as Countable)
+     */
+    private function mostDerived(TypeSymbol $symbol, string $name, bool $caseInsensitive = false): ?MemberSymbol
     {
         for ($current = $symbol; $current !== null; $current = $this->baseOf($current)) {
             $member = $current->members[$name] ?? $current->members[$name . '()'] ?? null;
+            if ($member === null && $caseInsensitive) {
+                foreach ($current->members as $candidate) {
+                    if ($candidate->kind === 'method' && strcasecmp($candidate->name, $name) === 0) {
+                        $member = $candidate;
+                    }
+                }
+            }
             if ($member !== null) {
                 return $member;
             }
@@ -105,28 +123,22 @@ final class ImplementationVerifier
         return null;
     }
 
-    /** @return list<TypeSymbol> interfaces of the type, of its base classes and their base interfaces */
-    private function allInterfaces(TypeSymbol $symbol): array
+    /** A method for a method with as many parameters, a property or field for a property. (PHP would refuse the class otherwise.) */
+    private function matches(MemberSymbol $implementation, MemberSymbol $interfaceMember): bool
     {
-        $queue = [];
-        for ($current = $symbol; $current !== null; $current = $this->baseOf($current)) {
-            array_push($queue, ...$current->interfaces);
-        }
-        $seen = [];
-        $result = [];
-        while ($queue !== []) {
-            $fqn = array_shift($queue);
-            $interface = $this->symbols->find($fqn);
-            if ($interface === null || isset($seen[strtolower($fqn)])) {
-                continue;
-            }
-            $seen[strtolower($fqn)] = true;
-            $result[] = $interface;
-            array_push($queue, ...$interface->interfaces);
+        if ($interfaceMember->kind === 'method') {
+            return $implementation->kind === 'method' && count($implementation->params) === count($interfaceMember->params);
         }
 
-        return $result;
+        return $implementation->isValue();
     }
+
+    /** System.Object members the compiler generates for records (and for classes, see Emitter). */
+    private function isGenerated(TypeSymbol $symbol, string $name): bool
+    {
+        return in_array($name, self::OBJECT_MEMBERS, true) && ($symbol->isRecord || $this->mostDerived($symbol, $name) === null);
+    }
+
 
     private function error(string $code, string $message, SourceFile $file, TypeDecl $at): CompileError
     {

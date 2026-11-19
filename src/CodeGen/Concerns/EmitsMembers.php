@@ -24,6 +24,7 @@ use SharpPhp\Syntax\MemberAccessExpr;
 use SharpPhp\Syntax\NameExpr;
 use SharpPhp\Syntax\Node;
 use SharpPhp\Syntax\PredefinedTypeExpr;
+use SharpPhp\Syntax\ThisExpr;
 use SharpPhp\Syntax\TypeRef;
 
 /**
@@ -44,6 +45,9 @@ trait EmitsMembers
         'OrderByDescending', 'ToList', 'ToArray', 'Reverse', 'Take', 'Skip', 'Distinct', 'Count', 'Aggregate',
         'ForEach',
     ];
+
+    /** System.Object methods: without a receiver they mean this.X(), never a PHP function (gettype()). */
+    private const OBJECT_METHODS = ['GetType', 'ToString', 'Equals', 'GetHashCode'];
 
     private const THROWABLE_GETTERS = ['Message' => 'getMessage', 'StackTrace' => 'getTraceAsString', 'InnerException' => 'getPrevious'];
 
@@ -133,9 +137,8 @@ trait EmitsMembers
     /** Assignments C# does not allow: get-only/init-only properties, inaccessible setters, readonly fields. */
     private function requireWritable(MemberSymbol $member, Node $at, bool $initializer = false): void
     {
-        $inOwnConstructor = $this->fn !== null && $this->fn->isConstructor && $this->class !== null
-            && strcasecmp($this->class->fqn, $member->owner->fqn) === 0;
-        $violation = $this->access->writeViolation($member, $this->class, $inOwnConstructor, $initializer);
+        $constructorOf = $this->fn !== null && $this->fn->isConstructor ? $this->class : null;
+        $violation = $this->access->writeViolation($member, $this->class, $constructorOf, $initializer);
         if ($violation !== null) {
             throw $this->violation($violation, $at);
         }
@@ -439,6 +442,12 @@ trait EmitsMembers
     {
         $callee = $e->callee;
 
+        if ($callee instanceof NameExpr && in_array($callee->name, self::OBJECT_METHODS, true) && $this->class !== null
+            && $this->scope->lookup($callee->name) === null && $this->symbols->findMember($this->class, $callee->name) === null) {
+            $receiver = (new MemberAccessExpr((new ThisExpr())->at($callee), $callee->name, false, $callee->typeArgs))->at($callee);
+
+            return $this->invocation((new InvocationExpr($receiver, $e->args))->at($e));
+        }
         if ($callee instanceof NameExpr) {
             $result = $this->name($callee, 'invoke');
 
@@ -497,7 +506,8 @@ trait EmitsMembers
      */
     private function callMember(string $prefix, MemberSymbol $member, array $args, ?Type $receiver, array $typeArgs, ?Type $elementHint, Node $at): Emitted
     {
-        $this->checkArguments($args, $member->params, $member->name, $this->signature($member->owner->csharpName() . '.' . $member->name, $member->params), $at);
+        $runtime = $member->owner->external;
+        $this->checkArguments($args, $member->params, $member->name, $member->displayName(), $at, runtime: $runtime);
         $subst = $receiver !== null ? $member->owner->substitutionFor($receiver) : [];
         foreach ($member->typeParams as $i => $param) {
             if (isset($typeArgs[$i])) {
@@ -505,7 +515,7 @@ trait EmitsMembers
             }
         }
 
-        [$code, $values] = $this->arguments($args, $member->params, $subst, $elementHint);
+        [$code, $values] = $this->arguments($args, $member->params, $subst, $elementHint, $runtime);
 
         foreach ($member->params as $i => $param) {
             if (isset($values[$i])) {
@@ -513,7 +523,21 @@ trait EmitsMembers
             }
         }
 
-        return Emitted::value($prefix . $member->name . '(' . $code . ')', $this->resultType($member, $subst, $values));
+        return $this->valueTypeDefault($member->name, Emitted::value($prefix . $member->name . '(' . $code . ')', $this->resultType($member, $subst, $values)), $elementHint);
+    }
+
+    /**
+     * FirstOrDefault() and friends return default(T): 0 for a List<int>, not null. The runtime
+     * does not know T (generics are erased), so the compiler supplies the value-type default.
+     */
+    private function valueTypeDefault(string $method, Emitted $call, ?Type $element): Emitted
+    {
+        if (!in_array($method, ['FirstOrDefault', 'LastOrDefault', 'SingleOrDefault', 'ElementAtOrDefault'], true)
+            || $element === null || $element->nullable || !$element->isValueType()) {
+            return $call;
+        }
+
+        return Emitted::value($this->wrap($call, Prec::COALESCE + 1) . ' ?? ' . $this->defaultValue($element)->code, $element, Prec::COALESCE);
     }
 
     /**
@@ -677,19 +701,19 @@ trait EmitsMembers
         }
 
         $params = array_slice($member->params, 1);
-        $this->checkArguments($args, $params, $name, $this->signature("$what.$name", $params), $callee);
+        $this->checkArguments($args, $params, $name, $this->signature("$what.$name", $params), $callee, runtime: true);
         $elementType = $this->elementTypeOf($target->type);
         $subst = $symbol->typeParams !== [] ? [$symbol->typeParams[0] => $elementType] : [];
-        [$code, $values] = $this->arguments($args, array_slice($member->params, 1), $subst, $elementType);
+        [$code, $values] = $this->arguments($args, $params, $subst, $elementType, runtime: true);
         $ref = $this->runtime($class);
         $type = $this->resultType($member, $subst, $values);
 
-        return $this->nullSafe(
+        return $this->valueTypeDefault($name, $this->nullSafe(
             $target,
             $callee->nullConditional,
             static fn (string $c): string => "$ref::$name($c" . ($code !== '' ? ", $code" : '') . ')',
             $type,
-        );
+        ), $callee->nullConditional ? null : $elementType);
     }
 
     /** @param list<Argument> $args */
@@ -726,9 +750,9 @@ trait EmitsMembers
      * @param list<Argument> $args
      * @param list<ParameterSymbol> $params
      */
-    private function checkArguments(array $args, array $params, string $name, string $signature, Node $at, bool $constructor = false): void
+    private function checkArguments(array $args, array $params, string $name, string $signature, Node $at, bool $constructor = false, bool $runtime = false): void
     {
-        $violation = $this->argumentMatcher->violation($args, $params, $name, $signature, $constructor);
+        $violation = $this->argumentMatcher->violation($args, $params, $name, $signature, $constructor, $runtime);
         if ($violation !== null) {
             throw $this->violation($violation, $at);
         }
@@ -759,7 +783,7 @@ trait EmitsMembers
      * @param array<string, Type> $subst
      * @return array{0: string, 1: array<int, Emitted>}
      */
-    private function arguments(array $args, array $params, array $subst = [], ?Type $elementHint = null): array
+    private function arguments(array $args, array $params, array $subst = [], ?Type $elementHint = null, bool $runtime = false): array
     {
         $codes = [];
         $values = [];
@@ -803,7 +827,16 @@ trait EmitsMembers
                     $this->requireAssigned($arg->value->name, $arg->value);
                 }
             } else {
-                $value = $expected !== null ? $this->convert($arg->value, $expected, $i + 1) : $this->expr($arg->value);
+                $value = $this->expr($arg->value, $expected);
+                // Sum(numbers) for Sum(params int[] xs): an array passed alone is the params array itself.
+                $isParamsArray = $param?->modifier === 'params' && $arg->name === null && $value->type->kind === 'array'
+                    && count($args) === count($params) && $i === count($params) - 1;
+                if ($isParamsArray) {
+                    $array = $this->converted($value, Type::array($expected ?? Type::mixed()), $arg->value, $i + 1, $runtime);
+                    $value = Emitted::value('...' . $array->code, $array->type);
+                } elseif ($expected !== null) {
+                    $value = $this->converted($value, $expected, $arg->value, $i + 1, $runtime);
+                }
                 if ($param?->numeric) {
                     $value = $this->charToInt($value);
                 }

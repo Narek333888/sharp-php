@@ -21,6 +21,9 @@ final class MemberSymbol
     /** Project fields declared readonly. */
     public bool $isReadonly = false;
 
+    /** Project constants: the initializer expression (const bool Verbose = true;). */
+    public ?\SharpPhp\Syntax\Expr $constantValue = null;
+
     /**
      * Static property with accessor bodies. PHP has no static property hooks, so it is
      * compiled to get_Name()/set_Name($value) methods (the names C# uses internally).

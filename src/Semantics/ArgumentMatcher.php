@@ -18,9 +18,11 @@ final class ArgumentMatcher
      * @param list<ParameterSymbol> $params
      * @param string $name method (or type, for constructors) as written in messages
      * @param string $signature "Program.Add(int, int)", for the missing-argument message
+     * @param bool $runtime the callee is part of the runtime library, which implements only some .NET overloads
      */
-    public function violation(array $args, array $params, string $name, string $signature, bool $constructor = false): ?Violation
+    public function violation(array $args, array $params, string $name, string $signature, bool $constructor = false, bool $runtime = false): ?Violation
     {
+        $note = $runtime ? ' (the SharpPHP runtime library does not implement this .NET overload)' : '';
         $variadic = $params !== [] && $params[array_key_last($params)]->modifier === 'params';
         $positional = 0;
         $named = [];
@@ -39,13 +41,13 @@ final class ArgumentMatcher
             $count = count($args);
 
             return $constructor
-                ? new Violation('SP1729', "'$name' does not contain a constructor that takes $count arguments")
-                : new Violation('SP1501', "No overload for method '$name' takes $count arguments");
+                ? new Violation('SP1729', "'$name' does not contain a constructor that takes $count arguments$note")
+                : new Violation('SP1501', "No overload for method '$name' takes $count arguments$note");
         }
 
         foreach ($params as $i => $param) {
             if (!$param->optional && $param->modifier !== 'params' && $i >= $positional && !isset($named[$param->name])) {
-                return new Violation('SP7036', "There is no argument given that corresponds to the required parameter '{$param->name}' of '$signature'");
+                return new Violation('SP7036', "There is no argument given that corresponds to the required parameter '{$param->name}' of '$signature'$note");
             }
         }
 

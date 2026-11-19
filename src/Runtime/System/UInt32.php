@@ -4,17 +4,24 @@ declare(strict_types=1);
 
 namespace SharpPhp\Runtime\System;
 
-use SharpPhp\Runtime\IntegerParsing;
+use SharpPhp\Runtime\IntegerParser;
 
 /**
  * System.UInt32 (C# uint). Stored as a PHP int.
  */
 final class UInt32
 {
-    use IntegerParsing;
-
     public const int MaxValue = 4294967295;
     public const int MinValue = 0;
 
-    private const NAME = 'a UInt32';
+    public static function Parse(string $s): int
+    {
+        return IntegerParser::parse($s, self::MinValue, self::MaxValue, 'a UInt32');
+    }
+
+    /** @param-out int $result */
+    public static function TryParse(?string $s, ?int &$result): bool
+    {
+        return IntegerParser::tryParse($s, $result, self::MinValue, self::MaxValue);
+    }
 }

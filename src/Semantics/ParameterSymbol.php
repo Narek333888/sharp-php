@@ -11,7 +11,7 @@ final class ParameterSymbol
         public readonly Type $type,
         public readonly ?string $modifier = null,
         public readonly bool $optional = false,
-        /** Declared as int|float in PHP: any number (or char) is accepted. */
+        /** Takes a number: a char argument is passed as its code (int|float in PHP, or "@sharp-char-as-int $name"). */
         public readonly bool $numeric = false,
     ) {
     }

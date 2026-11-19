@@ -118,7 +118,7 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable
 
     /**
      * @param TKey $key
-     * @param TValue $value
+     * @param-out TValue|null $value
      */
     public function TryGetValue(mixed $key, mixed &$value): bool
     {

@@ -63,6 +63,12 @@ final class TypeSymbol
         return Names::csharpName($this->fqn);
     }
 
+    /** "Person" for App.Models.Person. */
+    public function shortName(): string
+    {
+        return substr((string) strrchr('.' . $this->csharpName(), '.'), 1);
+    }
+
     public function addMember(MemberSymbol $member): void
     {
         $this->members[$member->name] = $member;

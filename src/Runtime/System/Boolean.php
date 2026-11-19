@@ -18,6 +18,7 @@ final class Boolean
         };
     }
 
+    /** @param-out bool $result */
     public static function TryParse(?string $s, ?bool &$result): bool
     {
         $normalized = strtolower(trim((string) $s));

@@ -39,6 +39,7 @@ use SharpPhp\Syntax\SwitchExpr;
 use SharpPhp\Syntax\ThisExpr;
 use SharpPhp\Syntax\ThrowExpr;
 use SharpPhp\Syntax\TypeOfExpr;
+use SharpPhp\Syntax\TypeRef;
 use SharpPhp\Syntax\UnaryExpr;
 use SharpPhp\Syntax\WithExpr;
 
@@ -105,10 +106,10 @@ trait EmitsExpressions
         return match ($e->kind) {
             'int' => $expected !== null && $expected->isFloat()
                 ? Emitted::value(self::phpFloat((float) $e->value), Type::float())
-                : Emitted::value((string) $e->value, Type::int()),
+                : new Emitted((string) $e->value, Type::int(), intValue: (int) $e->value),
             'float' => Emitted::value(self::phpFloat((float) $e->value), Type::float()),
             'string' => Emitted::value(self::phpString((string) $e->value), Type::string()),
-            'char' => new Emitted(self::phpString((string) $e->value), Type::char(), charCode: mb_ord((string) $e->value)),
+            'char' => new Emitted(self::phpString((string) $e->value), Type::char(), intValue: mb_ord((string) $e->value)),
             'bool' => Emitted::value($e->value ? 'true' : 'false', Type::bool()),
             default => Emitted::value('null', Type::null()),
         };
@@ -175,11 +176,19 @@ trait EmitsExpressions
         if (!$value->type->isChar()) {
             return $value;
         }
-        if ($value->charCode !== null) {
-            return Emitted::value((string) $value->charCode, Type::int());
+        if ($value->intValue !== null) {
+            return Emitted::value((string) $value->intValue, Type::int());
         }
 
         return Emitted::value('\\mb_ord(' . $value->code . ')', Type::int());
+    }
+
+    /** An enum used as a number: its underlying value (C# compares enums numerically). */
+    private function enumValue(Emitted $value): Emitted
+    {
+        return $this->conversions->isEnum($value->type)
+            ? Emitted::value($this->wrap($value, Prec::ATOM) . '->value', Type::int())
+            : $value;
     }
 
     /** An int converted to a char: (char)66 => 'B'. */
@@ -206,21 +215,28 @@ trait EmitsExpressions
         $op = $e->operator;
 
         if ($op === '++' || $op === '--') {
+            $update = $this->collectionElementUpdate($e->operand, $op === '++' ? '+' : '-', null, $e, $e->postfix && $this->discarded !== $e);
+            if ($update !== null) {
+                return $update;
+            }
             $target = $this->place($e->operand);
             if ($e->operand instanceof NameExpr) {
                 $this->requireAssigned($e->operand->name, $e->operand);
             }
             if ($target->member?->isStaticAccessor) {
                 $step = $op === '++' ? '+' : '-';
+                $setter = $target->receiver . 'set_' . $target->member->name;
+                $char = $target->type->isChar();
                 if ($e->postfix && $this->discarded !== $e) {
-                    // Old value: (set_X(($t = get_X()) + 1) ?? $t)
+                    // The old value: (set_X(($t = get_X()) + 1) ?? $t)
                     $temp = $this->temp($e);
-                    $setter = $target->receiver . 'set_' . $target->member->name;
+                    $next = $char ? "\\mb_chr(\\mb_ord($temp = {$target->code}) $step 1)" : "($temp = {$target->code}) $step 1";
 
-                    return Emitted::value("($setter(($temp = {$target->code}) $step 1) ?? $temp)", $target->type);
+                    return Emitted::value("($setter($next) ?? $temp)", $target->type);
                 }
+                $next = $char ? "\\mb_chr(\\mb_ord({$target->code}) $step 1)" : "{$target->code} $step 1";
 
-                return $this->callStaticSetter($target, Emitted::value("{$target->code} $step 1", $target->type, Prec::ADD), $e);
+                return $this->callStaticSetter($target, Emitted::value($next, $target->type, $char ? Prec::ATOM : Prec::ADD), $e);
             }
 
             if ($target->type->isChar()) {
@@ -276,6 +292,10 @@ trait EmitsExpressions
         // Two chars are still compared as strings ($c >= 'a'), which orders them the same way.
         $numberLike = static fn (Type $t): bool => !$t->nullable && ($t->isChar() || $t->isNumeric());
         $comparison = in_array($op, ['==', '!=', '<', '>', '<=', '>='], true);
+        if (in_array($op, ['<', '>', '<=', '>='], true)) {
+            $l = $this->enumValue($l);
+            $r = $this->enumValue($r);
+        }
         if (($l->type->isChar() || $r->type->isChar()) && $numberLike($l->type) && $numberLike($r->type)
             && !in_array($op, ['&&', '||', '??'], true) && !($comparison && $l->type->isChar() && $r->type->isChar())) {
             $l = $this->charToInt($l);
@@ -389,16 +409,29 @@ trait EmitsExpressions
 
     private function assignment(AssignExpr $e): Emitted
     {
+        if ($e->operator !== '=' && $e->operator !== '??=') {
+            $update = $this->collectionElementUpdate($e->target, substr($e->operator, 0, -1), $e->value, $e);
+            if ($update !== null) {
+                return $update;
+            }
+        }
         $target = $this->place($e->target);
         $type = $target->type;
         $op = $e->operator;
 
         if ($target->member?->isStaticAccessor) {
-            $value = match ($op) {
-                '=' => $this->convert($e->value, $type),
-                '??=' => Emitted::value($target->code . ' ?? ' . $this->wrap($this->convert($e->value, $type), Prec::COALESCE), $type, Prec::COALESCE),
-                default => $this->binaryOperation(substr($op, 0, -1), $target, $this->expr($e->value), $e),
-            };
+            if ($op === '??=') {
+                // Only a null value is replaced: Type::get_X() ?? Type::set_X(value)
+                $set = $this->callStaticSetter($target, $this->convert($e->value, $type), $e);
+
+                return Emitted::value($target->code . ' ?? ' . $this->wrap($set, Prec::COALESCE), $type, Prec::COALESCE);
+            }
+            $value = $op === '='
+                ? $this->convert($e->value, $type)
+                : $this->binaryOperation(substr($op, 0, -1), $target, $this->expr($e->value), $e);
+            if ($type->isChar() && !$value->type->isChar() && !$value->type->isString()) {
+                $value = $this->intToChar($value);
+            }
 
             return $this->callStaticSetter($target, $value, $e);
         }
@@ -467,6 +500,40 @@ trait EmitsExpressions
         $temp = $this->temp($at);
 
         return Emitted::value("($setter($temp = {$value->code}) ?? $temp)", $target->type);
+    }
+
+    /**
+     * dict[key] += value, list[i]++: compiled to Op::update() for collection objects, whose elements
+     * PHP cannot modify in place. Null for any other target (arrays and strings work natively).
+     *
+     * @param ?Expr $value the right operand, or null for ++/-- (an operand of 1)
+     */
+    private function collectionElementUpdate(Expr $target, string $operator, ?Expr $value, Expr $at, bool $returnOld = false): ?Emitted
+    {
+        if (!$target instanceof ElementAccessExpr || $target->nullConditional || count($target->indexes) !== 1) {
+            return null;
+        }
+        $receiver = $this->expr($target->target);
+        $symbol = $this->symbolForType($receiver->type);
+        $offsetGet = $symbol !== null ? $this->findMethod($symbol, 'offsetGet') : null;
+        if ($symbol === null || $offsetGet === null) {
+            return null;
+        }
+        $subst = $symbol->substitutionFor($receiver->type);
+        $keyType = isset($offsetGet->params[0]) ? $offsetGet->params[0]->type->substitute($subst) : Type::mixed();
+        $elementType = $offsetGet->type->substitute($subst);
+        $key = $this->convert($target->indexes[0], $keyType);
+
+        $oldName = $this->temp($at);
+        $old = Emitted::value($oldName, $elementType);
+        $new = $this->binaryOperation($operator, $old, $value !== null ? $this->expr($value) : Emitted::value('1', Type::int()), $at);
+        if ($elementType->isChar() && !$new->type->isString()) {
+            $new = $this->intToChar($new);
+        }
+        $code = $this->runtime('Op') . "::update({$this->wrap($receiver, Prec::ATOM)}, {$key->code}, fn ($oldName) => {$new->code}"
+            . ($returnOld ? ', returnOld: true' : '') . ')';
+
+        return Emitted::value($code, $elementType);
     }
 
     /** An expression used as an assignment target (variable, property, indexer). */
@@ -593,16 +660,34 @@ trait EmitsExpressions
         }
     }
 
+    /** .NET names of the C# keyword types, for typeof(long).Name == "Int64". */
+    private const KEYWORD_TYPE_NAMES = [
+        'int' => 'Int32', 'long' => 'Int64', 'short' => 'Int16', 'byte' => 'Byte', 'sbyte' => 'SByte',
+        'uint' => 'UInt32', 'ulong' => 'UInt64', 'ushort' => 'UInt16', 'float' => 'Single', 'double' => 'Double',
+        'decimal' => 'Decimal', 'bool' => 'Boolean', 'char' => 'Char', 'string' => 'String', 'object' => 'Object',
+    ];
+
     private function typeOf(TypeOfExpr $e): Emitted
     {
         $type = $this->resolveType($e->type);
-        $operand = match (true) {
-            $type->isClass() => $this->classRef((string) $type->class) . '::class',
-            $type->kind === 'typeparam' => self::phpString((string) $type->param),
-            default => self::phpString($type->withNullable(false)->runtimeSpec()),
-        };
+        $typeClass = $this->runtime('System\\Type');
+        $code = $type->isClass()
+            ? "$typeClass::ofClass(" . $this->classRef((string) $type->class) . '::class)'
+            : "$typeClass::named(" . self::phpString($this->dotNetName($e->type, $type)) . ')';
 
-        return Emitted::value($this->runtime('System\\Type') . "::of($operand)", self::systemType());
+        return Emitted::value($code, self::systemType());
+    }
+
+    /** "System.Int64" for long, "System.Int32[]" for int[], the parameter name for T. */
+    private function dotNetName(TypeRef $ref, Type $type): string
+    {
+        return match (true) {
+            $ref->name === '[]' => $this->dotNetName($ref->args[0], $type->element()) . '[]',
+            isset(self::KEYWORD_TYPE_NAMES[$ref->name]) => 'System.' . self::KEYWORD_TYPE_NAMES[$ref->name],
+            $type->kind === 'typeparam' => (string) $type->param,
+            $type->isClass() => Names::csharpName((string) $type->class),
+            default => \SharpPhp\Runtime\TypeName::ofSpec($type->withNullable(false)->runtimeSpec()),
+        };
     }
 
     private static function systemType(): Type
@@ -701,12 +786,14 @@ trait EmitsExpressions
             throw $this->violation($inaccessible, $e);
         }
         $ctorParams = $this->symbols->constructorParams($symbol);
+        if ($symbol->isStruct && $e->args === [] && $ctorParams !== null && $ctorParams !== [] && !$ctorParams[0]->optional) {
+            throw $this->error('SP1010', "Structs are classes in SharpPHP, so 'new {$symbol->csharpName()}()' has no implicit parameterless constructor; pass the constructor's arguments", $e);
+        }
         if ($ctorParams !== null) {
             $name = $symbol->csharpName();
-            $short = substr((string) strrchr('.' . $name, '.'), 1);
-            $this->checkArguments($e->args, $ctorParams, $name, $this->signature("$name.$short", $ctorParams), $e, constructor: true);
+            $this->checkArguments($e->args, $ctorParams, $name, $this->signature("$name.{$symbol->shortName()}", $ctorParams), $e, constructor: true, runtime: $symbol->external);
         }
-        [$args] = $this->arguments($e->args, $ctorParams ?? [], $symbol->substitutionFor($type));
+        [$args] = $this->arguments($e->args, $ctorParams ?? [], $symbol->substitutionFor($type), runtime: $symbol->external);
         $of = $this->collectionElementSpec($type, $symbol);
         $items = $e->initializer?->items ?? [];
         $elementType = $this->elementTypeOf($type);
@@ -835,11 +922,12 @@ trait EmitsExpressions
         $expectedParams = $expected !== null && $expected->kind === 'closure' ? array_slice($expected->args, 0, -1) : [];
         $expectedReturn = $expected !== null && $expected->kind === 'closure' && $expected->args !== [] ? $expected->closureReturn() : null;
 
-        $assignments = $this->assignments->save();
+        $outer = $this->flow->save();
+        $this->flow->restore($outer ?? []); // a lambda in unreachable code is still checked
         try {
             return $this->lambdaInScope($e, $context, $expectedParams, $expectedReturn);
         } finally {
-            $this->assignments->restore($assignments); // a lambda may never run: its assignments do not count
+            $this->flow->restore($outer); // a lambda may never run: its assignments do not count
         }
     }
 
@@ -866,16 +954,16 @@ trait EmitsExpressions
             $function = new FunctionContext($static, $expectedReturn ?? Type::mixed(), $outerFn?->typeParams ?? [], $outerFn);
 
             if ($e->body instanceof Block) {
-                if ($expectedReturn !== null && !$expectedReturn->isUnknown() && $expectedReturn->kind !== 'void' && $this->flow->endReachable($e->body)) {
-                    $delegate = $this->delegateName(Type::closure([...$paramTypes, $expectedReturn]));
-                    throw $this->error('SP1643', "Not all code paths return a value in lambda expression of type '$delegate'", $e);
-                }
                 $outerWriter = $this->w;
                 $this->w = new CodeWriter();
                 $this->w->sourceLine = $outerWriter->sourceLine;
                 $this->w->indent();
                 try {
                     $this->inFunction($function, fn () => $this->statements($e->body->statements));
+                    if ($this->flow->isReachable() && $expectedReturn !== null && !$expectedReturn->isUnknown() && $expectedReturn->kind !== 'void') {
+                        $delegate = $this->delegateName(Type::closure([...$paramTypes, $expectedReturn]));
+                        throw $this->error('SP1643', "Not all code paths return a value in lambda expression of type '$delegate'", $e);
+                    }
                     $body = $this->w->embedded();
                 } finally {
                     $this->w = $outerWriter;

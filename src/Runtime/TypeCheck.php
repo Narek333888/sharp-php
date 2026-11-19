@@ -20,6 +20,11 @@ final class TypeCheck
             }
             $spec = substr($spec, 1);
         }
+        if ($value === null) {
+            // C# reference types (classes, string, arrays, delegates) hold null; value types
+            // (numbers, bool, char, enums) do not.
+            return !in_array($spec, ['int', 'float', 'bool', 'char'], true) && !enum_exists($spec);
+        }
 
         return match ($spec) {
             'int' => is_int($value),

@@ -18,7 +18,6 @@ use SharpPhp\Semantics\AccessRules;
 use SharpPhp\Semantics\ArgumentMatcher;
 use SharpPhp\Semantics\Conversions;
 use SharpPhp\Semantics\Names;
-use SharpPhp\Semantics\Reachability;
 use SharpPhp\Semantics\Violation;
 use SharpPhp\Semantics\ResolutionContext;
 use SharpPhp\Semantics\SymbolTable;
@@ -56,8 +55,7 @@ final class Emitter
     private readonly Conversions $conversions;
     private readonly AccessRules $access;
     private readonly ArgumentMatcher $argumentMatcher;
-    private readonly Reachability $flow;
-    private readonly DefiniteAssignment $assignments;
+    private readonly FlowState $flow;
 
     /** Expression statement being emitted, whose value is not used (see effect()). */
     private ?\SharpPhp\Syntax\Expr $discarded = null;
@@ -74,8 +72,7 @@ final class Emitter
         $this->conversions = new Conversions($symbols);
         $this->access = new AccessRules($symbols);
         $this->argumentMatcher = new ArgumentMatcher();
-        $this->flow = new Reachability();
-        $this->assignments = new DefiniteAssignment();
+        $this->flow = new FlowState();
     }
 
     public function emit(CompilationUnit $unit): GeneratedFile
@@ -258,13 +255,13 @@ final class Emitter
             throw $this->error('SP0128', "A local variable or function named '$name' is already defined in this scope", $at);
         }
         $this->scope->declare($name, $type);
-        $this->assignments->declare($this->scope, $name, $assigned);
+        $this->flow->declare($this->scope, $name, $assigned);
     }
 
     /** Definite assignment: "int x; Console.WriteLine(x);" does not compile in C#. */
     private function requireAssigned(string $name, Node $at): void
     {
-        if ($this->assignments->isUnassigned($this->scope, $name)) {
+        if ($this->flow->isUnassigned($this->scope, $name)) {
             throw $this->error('SP0165', "Use of unassigned local variable '$name'", $at);
         }
     }
@@ -272,7 +269,7 @@ final class Emitter
     private function markAssigned(\SharpPhp\Syntax\Expr $target): void
     {
         if ($target instanceof \SharpPhp\Syntax\NameExpr) {
-            $this->assignments->assign($this->scope, $target->name);
+            $this->flow->assign($this->scope, $target->name);
         }
     }
 

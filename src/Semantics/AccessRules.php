@@ -27,11 +27,32 @@ final class AccessRules
 
     public function accessViolation(MemberSymbol $member, ?TypeSymbol $from): ?Violation
     {
-        if ($member->owner->external || $this->canAccess($from, $member->owner, $member->visibility)) {
+        if ($member->owner->external || $this->canAccess($from, $this->declaringType($member), $member->visibility)) {
             return null;
         }
 
         return new Violation('SP0122', "'{$member->displayName()}' is inaccessible due to its protection level");
+    }
+
+    /**
+     * The class that first declared the member: an override is as accessible as the member it
+     * overrides (Base code may call a protected method that Derived overrides).
+     */
+    private function declaringType(MemberSymbol $member): TypeSymbol
+    {
+        $declaring = $member->owner;
+        for ($base = $this->baseOf($declaring); $base !== null; $base = $this->baseOf($base)) {
+            if (isset($base->members[$member->name])) {
+                $declaring = $base;
+            }
+        }
+
+        return $declaring;
+    }
+
+    private function baseOf(TypeSymbol $type): ?TypeSymbol
+    {
+        return $type->baseClass !== null ? $this->symbols->find($type->baseClass) : null;
     }
 
     public function constructorViolation(TypeSymbol $type, ?TypeSymbol $from): ?Violation
@@ -39,22 +60,23 @@ final class AccessRules
         if ($type->constructorVisibility === null || $this->canAccess($from, $type, $type->constructorVisibility)) {
             return null;
         }
-        $name = $type->csharpName();
-        $short = substr((string) strrchr('.' . $name, '.'), 1);
-
-        return new Violation('SP0122', "'$name.$short()' is inaccessible due to its protection level");
+        return new Violation('SP0122', "'{$type->csharpName()}.{$type->shortName()}()' is inaccessible due to its protection level");
     }
 
     /**
-     * @param bool $inOwnConstructor the assignment is in a constructor of the member's class
+     * @param ?TypeSymbol $constructorOf the class whose constructor the assignment is in, if any
      * @param bool $inInitializer the assignment is part of an object initializer or a "with" expression
      */
-    public function writeViolation(MemberSymbol $member, ?TypeSymbol $from, bool $inOwnConstructor, bool $inInitializer = false): ?Violation
+    public function writeViolation(MemberSymbol $member, ?TypeSymbol $from, ?TypeSymbol $constructorOf, bool $inInitializer = false): ?Violation
     {
         if ($member->owner->external) {
             return null;
         }
         $name = $member->displayName();
+        // Get-only properties and readonly fields: only the declaring class's constructor.
+        // Init accessors: derived classes' constructors too (on this/base).
+        $inOwnConstructor = $constructorOf !== null && strcasecmp($constructorOf->fqn, $member->owner->fqn) === 0;
+        $inDerivedConstructor = $constructorOf !== null && $this->symbols->isSubtypeOf($constructorOf->fqn, $member->owner->fqn);
 
         if ($member->kind === 'field') {
             return $member->isReadonly && !$inOwnConstructor
@@ -70,12 +92,12 @@ final class AccessRules
                 : new Violation('SP0200', "Property or indexer '$name' cannot be assigned to -- it is read only");
         }
         if ($member->setter === 'init') {
-            return $inOwnConstructor || $inInitializer
+            return $inDerivedConstructor || $inInitializer
                 ? null
                 : new Violation('SP8852', "Init-only property or indexer '$name' can only be assigned in an object initializer, or on 'this' or 'base' in an instance constructor or an 'init' accessor");
         }
 
-        return $this->canAccess($from, $member->owner, $member->setter)
+        return $this->canAccess($from, $this->declaringType($member), $member->setter)
             ? null
             : new Violation('SP0272', "The property or indexer '$name' cannot be used in this context because the set accessor is inaccessible");
     }

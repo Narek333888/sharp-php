@@ -11,6 +11,7 @@ use SharpPhp\Runtime\Op;
  */
 final class Convert
 {
+    /** @sharp-char-as-int $value Convert.ToInt32('A') is 65, as in C# */
     public static function ToInt32(mixed $value): int
     {
         return match (true) {

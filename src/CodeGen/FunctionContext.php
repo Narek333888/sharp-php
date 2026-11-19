@@ -17,6 +17,9 @@ final class FunctionContext
     /** @var list<string> catch variables, innermost last (for "throw;") */
     public array $catchVariables = [];
 
+    /** @var list<string> out parameters, which must be assigned before the method returns */
+    public array $outParams = [];
+
     private int $temp = 0;
 
     /**
