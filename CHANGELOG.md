@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - Language server: `sharp lsp` gives editors completion (members after a dot, names in scope, namespaces
   after `using`), errors while typing, hover and go to definition; PhpStorm uses it through the LSP4IJ
