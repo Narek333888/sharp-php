@@ -70,6 +70,12 @@ Builds are cached: sources are recompiled only when a `.sphp` file (or the compi
 | `sharp compile <file.sphp>` | Print the PHP generated for one file |
 | `sharp clean [--project=DIR]` | Delete the build directory |
 
+## Editor support
+
+Syntax highlighting for `.sphp` files in PhpStorm (and other JetBrains IDEs) and VS Code ships with the
+package: in PhpStorm, open **Settings → Editor → TextMate Bundles**, click **+** and choose
+`vendor/armdevstack/sharp-php/editors/sharpphp`. See [editors/sharpphp](editors/sharpphp/README.md).
+
 ## Configuration
 
 Optional, in the project's `composer.json`:

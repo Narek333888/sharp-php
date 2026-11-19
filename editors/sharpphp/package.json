@@ -1,0 +1,40 @@
+{
+    "name": "sharpphp",
+    "displayName": "SharpPHP",
+    "description": "Syntax highlighting for SharpPHP (.sphp), a C#-like language that compiles to PHP",
+    "version": "0.1.3",
+    "publisher": "armdevstack",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Narek333888/sharp-php"
+    },
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "sharpphp",
+                "aliases": [
+                    "SharpPHP",
+                    "sharpphp"
+                ],
+                "extensions": [
+                    ".sphp"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "sharpphp",
+                "scopeName": "source.sharpphp",
+                "path": "./syntaxes/sharpphp.tmLanguage.json"
+            }
+        ]
+    }
+}

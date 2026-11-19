@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Syntax highlighting for `.sphp` files in PhpStorm (TextMate bundle) and VS Code: `editors/sharpphp`
+
 ## 0.1.2
 
 - The package is now `armdevstack/sharp-php` (it was published as `narek/sharp-php` before):

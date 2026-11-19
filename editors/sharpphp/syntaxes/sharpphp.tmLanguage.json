@@ -1,0 +1,524 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "SharpPHP",
+    "scopeName": "source.sharpphp",
+    "fileTypes": [
+        "sphp"
+    ],
+    "patterns": [
+        {
+            "include": "#code"
+        }
+    ],
+    "repository": {
+        "code": {
+            "patterns": [
+                {
+                    "include": "#comments"
+                },
+                {
+                    "include": "#strings"
+                },
+                {
+                    "include": "#char"
+                },
+                {
+                    "include": "#numbers"
+                },
+                {
+                    "include": "#namespace-and-using"
+                },
+                {
+                    "include": "#type-declaration"
+                },
+                {
+                    "include": "#keywords"
+                },
+                {
+                    "include": "#builtin-types"
+                },
+                {
+                    "include": "#type-references"
+                },
+                {
+                    "include": "#function-names"
+                },
+                {
+                    "include": "#operators"
+                },
+                {
+                    "include": "#punctuation"
+                },
+                {
+                    "include": "#identifiers"
+                }
+            ]
+        },
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.block.documentation.sharpphp",
+                    "match": "///.*$"
+                },
+                {
+                    "name": "comment.line.double-slash.sharpphp",
+                    "match": "//.*$"
+                },
+                {
+                    "name": "comment.block.sharpphp",
+                    "begin": "/\\*",
+                    "end": "\\*/",
+                    "beginCaptures": {
+                        "0": {
+                            "name": "punctuation.definition.comment.sharpphp"
+                        }
+                    },
+                    "endCaptures": {
+                        "0": {
+                            "name": "punctuation.definition.comment.sharpphp"
+                        }
+                    }
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "include": "#interpolated-verbatim-string"
+                },
+                {
+                    "include": "#interpolated-string"
+                },
+                {
+                    "include": "#verbatim-string"
+                },
+                {
+                    "include": "#string"
+                }
+            ]
+        },
+        "string": {
+            "name": "string.quoted.double.sharpphp",
+            "begin": "\"",
+            "end": "\"|$",
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.begin.sharpphp"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.end.sharpphp"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#escapes"
+                }
+            ]
+        },
+        "verbatim-string": {
+            "name": "string.quoted.double.verbatim.sharpphp",
+            "begin": "@\"",
+            "end": "\"(?!\")",
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.begin.sharpphp"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.end.sharpphp"
+                }
+            },
+            "patterns": [
+                {
+                    "name": "constant.character.escape.sharpphp",
+                    "match": "\"\""
+                }
+            ]
+        },
+        "interpolated-string": {
+            "name": "string.quoted.double.interpolated.sharpphp",
+            "begin": "\\$\"",
+            "end": "\"|$",
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.begin.sharpphp"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.end.sharpphp"
+                }
+            },
+            "patterns": [
+                {
+                    "name": "constant.character.escape.sharpphp",
+                    "match": "\\{\\{|\\}\\}"
+                },
+                {
+                    "include": "#escapes"
+                },
+                {
+                    "include": "#interpolation"
+                }
+            ]
+        },
+        "interpolated-verbatim-string": {
+            "name": "string.quoted.double.interpolated.verbatim.sharpphp",
+            "begin": "(?:\\$@|@\\$)\"",
+            "end": "\"(?!\")",
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.begin.sharpphp"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.end.sharpphp"
+                }
+            },
+            "patterns": [
+                {
+                    "name": "constant.character.escape.sharpphp",
+                    "match": "\\{\\{|\\}\\}|\"\""
+                },
+                {
+                    "include": "#interpolation"
+                }
+            ]
+        },
+        "interpolation": {
+            "name": "meta.interpolation.sharpphp",
+            "begin": "\\{",
+            "end": "\\}",
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.section.interpolation.begin.sharpphp"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.section.interpolation.end.sharpphp"
+                }
+            },
+            "contentName": "meta.embedded.expression.sharpphp",
+            "patterns": [
+                {
+                    "include": "#parenthesized"
+                },
+                {
+                    "name": "constant.other.format-specifier.sharpphp",
+                    "match": ":[^}]*(?=\\})"
+                },
+                {
+                    "include": "#code"
+                }
+            ]
+        },
+        "parenthesized": {
+            "begin": "\\(",
+            "end": "\\)",
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.parenthesis.open.sharpphp"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.parenthesis.close.sharpphp"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#parenthesized"
+                },
+                {
+                    "include": "#code"
+                }
+            ]
+        },
+        "escapes": {
+            "name": "constant.character.escape.sharpphp",
+            "match": "\\\\(?:[\\\\'\\\"0abfnrtve]|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})"
+        },
+        "char": {
+            "name": "string.quoted.single.sharpphp",
+            "match": "'(?:\\\\(?:[\\\\'\\\"0abfnrtve]|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4})|[^'\\\\\\n])'"
+        },
+        "numbers": {
+            "name": "constant.numeric.sharpphp",
+            "match": "\\b(?:0[xX][0-9A-Fa-f_]+|0[bB][01_]+|[0-9][0-9_]*(?:\\.[0-9][0-9_]*)?(?:[eE][+-]?[0-9]+)?)(?:[uU][lL]?|[lL][uU]?|[fFdDmM])?\\b"
+        },
+        "namespace-and-using": {
+            "patterns": [
+                {
+                    "match": "\\b(namespace)\\s+([A-Za-z_][\\w.]*)",
+                    "captures": {
+                        "1": {
+                            "name": "storage.type.namespace.sharpphp"
+                        },
+                        "2": {
+                            "name": "entity.name.type.namespace.sharpphp"
+                        }
+                    }
+                },
+                {
+                    "match": "^\\s*(using)\\s+(?:(@?[A-Za-z_][A-Za-z0-9_]*)\\s*(=)\\s*)?([A-Za-z_][\\w.]*)\\s*(?=;)",
+                    "captures": {
+                        "1": {
+                            "name": "keyword.other.using.sharpphp"
+                        },
+                        "2": {
+                            "name": "entity.name.type.alias.sharpphp"
+                        },
+                        "3": {
+                            "name": "keyword.operator.assignment.sharpphp"
+                        },
+                        "4": {
+                            "name": "entity.name.type.namespace.sharpphp"
+                        }
+                    }
+                }
+            ]
+        },
+        "type-declaration": {
+            "match": "\\b(class|struct|record|interface|enum)\\s+(@?[A-Za-z_][A-Za-z0-9_]*)",
+            "captures": {
+                "1": {
+                    "name": "storage.type.$1.sharpphp"
+                },
+                "2": {
+                    "name": "entity.name.type.$1.sharpphp"
+                }
+            }
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.sharpphp",
+                    "match": "\\b(?:if|else|switch|case|default|while|do|for|foreach|in|break|continue|return|throw|try|catch|finally|yield|goto|when)\\b"
+                },
+                {
+                    "name": "keyword.operator.expression.sharpphp",
+                    "match": "\\b(?:is|as|new|typeof|nameof|sizeof|and|or|not|with|await|stackalloc|checked|unchecked)\\b"
+                },
+                {
+                    "name": "storage.modifier.sharpphp",
+                    "match": "\\b(?:public|private|protected|internal|static|readonly|const|abstract|virtual|override|sealed|partial|async|extern|unsafe|volatile|params|ref|out|required|file)\\b"
+                },
+                {
+                    "name": "storage.type.sharpphp",
+                    "match": "\\b(?:class|struct|record|interface|enum|delegate|event|var|operator|implicit|explicit)\\b"
+                },
+                {
+                    "name": "keyword.other.accessor.sharpphp",
+                    "match": "\\b(?:get|set|init|add|remove)\\b(?=\\s*(?:;|\\{|=>))"
+                },
+                {
+                    "name": "keyword.other.sharpphp",
+                    "match": "\\b(?:using|where|lock|fixed|global)\\b"
+                },
+                {
+                    "name": "variable.language.sharpphp",
+                    "match": "\\b(?:this|base|value)\\b(?!\\s*\\()"
+                },
+                {
+                    "name": "constant.language.sharpphp",
+                    "match": "\\b(?:true|false|null)\\b"
+                }
+            ]
+        },
+        "builtin-types": {
+            "name": "keyword.type.sharpphp",
+            "match": "\\b(?:bool|byte|sbyte|char|decimal|double|float|int|uint|long|ulong|short|ushort|object|string|void|dynamic|nint|nuint)\\b"
+        },
+        "type-references": {
+            "patterns": [
+                {
+                    "match": "(?<=\\bnew\\s|\\bis\\s|\\bas\\s)([A-Z][A-Za-z0-9_]*)",
+                    "captures": {
+                        "1": {
+                            "name": "entity.name.type.sharpphp"
+                        }
+                    }
+                },
+                {
+                    "match": "\\b([A-Z][A-Za-z0-9_]*)(?=\\s*<(?:[^<>()]|<[^<>()]*>)*>)",
+                    "captures": {
+                        "1": {
+                            "name": "entity.name.type.sharpphp"
+                        }
+                    }
+                },
+                {
+                    "match": "\\b([A-Z][A-Za-z0-9_]*)(\\??)(?=\\s+@?[A-Za-z_][A-Za-z0-9_]*\\s*(?:[=;,)]|=>|\\bin\\b))",
+                    "captures": {
+                        "1": {
+                            "name": "entity.name.type.sharpphp"
+                        },
+                        "2": {
+                            "name": "keyword.operator.nullable.sharpphp"
+                        }
+                    }
+                },
+                {
+                    "match": "\\b([A-Z][A-Za-z0-9_]*)(?=\\s*\\[\\s*\\]\\s*@?[A-Za-z_])",
+                    "captures": {
+                        "1": {
+                            "name": "entity.name.type.sharpphp"
+                        }
+                    }
+                },
+                {
+                    "match": "(?<=\\()([A-Z][A-Za-z0-9_]*)(?=\\)\\s*@?[A-Za-z_(])",
+                    "captures": {
+                        "1": {
+                            "name": "entity.name.type.sharpphp"
+                        }
+                    }
+                },
+                {
+                    "comment": "Static access: Console.WriteLine, Math.Max, Color.Red (a capitalized name starting a member chain)",
+                    "match": "(?<![.\\w@])([A-Z][A-Za-z0-9_]*)(?=\\s*\\.\\s*[A-Za-z_])",
+                    "captures": {
+                        "1": {
+                            "name": "entity.name.type.sharpphp"
+                        }
+                    }
+                },
+                {
+                    "comment": "Interfaces by the .NET naming convention: IShape, IComparable",
+                    "match": "\\b(I[A-Z][A-Za-z0-9_]*)\\b",
+                    "captures": {
+                        "1": {
+                            "name": "entity.name.type.interface.sharpphp"
+                        }
+                    }
+                },
+                {
+                    "comment": "Type arguments: List<Product>, Dictionary<string, Order>",
+                    "match": "(?<=<|<\\s|,\\s|,)([A-Z][A-Za-z0-9_]*)(?=\\s*(?:>|,|<|\\[|\\?))",
+                    "captures": {
+                        "1": {
+                            "name": "entity.name.type.sharpphp"
+                        }
+                    }
+                }
+            ]
+        },
+        "function-names": {
+            "match": "(@?[A-Za-z_][A-Za-z0-9_]*)\\s*(?=(?:<(?:[^<>()]|<[^<>()]*>)*>)?\\s*\\()",
+            "captures": {
+                "1": {
+                    "name": "entity.name.function.sharpphp"
+                }
+            }
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "storage.type.function.arrow.sharpphp",
+                    "match": "=>"
+                },
+                {
+                    "name": "keyword.operator.null-coalescing.sharpphp",
+                    "match": "\\?\\?=?"
+                },
+                {
+                    "name": "keyword.operator.null-conditional.sharpphp",
+                    "match": "\\?\\.|\\?(?=\\[)"
+                },
+                {
+                    "name": "keyword.operator.comparison.sharpphp",
+                    "match": "==|!=|<=|>="
+                },
+                {
+                    "name": "keyword.operator.logical.sharpphp",
+                    "match": "&&|\\|\\||!"
+                },
+                {
+                    "name": "keyword.operator.increment.sharpphp",
+                    "match": "\\+\\+|--"
+                },
+                {
+                    "name": "keyword.operator.assignment.compound.sharpphp",
+                    "match": "(?:[+\\-*/%&|^]|<<|>>)="
+                },
+                {
+                    "name": "keyword.operator.arithmetic.sharpphp",
+                    "match": "[+\\-*/%]"
+                },
+                {
+                    "name": "keyword.operator.bitwise.sharpphp",
+                    "match": "<<|>>|[&|^~]"
+                },
+                {
+                    "name": "keyword.operator.relational.sharpphp",
+                    "match": "[<>]"
+                },
+                {
+                    "name": "keyword.operator.assignment.sharpphp",
+                    "match": "="
+                },
+                {
+                    "name": "keyword.operator.conditional.sharpphp",
+                    "match": "[?:]"
+                }
+            ]
+        },
+        "punctuation": {
+            "patterns": [
+                {
+                    "name": "punctuation.terminator.statement.sharpphp",
+                    "match": ";"
+                },
+                {
+                    "name": "punctuation.separator.comma.sharpphp",
+                    "match": ","
+                },
+                {
+                    "name": "punctuation.accessor.sharpphp",
+                    "match": "\\."
+                },
+                {
+                    "name": "punctuation.curlybrace.open.sharpphp",
+                    "match": "\\{"
+                },
+                {
+                    "name": "punctuation.curlybrace.close.sharpphp",
+                    "match": "\\}"
+                },
+                {
+                    "name": "punctuation.squarebracket.open.sharpphp",
+                    "match": "\\["
+                },
+                {
+                    "name": "punctuation.squarebracket.close.sharpphp",
+                    "match": "\\]"
+                },
+                {
+                    "name": "punctuation.parenthesis.open.sharpphp",
+                    "match": "\\("
+                },
+                {
+                    "name": "punctuation.parenthesis.close.sharpphp",
+                    "match": "\\)"
+                }
+            ]
+        },
+        "identifiers": {
+            "patterns": [
+                {
+                    "name": "variable.other.constant.sharpphp",
+                    "match": "\\b[A-Z][A-Z0-9_]+\\b(?![a-z])"
+                },
+                {
+                    "name": "variable.other.readwrite.sharpphp",
+                    "match": "@?[A-Za-z_][A-Za-z0-9_]*"
+                }
+            ]
+        }
+    }
+}
