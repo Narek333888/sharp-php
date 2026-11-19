@@ -47,4 +47,12 @@ final class MemberSymbol
     {
         return $this->kind === 'field' || $this->kind === 'property';
     }
+
+    /** "Shop.Item.Price" or, for a method, "Shop.Item.Buy(int, string)", as C# names members in diagnostics. */
+    public function displayName(): string
+    {
+        $name = $this->owner->csharpName() . '.' . $this->name;
+
+        return $this->kind === 'method' ? $name . '(' . ParameterSymbol::describeTypes($this->params) . ')' : $name;
+    }
 }

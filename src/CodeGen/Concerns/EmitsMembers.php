@@ -106,7 +106,7 @@ trait EmitsMembers
             return Emitted::value('self::' . $member->name, $member->type);
         }
         if ($member->isStaticAccessor) {
-            return new Emitted('self::get_' . $member->name . '()', $member->type, member: $member);
+            return new Emitted('self::get_' . $member->name . '()', $member->type, member: $member, receiver: 'self::');
         }
         if ($member->isStatic) {
             return new Emitted('self::$' . $member->name, $member->type, member: $member);
@@ -119,67 +119,28 @@ trait EmitsMembers
     /** private/protected members of project classes (PHP would only fail at runtime). */
     private function requireAccessible(MemberSymbol $member, Node $at): void
     {
-        if (!$member->owner->external && !$this->canAccess($member->owner, $member->visibility)) {
-            throw $this->error('SP0122', "'{$this->memberDisplayName($member)}' is inaccessible due to its protection level", $at);
+        $violation = $this->access->accessViolation($member, $this->class);
+        if ($violation !== null) {
+            throw $this->violation($violation, $at);
         }
     }
 
-    private function canAccess(TypeSymbol $owner, string $visibility): bool
-    {
-        return match ($visibility) {
-            'private' => $this->class !== null && strcasecmp($this->class->fqn, $owner->fqn) === 0,
-            'protected' => $this->class !== null && $this->symbols->isSubtypeOf($this->class->fqn, $owner->fqn),
-            default => true,
-        };
-    }
 
     /**
      * Rejects assignments C# does not allow: get-only and init-only properties outside the
      * constructor, inaccessible setters, readonly fields.
      */
+    /** Assignments C# does not allow: get-only/init-only properties, inaccessible setters, readonly fields. */
     private function requireWritable(MemberSymbol $member, Node $at, bool $initializer = false): void
     {
-        if ($member->owner->external) {
-            return;
-        }
-        $name = $this->memberDisplayName($member);
-        $inConstructor = $this->fn !== null && $this->fn->isConstructor && $this->class !== null
+        $inOwnConstructor = $this->fn !== null && $this->fn->isConstructor && $this->class !== null
             && strcasecmp($this->class->fqn, $member->owner->fqn) === 0;
-
-        if ($member->kind === 'field') {
-            if ($member->isReadonly && !$inConstructor) {
-                throw $this->error('SP0191', "A readonly field cannot be assigned to (except in a constructor or init-only setter of the type in which the field is defined or a variable initializer)", $at);
-            }
-
-            return;
-        }
-        if ($member->kind !== 'property') {
-            return;
-        }
-        if ($member->setter === null) {
-            if ($member->isAutoProperty && $inConstructor) {
-                return;
-            }
-            throw $this->error('SP0200', "Property or indexer '$name' cannot be assigned to -- it is read only", $at);
-        }
-        if ($member->setter === 'init') {
-            if ($inConstructor || $initializer) {
-                return;
-            }
-            throw $this->error('SP8852', "Init-only property or indexer '$name' can only be assigned in an object initializer, or on 'this' or 'base' in an instance constructor or an 'init' accessor", $at);
-        }
-        if (!$this->canAccess($member->owner, $member->setter)) {
-            throw $this->error('SP0272', "The property or indexer '$name' cannot be used in this context because the set accessor is inaccessible", $at);
+        $violation = $this->access->writeViolation($member, $this->class, $inOwnConstructor, $initializer);
+        if ($violation !== null) {
+            throw $this->violation($violation, $at);
         }
     }
 
-    /** "Shop.Item.Price", "Shop.Item.Buy(int)" */
-    private function memberDisplayName(MemberSymbol $member): string
-    {
-        $name = $member->owner->csharpName() . '.' . $member->name;
-
-        return $member->kind === 'method' ? $this->signature($name, $member->params) : $name;
-    }
 
     private function requireInstance(MemberSymbol $member, Node $at): void
     {
@@ -354,7 +315,9 @@ trait EmitsMembers
         return match ($member->kind) {
             'method' => new Emitted($type->code . '::', $memberType, Prec::ATOM, 'method', member: $member),
             'const', 'case' => Emitted::value("{$type->code}::$name", $memberType),
-            default => new Emitted($member->isStaticAccessor ? "{$type->code}::get_$name()" : "{$type->code}::\$$name", $memberType, member: $member),
+            default => $member->isStaticAccessor
+                ? new Emitted("{$type->code}::get_$name()", $memberType, member: $member, receiver: "{$type->code}::")
+                : new Emitted("{$type->code}::\$$name", $memberType, member: $member),
         };
     }
 
@@ -438,11 +401,7 @@ trait EmitsMembers
 
     private function symbolForType(Type $type): ?TypeSymbol
     {
-        if (($type->kind === 'class' || $type->kind === 'typeparam') && $type->class !== null) {
-            return $this->symbols->find($type->class);
-        }
-
-        return null;
+        return $this->symbols->symbolForType($type);
     }
 
     /**
@@ -763,38 +722,22 @@ trait EmitsMembers
      * @param list<Argument> $args
      * @param list<ParameterSymbol> $params
      */
+    /**
+     * @param list<Argument> $args
+     * @param list<ParameterSymbol> $params
+     */
     private function checkArguments(array $args, array $params, string $name, string $signature, Node $at, bool $constructor = false): void
     {
-        $variadic = $params !== [] && $params[array_key_last($params)]->modifier === 'params';
-        $positional = 0;
-        $named = [];
-        foreach ($args as $arg) {
-            if ($arg->name === null) {
-                $positional++;
-                continue;
-            }
-            $known = array_filter($params, static fn (ParameterSymbol $p): bool => $p->name === $arg->name);
-            if ($known === []) {
-                throw $this->error('SP1739', "The best overload for '$name' does not have a parameter named '{$arg->name}'", $arg->value);
-            }
-            $named[$arg->name] = true;
-        }
-        if ($positional > count($params) && !$variadic) {
-            throw $constructor
-                ? $this->error('SP1729', "'$name' does not contain a constructor that takes " . count($args) . ' arguments', $at)
-                : $this->error('SP1501', "No overload for method '$name' takes " . count($args) . ' arguments', $at);
-        }
-        foreach ($params as $i => $param) {
-            if (!$param->optional && $param->modifier !== 'params' && $i >= $positional && !isset($named[$param->name])) {
-                throw $this->error('SP7036', "There is no argument given that corresponds to the required parameter '{$param->name}' of '$signature'", $at);
-            }
+        $violation = $this->argumentMatcher->violation($args, $params, $name, $signature, $constructor);
+        if ($violation !== null) {
+            throw $this->violation($violation, $at);
         }
     }
 
     /** @param list<ParameterSymbol> $params "Program.Sq(int)" */
     private function signature(string $name, array $params): string
     {
-        return $name . '(' . implode(', ', array_map(static fn (ParameterSymbol $p): string => $p->type->describe(), $params)) . ')';
+        return $name . '(' . ParameterSymbol::describeTypes($params) . ')';
     }
 
     /** Func<int, string> / Action<int> for a closure type. */

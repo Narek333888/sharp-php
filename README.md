@@ -36,7 +36,6 @@ public record Person(string Name, int Age);
 composer require narek/sharp-php
 ```
 
-Inside this repository the package is linked as a Composer path repository (`packages/sharp-php`).
 
 ## Quick start
 
@@ -202,7 +201,8 @@ SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 
 ```bash
 composer install
-composer test        # PHPUnit: lexer, diagnostics, code generation, runtime, end-to-end fixtures
+composer test        # PHPStan (max level) + PHPUnit: lexer, diagnostics, code generation, runtime, end-to-end fixtures
+composer analyse     # PHPStan only
 ```
 
 End-to-end tests live in `tests/Fixtures/<name>/`: `src/*.sphp` plus the expected output.

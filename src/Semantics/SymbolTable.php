@@ -98,6 +98,16 @@ final class SymbolTable
         return false;
     }
 
+    /** The class behind a class type, or behind a type parameter's class constraint. */
+    public function symbolForType(Type $type): ?TypeSymbol
+    {
+        if (($type->kind === 'class' || $type->kind === 'typeparam') && $type->class !== null) {
+            return $this->find($type->class);
+        }
+
+        return null;
+    }
+
     /** Finds a member on the type, its base classes and its interfaces. */
     public function findMember(TypeSymbol $type, string $name): ?MemberSymbol
     {

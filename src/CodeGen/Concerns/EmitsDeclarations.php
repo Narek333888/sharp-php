@@ -331,7 +331,7 @@ trait EmitsDeclarations
 
                         return;
                     }
-                    if ($isGet && $this->endReachable($accessor->body)) {
+                    if ($isGet && $this->flow->endReachable($accessor->body)) {
                         throw $this->error('SP0161', "'{$this->class->csharpName()}.$name.get': not all code paths return a value", $accessor);
                     }
                     $this->w->line($isGet ? 'get {' : 'set {');
@@ -385,7 +385,7 @@ trait EmitsDeclarations
 
                         return;
                     }
-                    if ($isGet && $this->endReachable($accessor->body)) {
+                    if ($isGet && $this->flow->endReachable($accessor->body)) {
                         throw $this->error('SP0161', "'{$this->class->csharpName()}.$name.get': not all code paths return a value", $accessor);
                     }
                     $this->statements($accessor->body->statements);
@@ -567,7 +567,7 @@ trait EmitsDeclarations
                     return;
                 }
 
-                if ($method->body !== null && !$isGenerator && $member->type->kind !== 'void' && $this->endReachable($method->body)) {
+                if ($method->body !== null && !$isGenerator && $member->type->kind !== 'void' && $this->flow->endReachable($method->body)) {
                     $params = implode(', ', array_map(static fn ($p): string => $p->type->describe(), $member->params));
                     throw $this->error('SP0161', "'{$this->class->csharpName()}.{$method->name}($params)': not all code paths return a value", $method);
                 }

@@ -108,7 +108,7 @@ trait EmitsExpressions
                 : Emitted::value((string) $e->value, Type::int()),
             'float' => Emitted::value(self::phpFloat((float) $e->value), Type::float()),
             'string' => Emitted::value(self::phpString((string) $e->value), Type::string()),
-            'char' => Emitted::value(self::phpString((string) $e->value), Type::char()),
+            'char' => new Emitted(self::phpString((string) $e->value), Type::char(), charCode: mb_ord((string) $e->value)),
             'bool' => Emitted::value($e->value ? 'true' : 'false', Type::bool()),
             default => Emitted::value('null', Type::null()),
         };
@@ -169,19 +169,14 @@ trait EmitsExpressions
     // Operators
     // ------------------------------------------------------------------
 
-    /** A char used as a number: its UTF-16 code ('A' => 65). Constant chars are folded. */
+    /** A char used as a number: its UTF-16 code ('A' => 65). Char literals are folded. */
     private function charToInt(Emitted $value): Emitted
     {
         if (!$value->type->isChar()) {
             return $value;
         }
-        if (preg_match("/^'([^'\\\\]|\\\\\\\\|\\\\')'$/u", $value->code, $m) === 1) {
-            return Emitted::value((string) mb_ord(stripslashes($m[1])), Type::int());
-        }
-        if (preg_match('/^"\\\\(?:x([0-9A-F]{2})|([nrtvfe]))"$/', $value->code, $m) === 1) {
-            $char = ($m[1] ?? '') !== '' ? hexdec($m[1]) : ['n' => 10, 'r' => 13, 't' => 9, 'v' => 11, 'f' => 12, 'e' => 27][$m[2]];
-
-            return Emitted::value((string) $char, Type::int());
+        if ($value->charCode !== null) {
+            return Emitted::value((string) $value->charCode, Type::int());
         }
 
         return Emitted::value('\\mb_ord(' . $value->code . ')', Type::int());
@@ -220,7 +215,7 @@ trait EmitsExpressions
                 if ($e->postfix && $this->discarded !== $e) {
                     // Old value: (set_X(($t = get_X()) + 1) ?? $t)
                     $temp = $this->temp($e);
-                    $setter = substr($target->code, 0, -strlen("get_{$target->member->name}()")) . "set_{$target->member->name}";
+                    $setter = $target->receiver . 'set_' . $target->member->name;
 
                     return Emitted::value("($setter(($temp = {$target->code}) $step 1) ?? $temp)", $target->type);
                 }
@@ -465,8 +460,7 @@ trait EmitsExpressions
      */
     private function callStaticSetter(Emitted $target, Emitted $value, Expr $at): Emitted
     {
-        $name = (string) $target->member?->name;
-        $setter = substr($target->code, 0, -strlen("get_$name()")) . "set_$name";
+        $setter = $target->receiver . 'set_' . $target->member?->name;
         if ($this->discarded === $at) {
             return Emitted::value("$setter({$value->code})", Type::void());
         }
@@ -702,14 +696,14 @@ trait EmitsExpressions
         }
 
         $class = $this->classRef($symbol->fqn);
-        if ($symbol->constructorVisibility !== null && !$this->canAccess($symbol, $symbol->constructorVisibility)) {
-            $short = substr($symbol->csharpName(), (int) strrpos('.' . $symbol->csharpName(), '.'));
-            throw $this->error('SP0122', "'{$symbol->csharpName()}.$short()' is inaccessible due to its protection level", $e);
+        $inaccessible = $this->access->constructorViolation($symbol, $this->class);
+        if ($inaccessible !== null) {
+            throw $this->violation($inaccessible, $e);
         }
         $ctorParams = $this->symbols->constructorParams($symbol);
         if ($ctorParams !== null) {
             $name = $symbol->csharpName();
-            $short = substr($name, (int) strrpos('.' . $name, '.'));
+            $short = substr((string) strrchr('.' . $name, '.'), 1);
             $this->checkArguments($e->args, $ctorParams, $name, $this->signature("$name.$short", $ctorParams), $e, constructor: true);
         }
         [$args] = $this->arguments($e->args, $ctorParams ?? [], $symbol->substitutionFor($type));
@@ -841,11 +835,11 @@ trait EmitsExpressions
         $expectedParams = $expected !== null && $expected->kind === 'closure' ? array_slice($expected->args, 0, -1) : [];
         $expectedReturn = $expected !== null && $expected->kind === 'closure' && $expected->args !== [] ? $expected->closureReturn() : null;
 
-        $unassigned = $this->unassigned;
+        $assignments = $this->assignments->save();
         try {
             return $this->lambdaInScope($e, $context, $expectedParams, $expectedReturn);
         } finally {
-            $this->unassigned = $unassigned; // a lambda may never run: its assignments do not count
+            $this->assignments->restore($assignments); // a lambda may never run: its assignments do not count
         }
     }
 
@@ -872,7 +866,7 @@ trait EmitsExpressions
             $function = new FunctionContext($static, $expectedReturn ?? Type::mixed(), $outerFn?->typeParams ?? [], $outerFn);
 
             if ($e->body instanceof Block) {
-                if ($expectedReturn !== null && !$expectedReturn->isUnknown() && $expectedReturn->kind !== 'void' && $this->endReachable($e->body)) {
+                if ($expectedReturn !== null && !$expectedReturn->isUnknown() && $expectedReturn->kind !== 'void' && $this->flow->endReachable($e->body)) {
                     $delegate = $this->delegateName(Type::closure([...$paramTypes, $expectedReturn]));
                     throw $this->error('SP1643', "Not all code paths return a value in lambda expression of type '$delegate'", $e);
                 }

@@ -130,37 +130,37 @@ trait EmitsStatements
     private function ifStatement(IfStmt $s): void
     {
         $this->w->line('if (' . $this->condition($s->condition) . ') {');
-        $before = $this->unassigned;
+        $before = $this->assignments->save();
         $outcomes = [];
         $this->body($s->then);
-        if ($this->endReachable($s->then)) {
-            $outcomes[] = $this->unassigned;
+        if ($this->flow->endReachable($s->then)) {
+            $outcomes[] = $this->assignments->save();
         }
         $last = $s;
         $else = $s->else;
         while ($else instanceof IfStmt) {
-            $this->unassigned = $before;
+            $this->assignments->restore($before);
             $this->w->sourceLine = $else->line;
             $this->w->line('} elseif (' . $this->condition($else->condition) . ') {');
-            $before = $this->unassigned;
+            $before = $this->assignments->save();
             $this->body($else->then);
-            if ($this->endReachable($else->then)) {
-                $outcomes[] = $this->unassigned;
+            if ($this->flow->endReachable($else->then)) {
+                $outcomes[] = $this->assignments->save();
             }
             $last = $else;
             $else = $else->else;
         }
-        $this->unassigned = $before;
+        $this->assignments->restore($before);
         if ($else !== null) {
             $this->w->line('} else {');
             $this->body($else);
-            if ($this->endReachable($else)) {
-                $outcomes[] = $this->unassigned;
+            if ($this->flow->endReachable($else)) {
+                $outcomes[] = $this->assignments->save();
             }
-        } elseif (!$this->isConstantTrue($last->condition)) {
+        } elseif (!$this->flow->isConstantTrue($last->condition)) {
             $outcomes[] = $before;
         }
-        $this->unassigned = self::mergeUnassigned($outcomes);
+        $this->assignments->merge($outcomes);
         $this->w->line('}');
     }
 
@@ -177,10 +177,10 @@ trait EmitsStatements
     private function whileStatement(WhileStmt $s): void
     {
         $this->w->line('while (' . $this->condition($s->condition) . ') {');
-        $before = $this->unassigned;
+        $before = $this->assignments->save();
         $this->loopBody($s->body);
-        if (!$this->isConstantTrue($s->condition)) {
-            $this->unassigned = $before; // the body may not run at all
+        if (!$this->flow->isConstantTrue($s->condition)) {
+            $this->assignments->restore($before); // the body may not run at all
         }
         $this->w->line('}');
     }
@@ -212,13 +212,13 @@ trait EmitsStatements
                 $init[] = $this->effect($expr);
             }
             $condition = $s->condition !== null ? $this->condition($s->condition) : '';
-            $before = $this->unassigned;
+            $before = $this->assignments->save();
             $iterators = array_map(fn ($e): string => $this->effect($e), $s->iterators);
 
             $this->w->line('for (' . implode(', ', $init) . '; ' . $condition . '; ' . implode(', ', $iterators) . ') {');
             $this->loopBody($s->body);
-            if ($s->condition !== null && !$this->isConstantTrue($s->condition)) {
-                $this->unassigned = $before;
+            if ($s->condition !== null && !$this->flow->isConstantTrue($s->condition)) {
+                $this->assignments->restore($before);
             }
             $this->w->line('}');
         });
@@ -246,9 +246,9 @@ trait EmitsStatements
             }
 
             $this->w->line("foreach ($source as $target) {");
-            $before = $this->unassigned;
+            $before = $this->assignments->save();
             $this->loopBody($s->body);
-            $this->unassigned = $before;
+            $this->assignments->restore($before);
             $this->w->line('}');
         });
     }
@@ -292,7 +292,7 @@ trait EmitsStatements
             $this->w->line('switch (true) {');
         }
 
-        $before = $this->unassigned;
+        $before = $this->assignments->save();
         $outcomes = [];
         $hasDefault = false;
         $this->fn->breakables[] = 'switch';
@@ -300,10 +300,9 @@ trait EmitsStatements
             $this->w->indent();
             foreach ($s->sections as $section) {
                 $this->w->sourceLine = $section->line;
-                $this->unassigned = $before;
+                $this->assignments->restore($before);
                 foreach ($section->labels as $label) {
-                    $hasDefault = $hasDefault || $label->pattern === null
-                        || (in_array($label->pattern->kind, ['discard', 'var'], true) && $label->when === null);
+                    $hasDefault = $hasDefault || $this->flow->isCatchAll($label);
                 }
                 $this->inScope(function () use ($section, $simple, $subject): void {
                     foreach ($section->labels as $label) {
@@ -326,9 +325,8 @@ trait EmitsStatements
                     $this->statements($section->statements);
                     $this->w->outdent();
                 });
-                $block = new Block($section->statements);
-                if ($this->endReachable($block) || $this->jumpsOut($block, \SharpPhp\Syntax\BreakStmt::class)) {
-                    $outcomes[] = $this->unassigned;
+                if ($this->flow->sectionExits($section)) {
+                    $outcomes[] = $this->assignments->save();
                 }
             }
             $this->w->outdent();
@@ -338,7 +336,7 @@ trait EmitsStatements
         if (!$hasDefault) {
             $outcomes[] = $before;
         }
-        $this->unassigned = self::mergeUnassigned($outcomes);
+        $this->assignments->merge($outcomes);
         $this->w->line('}');
     }
 
@@ -395,11 +393,11 @@ trait EmitsStatements
     private function tryStatement(TryStmt $s): void
     {
         $this->w->line('try {');
-        $before = $this->unassigned;
+        $before = $this->assignments->save();
         $outcomes = [];
         $this->body($s->body);
-        if ($this->endReachable($s->body)) {
-            $outcomes[] = $this->unassigned;
+        if ($this->flow->endReachable($s->body)) {
+            $outcomes[] = $this->assignments->save();
         }
 
         foreach ($s->catches as $catch) {
@@ -411,7 +409,7 @@ trait EmitsStatements
                 throw $this->error('SP0155', "The type caught or thrown must be derived from System.Exception", $catch->type ?? $catch);
             }
 
-            $this->unassigned = $before; // the exception may come before any assignment in the try block
+            $this->assignments->restore($before); // the exception may come before any assignment in the try block
             $variable = $catch->variable !== null ? '$' . $catch->variable : $this->fn->temp('e');
             $this->w->line('} catch (' . $this->catchTypes((string) $type->class) . " $variable) {");
             $this->w->indent();
@@ -432,20 +430,19 @@ trait EmitsStatements
                 }
             });
             $this->w->outdent();
-            if ($this->endReachable($catch->body)) {
-                $outcomes[] = $this->unassigned;
+            if ($this->flow->endReachable($catch->body)) {
+                $outcomes[] = $this->assignments->save();
             }
         }
-        $after = self::mergeUnassigned($outcomes);
+        $this->assignments->merge($outcomes);
 
         if ($s->finally !== null) {
-            $this->unassigned = $before;
+            $afterTry = $this->assignments->save();
+            $this->assignments->restore($before);
             $this->w->line('} finally {');
             $this->body($s->finally);
-            // Whatever the finally block assigns is assigned afterwards, however the try block ended.
-            $after = array_diff_key($after, array_diff_key($before, $this->unassigned));
+            $this->assignments->applyFinally($before, $afterTry);
         }
-        $this->unassigned = $after;
         $this->w->line('}');
     }
 

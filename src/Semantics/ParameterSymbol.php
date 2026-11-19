@@ -15,4 +15,14 @@ final class ParameterSymbol
         public readonly bool $numeric = false,
     ) {
     }
+
+    /**
+     * "int, string" for a parameter list, as in C# signatures.
+     *
+     * @param list<ParameterSymbol> $params
+     */
+    public static function describeTypes(array $params): string
+    {
+        return implode(', ', array_map(static fn (self $p): string => $p->type->describe(), $params));
+    }
 }

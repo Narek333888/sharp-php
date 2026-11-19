@@ -56,7 +56,8 @@ final class Compiler
 
         $units = $this->each($units, $diagnostics, static fn (CompilationUnit $u) => $declarator->register($u));
         $units = $this->each($units, $diagnostics, static fn (CompilationUnit $u) => $declarator->define($u));
-        $units = $this->each($units, $diagnostics, static fn (CompilationUnit $u) => $declarator->verify($u));
+        $verifier = new ImplementationVerifier($symbols, $declarator);
+        $units = $this->each($units, $diagnostics, static fn (CompilationUnit $u) => $verifier->verify($u));
 
         $entryPoints = $declarator->entryPoints();
         if (count($entryPoints) > 1) {

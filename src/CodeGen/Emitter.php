@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace SharpPhp\CodeGen;
 
-use SharpPhp\CodeGen\Concerns\AnalyzesFlow;
 use SharpPhp\CodeGen\Concerns\ChecksTypes;
 use SharpPhp\CodeGen\Concerns\EmitsDeclarations;
 use SharpPhp\CodeGen\Concerns\EmitsExpressions;
@@ -15,7 +14,12 @@ use SharpPhp\Compiler\CompileError;
 use SharpPhp\Compiler\Declarator;
 use SharpPhp\Compiler\GeneratedFile;
 use SharpPhp\Compiler\SourceFile;
+use SharpPhp\Semantics\AccessRules;
+use SharpPhp\Semantics\ArgumentMatcher;
+use SharpPhp\Semantics\Conversions;
 use SharpPhp\Semantics\Names;
+use SharpPhp\Semantics\Reachability;
+use SharpPhp\Semantics\Violation;
 use SharpPhp\Semantics\ResolutionContext;
 use SharpPhp\Semantics\SymbolTable;
 use SharpPhp\Semantics\Type;
@@ -37,7 +41,6 @@ final class Emitter
     use EmitsMembers;
     use EmitsPatterns;
     use ChecksTypes;
-    use AnalyzesFlow;
 
     public const VERSION = '0.1.0';
 
@@ -50,13 +53,11 @@ final class Emitter
     private ?FunctionContext $fn = null;
     private Scope $scope;
 
-    /**
-     * Locals that are not definitely assigned at the current point ("scopeId:name" => true).
-     * Saved and merged around branches; see EmitsStatements.
-     *
-     * @var array<string, true>
-     */
-    private array $unassigned = [];
+    private readonly Conversions $conversions;
+    private readonly AccessRules $access;
+    private readonly ArgumentMatcher $argumentMatcher;
+    private readonly Reachability $flow;
+    private readonly DefiniteAssignment $assignments;
 
     /** Expression statement being emitted, whose value is not used (see effect()). */
     private ?\SharpPhp\Syntax\Expr $discarded = null;
@@ -70,6 +71,11 @@ final class Emitter
         private readonly Declarator $declarator,
     ) {
         $this->scope = new Scope();
+        $this->conversions = new Conversions($symbols);
+        $this->access = new AccessRules($symbols);
+        $this->argumentMatcher = new ArgumentMatcher();
+        $this->flow = new Reachability();
+        $this->assignments = new DefiniteAssignment();
     }
 
     public function emit(CompilationUnit $unit): GeneratedFile
@@ -214,6 +220,12 @@ final class Emitter
         return CompileError::at($code, $message, $this->file, $at->line, $at->column);
     }
 
+    /** A rule violation reported where the rule points, or else at $at. */
+    private function violation(Violation $violation, Node $at): CompileError
+    {
+        return $this->error($violation->code, $violation->message, $violation->at ?? $at);
+    }
+
     private function wrap(Emitted $e, int $minPrec): string
     {
         return $e->prec < $minPrec ? '(' . $e->code . ')' : $e->code;
@@ -246,38 +258,24 @@ final class Emitter
             throw $this->error('SP0128', "A local variable or function named '$name' is already defined in this scope", $at);
         }
         $this->scope->declare($name, $type);
-        if (!$assigned) {
-            $this->unassigned[$this->scope->id . ':' . $name] = true;
-        }
+        $this->assignments->declare($this->scope, $name, $assigned);
     }
 
     /** Definite assignment: "int x; Console.WriteLine(x);" does not compile in C#. */
     private function requireAssigned(string $name, Node $at): void
     {
-        $scope = $this->scope->declaringScope($name);
-        if ($scope !== null && isset($this->unassigned[$scope->id . ':' . $name])) {
+        if ($this->assignments->isUnassigned($this->scope, $name)) {
             throw $this->error('SP0165', "Use of unassigned local variable '$name'", $at);
         }
     }
 
     private function markAssigned(\SharpPhp\Syntax\Expr $target): void
     {
-        if ($target instanceof \SharpPhp\Syntax\NameExpr && ($scope = $this->scope->declaringScope($target->name)) !== null) {
-            unset($this->unassigned[$scope->id . ':' . $target->name]);
+        if ($target instanceof \SharpPhp\Syntax\NameExpr) {
+            $this->assignments->assign($this->scope, $target->name);
         }
     }
 
-    /**
-     * Unassigned locals after a branching statement: a local is unassigned if it is unassigned at the
-     * end of any branch that can complete normally.
-     *
-     * @param list<array<string, true>> $outcomes
-     * @return array<string, true>
-     */
-    private static function mergeUnassigned(array $outcomes): array
-    {
-        return $outcomes === [] ? [] : array_merge(...$outcomes);
-    }
 
     private static function phpString(string $value): string
     {

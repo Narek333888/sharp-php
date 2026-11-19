@@ -28,12 +28,6 @@ final class Declarator
 {
     public const TOP_LEVEL_CLASS = 'Program';
 
-    /** Runtime interfaces that do not declare their method in PHP (see IComparable), with the method C# requires. */
-    private const IMPLIED_INTERFACE_METHODS = [
-        Names::RUNTIME_NAMESPACE . '\\System\\IComparable' => 'CompareTo(T)',
-        Names::RUNTIME_NAMESPACE . '\\System\\IEquatable' => 'Equals(T)',
-    ];
-
     /** @var array<int, TypeSymbol> spl_object_id(TypeDecl) => symbol */
     private array $symbolsByDecl = [];
 
@@ -96,111 +90,11 @@ final class Declarator
         }
     }
 
-    /**
-     * Phase 3: checks that need every type's members. PHP would only report these
-     * as a fatal error when the class is loaded; C# rejects them at compile time.
-     */
-    public function verify(CompilationUnit $unit): void
-    {
-        foreach ($unit->namespaces as $ns) {
-            foreach ($ns->types as $decl) {
-                $symbol = $this->symbolOf($decl);
-                if (!$symbol->isInterface() && !$symbol->isEnum()) {
-                    $this->verifyImplementation($decl, $symbol, $unit->file);
-                }
-            }
-        }
-    }
 
-    private function verifyImplementation(TypeDecl $decl, TypeSymbol $symbol, SourceFile $file): void
-    {
-        $name = $symbol->csharpName();
 
-        if (!$symbol->isAbstract) {
-            foreach ($symbol->members as $member) {
-                if ($member->isAbstract) {
-                    throw $this->error('SP0513', "'{$this->memberName($member)}' is abstract but it is contained in non-abstract type '$name'", $file, $decl);
-                }
-            }
-            for ($base = $this->baseOf($symbol); $base !== null; $base = $this->baseOf($base)) {
-                foreach ($base->members as $member) {
-                    $implementation = $member->isAbstract ? $this->mostDerived($symbol, $member->name) : $member;
-                    if ($implementation === null || $implementation->isAbstract) {
-                        throw $this->error('SP0534', "'$name' does not implement inherited abstract member '{$this->memberName($member)}'", $file, $decl);
-                    }
-                }
-            }
-        }
 
-        foreach ($this->allInterfaces($symbol) as $interface) {
-            $implied = self::IMPLIED_INTERFACE_METHODS[$interface->fqn] ?? null;
-            if ($implied !== null && $this->mostDerived($symbol, strstr($implied, '(', true)) === null) {
-                throw $this->error('SP0535', "'$name' does not implement interface member '{$interface->csharpName()}<T>.$implied'", $file, $decl);
-            }
-            foreach ($interface->members as $member) {
-                if ($member->isStatic || !in_array($member->kind, ['method', 'property'], true)) {
-                    continue;
-                }
-                if ($symbol->isRecord && in_array($member->name, ['ToString', 'Equals', 'GetHashCode'], true)) {
-                    continue; // generated for records
-                }
-                if ($this->mostDerived($symbol, $member->name) === null) {
-                    throw $this->error('SP0535', "'$name' does not implement interface member '{$this->memberName($member)}'", $file, $decl);
-                }
-            }
-        }
-    }
 
-    private function baseOf(TypeSymbol $symbol): ?TypeSymbol
-    {
-        return $symbol->baseClass !== null ? $this->symbols->find($symbol->baseClass) : null;
-    }
 
-    /** The member a call on $symbol would reach: declared on the class itself or on the nearest base class. */
-    private function mostDerived(TypeSymbol $symbol, string $name): ?MemberSymbol
-    {
-        for ($current = $symbol; $current !== null; $current = $this->baseOf($current)) {
-            $member = $current->members[$name] ?? $current->members[$name . '()'] ?? null;
-            if ($member !== null) {
-                return $member;
-            }
-        }
-
-        return null;
-    }
-
-    /** @return list<TypeSymbol> interfaces of the type, its base classes and their base interfaces */
-    private function allInterfaces(TypeSymbol $symbol): array
-    {
-        $queue = [];
-        for ($current = $symbol; $current !== null; $current = $this->baseOf($current)) {
-            $queue = [...$queue, ...$current->interfaces];
-        }
-        $seen = [];
-        $result = [];
-        while ($queue !== []) {
-            $fqn = array_shift($queue);
-            if (isset($seen[strtolower($fqn)]) || ($interface = $this->symbols->find($fqn)) === null) {
-                continue;
-            }
-            $seen[strtolower($fqn)] = true;
-            $result[] = $interface;
-            $queue = [...$queue, ...$interface->interfaces];
-        }
-
-        return $result;
-    }
-
-    /** "Shape.Area()" / "Shape.Name" as C# prints members in diagnostics. */
-    private function memberName(MemberSymbol $member): string
-    {
-        $name = $member->owner->csharpName() . '.' . $member->name;
-        if ($member->kind !== 'method') {
-            return $name;
-        }
-
-        return $name . '(' . implode(', ', array_map(static fn (ParameterSymbol $p): string => $p->type->describe(), $member->params)) . ')';
-    }
 
     public function contextFor(CompilationUnit $unit, ?NamespaceDecl $ns): ResolutionContext
     {
