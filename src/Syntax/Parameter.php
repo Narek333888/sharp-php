@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Syntax;
 
+/**
+ * A parameter of a method, constructor, record or lambda.
+ */
 final class Parameter extends Node
 {
     public function __construct(

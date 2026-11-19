@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Semantics;
 
+/**
+ * A parameter of a method or constructor: name, type, modifier (ref, out, params) and whether it may be omitted.
+ */
 final class ParameterSymbol
 {
     public function __construct(

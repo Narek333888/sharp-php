@@ -23,7 +23,7 @@ final class Op
             return null;
         }
 
-        return $a + $b;
+        return self::number($a, '+', $b) + self::number($b, '+', $a);
     }
 
     /** C# "/": integer division for two integers. */
@@ -39,6 +39,8 @@ final class Op
 
             return intdiv($a, $b);
         }
+        $a = self::number($a, '/', $b);
+        $b = self::number($b, '/', $a);
         if ($b == 0) {
             return is_nan((float) $a) || $a == 0 ? NAN : ($a > 0 ? INF : -INF);
         }
@@ -59,7 +61,22 @@ final class Op
             return $a % $b;
         }
 
-        return fmod((float) $a, (float) $b);
+        return fmod((float) self::number($a, '%', $b), (float) self::number($b, '%', $a));
+    }
+
+    /** An operand of an arithmetic operator on dynamic values: C# only does arithmetic on numbers. */
+    private static function number(mixed $value, string $operator, mixed $other): int|float
+    {
+        if (is_int($value) || is_float($value)) {
+            return $value;
+        }
+
+        throw new System\InvalidOperationException(sprintf(
+            "Operator '%s' cannot be applied to operands of type '%s' and '%s'",
+            $operator,
+            TypeName::of($value),
+            TypeName::of($other),
+        ));
     }
 
     /** Converts any value to a string the way C# does (ToString()). */
@@ -72,7 +89,7 @@ final class Op
             is_int($value) => (string) $value,
             is_float($value) => self::float($value),
             $value instanceof \UnitEnum => $value->name,
-            is_object($value) && method_exists($value, 'ToString') => (string) $value->ToString(),
+            is_object($value) && method_exists($value, 'ToString') => self::str($value->ToString()),
             $value instanceof \Throwable => TypeName::of($value) . ': ' . $value->getMessage(),
             $value instanceof \Stringable => (string) $value,
             $value instanceof \DateTimeInterface => $value->format('n/j/Y g:i:s A'),
@@ -319,10 +336,14 @@ final class Op
      *
      * @template T of object
      * @param T $collection
+     * @param iterable<mixed> $items
      * @return T
      */
     public static function collect(object $collection, iterable $items): object
     {
+        if (!method_exists($collection, 'Add')) {
+            throw new System\InvalidOperationException('A collection initializer needs an Add method on ' . TypeName::of($collection));
+        }
         foreach ($items as $item) {
             $collection->Add($item);
         }
@@ -340,6 +361,9 @@ final class Op
      */
     public static function addPairs(object $collection, array $pairs): object
     {
+        if (!method_exists($collection, 'Add')) {
+            throw new System\InvalidOperationException('A collection initializer needs an Add method on ' . TypeName::of($collection));
+        }
         foreach ($pairs as $pair) {
             $collection->Add(...$pair);
         }
@@ -350,12 +374,12 @@ final class Op
     /**
      * Index initializer: new Dictionary<string, int> { ["a"] = 1 }
      *
-     * @template T of object
+     * @template T of \ArrayAccess<mixed, mixed>
      * @param T $collection
      * @param list<array{0: mixed, 1: mixed}> $pairs
      * @return T
      */
-    public static function setIndexes(object $collection, array $pairs): object
+    public static function setIndexes(\ArrayAccess $collection, array $pairs): \ArrayAccess
     {
         foreach ($pairs as [$key, $value]) {
             $collection[$key] = $value;

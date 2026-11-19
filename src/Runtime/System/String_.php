@@ -54,7 +54,7 @@ final class String_
             if ($m[0] === '}}') {
                 return '}';
             }
-            $index = (int) $m[1];
+            $index = (int) ($m[1] ?? 0);
             if (!array_key_exists($index, $args)) {
                 throw new FormatException('Index (zero based) must be greater than or equal to zero and less than the size of the argument list.');
             }
@@ -180,6 +180,7 @@ final class String_
     /**
      * text.Split(',') / text.Split(", ") / text.Split(new[] { ',', ';' })
      *
+     * @param string|list<string>|null $separator
      * @return string[]
      */
     public static function Split(string $s, string|array|null $separator = null, int $options = 0): array

@@ -20,7 +20,7 @@ final class Convert
             is_bool($value) => (int) $value,
             $value === null => 0,
             $value instanceof \BackedEnum => (int) $value->value,
-            default => Int32::Parse((string) $value),
+            default => Int32::Parse(Op::str($value)),
         };
     }
 
@@ -29,7 +29,7 @@ final class Convert
         return match (true) {
             is_int($value), is_float($value), is_bool($value) => (float) $value,
             $value === null => 0.0,
-            default => Double::Parse((string) $value),
+            default => Double::Parse(Op::str($value)),
         };
     }
 

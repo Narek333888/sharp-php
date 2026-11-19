@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Lexer;
 
+/**
+ * A token of SharpPHP source: its kind, its text or literal value, and where it was written.
+ */
 final class Token
 {
     public function __construct(

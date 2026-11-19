@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Syntax;
 
+/**
+ * do ... while (condition);
+ */
 final class DoStmt extends Stmt
 {
     public function __construct(

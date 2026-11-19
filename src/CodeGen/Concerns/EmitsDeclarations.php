@@ -110,9 +110,7 @@ trait EmitsDeclarations
         }
 
         /** @var list<array{0: string, 1: Expr, 2: Type, 3: int}> $instanceInits */
-        /** @var list<array{0: string, 1: Expr, 2: Type, 3: int}> $instanceInits */
         $instanceInits = [];
-        /** @var list<array{0: string, 1: Expr, 2: Type, 3: int}> $staticInits */
         /** @var list<array{0: string, 1: Expr, 2: Type, 3: int}> $staticInits */
         $staticInits = [];
 

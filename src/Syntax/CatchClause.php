@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Syntax;
 
+/**
+ * catch (Type name) when (filter) { ... }
+ */
 final class CatchClause extends Node
 {
     public function __construct(

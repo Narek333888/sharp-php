@@ -19,18 +19,18 @@ final class Console
      */
     public static function WriteLine(mixed $value = '', mixed ...$args): void
     {
-        echo self::text($value, $args), PHP_EOL;
+        echo self::text($value, array_values($args)), PHP_EOL;
     }
 
     public static function Write(mixed $value, mixed ...$args): void
     {
-        echo self::text($value, $args);
+        echo self::text($value, array_values($args));
     }
 
     public static function ReadLine(): ?string
     {
-        self::$input ??= defined('STDIN') ? STDIN : fopen('php://stdin', 'r');
-        $line = fgets(self::$input);
+        self::$input ??= defined('STDIN') ? STDIN : (fopen('php://stdin', 'r') ?: null);
+        $line = self::$input === null ? false : fgets(self::$input);
 
         return $line === false ? null : rtrim($line, "\r\n");
     }

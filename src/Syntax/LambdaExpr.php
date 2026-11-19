@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Syntax;
 
+/**
+ * x => x * 2, (a, b) => { ... }, static x => ...
+ */
 final class LambdaExpr extends Expr
 {
     public function __construct(

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Syntax;
 
+/**
+ * switch (subject) { case ...: ... }
+ */
 final class SwitchStmt extends Stmt
 {
     public function __construct(

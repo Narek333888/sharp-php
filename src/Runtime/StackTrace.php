@@ -84,12 +84,12 @@ final class StackTrace
     /** @param array<string, mixed> $frame */
     private function functionName(array $frame): string
     {
-        $function = (string) ($frame['function'] ?? '');
+        $function = is_string($frame['function'] ?? null) ? $frame['function'] : '';
         if (str_contains($function, '{closure')) {
             $function = '<lambda>';
         }
-        if (isset($frame['class'])) {
-            return TypeName::ofClass((string) $frame['class']) . '.' . $function . '()';
+        if (is_string($frame['class'] ?? null)) {
+            return TypeName::ofClass($frame['class']) . '.' . $function . '()';
         }
 
         return $function . '()';

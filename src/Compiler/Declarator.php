@@ -100,7 +100,7 @@ final class Declarator
     {
         $usings = [];
         $aliases = [];
-        foreach ([...$unit->usings, ...($ns?->usings ?? [])] as $using) {
+        foreach ([...$unit->usings, ...($ns->usings ?? [])] as $using) {
             if ($using->alias !== null) {
                 $aliases[$using->alias] = $using->name;
             } else {
@@ -108,7 +108,7 @@ final class Declarator
             }
         }
 
-        return new ResolutionContext($unit->file, $ns?->name ?? '', $usings, $aliases);
+        return new ResolutionContext($unit->file, $ns->name ?? '', $usings, $aliases);
     }
 
     public function symbolOf(TypeDecl|CompilationUnit $decl): TypeSymbol
@@ -122,7 +122,12 @@ final class Declarator
         return $this->entryPoints;
     }
 
-    /** @return array<string, Type> */
+    /**
+     * Type parameters in scope inside $decl: the outer ones plus its own, with their class constraints.
+     *
+     * @param array<string, Type> $outer
+     * @return array<string, Type>
+     */
     public function typeParamsOf(TypeDecl|MethodDecl $decl, ResolutionContext $ctx, array $outer = []): array
     {
         $result = $outer;
@@ -181,7 +186,7 @@ final class Declarator
         $methodNames = [];
 
         foreach ($decl->recordParams as $param) {
-            $type = $this->resolver->resolve($param->type, $ctx, $typeParams);
+            $type = $this->resolver->resolve($param->type ?? throw new \LogicException('Record parameters are typed'), $ctx, $typeParams);
             $property = new MemberSymbol('property', $param->name, false, $type, $symbol, visibility: 'public');
             $property->setter = 'init';
             $property->isAutoProperty = true;
@@ -260,7 +265,7 @@ final class Declarator
                     'method',
                     $member->name,
                     $isStatic,
-                    $this->resolver->resolve($member->returnType, $ctx, $methodTypeParams),
+                    $this->resolver->resolve($member->returnType ?? throw new \LogicException('Methods have a return type'), $ctx, $methodTypeParams),
                     $symbol,
                     $params,
                     $member->typeParams,
@@ -286,7 +291,7 @@ final class Declarator
         foreach ($method->params as $param) {
             $params[] = new ParameterSymbol(
                 $param->name,
-                $this->resolver->resolve($param->type, $ctx, $typeParams),
+                $this->resolver->resolve($param->type ?? throw new \LogicException('Method parameters are typed'), $ctx, $typeParams),
                 $param->modifier,
                 $param->default !== null || $param->modifier === 'params',
             );

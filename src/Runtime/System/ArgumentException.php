@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace SharpPhp\Runtime\System;
 
+/**
+ * System.ArgumentException: an argument is not valid; ParamName names it.
+ */
 class ArgumentException extends SystemException
 {
-    protected const DEFAULT_MESSAGE = 'Value does not fall within the expected range.';
+    protected const ?string DEFAULT_MESSAGE = 'Value does not fall within the expected range.';
 
     public readonly ?string $ParamName;
 

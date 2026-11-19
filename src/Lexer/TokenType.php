@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Lexer;
 
+/**
+ * Kinds of tokens produced by the Lexer.
+ */
 enum TokenType
 {
     case Identifier;

@@ -56,7 +56,7 @@ final class Dyn
         }
 
         return match ($name) {
-            'ToString' => $args === [] ? Op::str($target) : Op::format($target, (string) $args[0]),
+            'ToString' => $args === [] ? Op::str($target) : Op::format($target, Op::str($args[0])),
             'Equals' => Op::equals($target, $args[0] ?? null),
             'CompareTo' => $target <=> ($args[0] ?? null),
             'GetHashCode' => is_object($target) ? spl_object_id($target) : crc32(serialize($target)),

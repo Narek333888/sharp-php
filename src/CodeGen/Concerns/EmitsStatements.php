@@ -296,7 +296,7 @@ trait EmitsStatements
             try {
                 $jumps = $this->loopBody($s->body);
                 $this->flow->merge([$this->flow->save(), ...$jumps['continues']]);
-                $iterators = array_map(fn ($e): string => $this->effect($e), $s->iterators);
+                $iterators = array_map(fn (Expr $e): string => $this->effect($e), $s->iterators);
                 $body = $this->w;
             } finally {
                 $this->w = $outer;

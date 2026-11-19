@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace SharpPhp\Runtime\System\Linq;
 
 use SharpPhp\Runtime\Op;
-use SharpPhp\Runtime\System\ArgumentOutOfRangeException;
 use SharpPhp\Runtime\System\ArgumentException;
+use SharpPhp\Runtime\System\ArgumentOutOfRangeException;
 use SharpPhp\Runtime\System\Collections\Generic\Dictionary;
 use SharpPhp\Runtime\System\Collections\Generic\List_;
 use SharpPhp\Runtime\System\InvalidCastException;

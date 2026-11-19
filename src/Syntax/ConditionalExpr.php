@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Syntax;
 
+/**
+ * condition ? then : else
+ */
 final class ConditionalExpr extends Expr
 {
     public function __construct(

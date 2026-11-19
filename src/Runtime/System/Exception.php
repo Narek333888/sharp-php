@@ -11,7 +11,8 @@ use SharpPhp\Runtime\TypeName;
  */
 class Exception extends \Exception
 {
-    protected const DEFAULT_MESSAGE = null;
+    /** The message of "new X()" without one; null means "Exception of type 'X' was thrown." */
+    protected const ?string DEFAULT_MESSAGE = null;
 
     public string $Message {
         get => $this->getMessage();

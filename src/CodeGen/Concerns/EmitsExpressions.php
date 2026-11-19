@@ -24,6 +24,7 @@ use SharpPhp\Syntax\DeclarationExpr;
 use SharpPhp\Syntax\DefaultExpr;
 use SharpPhp\Syntax\ElementAccessExpr;
 use SharpPhp\Syntax\Expr;
+use SharpPhp\Syntax\InitializerItem;
 use SharpPhp\Syntax\InterpolatedStringExpr;
 use SharpPhp\Syntax\InterpolationHole;
 use SharpPhp\Syntax\InvocationExpr;
@@ -801,8 +802,8 @@ trait EmitsExpressions
 
         // new List<int> { 1, 2, 3 }  =>  new List_([1, 2, 3], of: 'int')
         if ($items !== [] && $args === '' && $of !== null && $symbol->fqn !== Names::RUNTIME_NAMESPACE . '\\System\\Collections\\Generic\\Dictionary'
-            && array_reduce($items, static fn (bool $c, $i): bool => $c && $i->kind === 'element', true)) {
-            $elements = array_map(fn ($i): string => $this->convert($i->values[0], $elementType)->code, $items);
+            && array_reduce($items, static fn (bool $c, InitializerItem $i): bool => $c && $i->kind === 'element', true)) {
+            $elements = array_map(fn (InitializerItem $i): string => $this->convert($i->values[0], $elementType)->code, $items);
 
             return Emitted::value("new $class([" . implode(', ', $elements) . "], of: $of)", $type);
         }
@@ -813,7 +814,7 @@ trait EmitsExpressions
             return Emitted::value($code, $type);
         }
 
-        $kinds = array_unique(array_map(static fn ($i): string => $i->kind, $items));
+        $kinds = array_unique(array_map(static fn (InitializerItem $i): string => $i->kind, $items));
         if (count($kinds) > 1) {
             throw $this->error('SP0747', 'Invalid initializer member declarator: object and collection initializers cannot be mixed', $e->initializer ?? $e);
         }
@@ -961,7 +962,9 @@ trait EmitsExpressions
                 $this->w->sourceLine = $outerWriter->sourceLine;
                 $this->w->indent();
                 try {
-                    $this->inFunction($function, fn () => $this->statements($e->body->statements));
+                    $this->inFunction($function, function () use ($e): void {
+                        $this->statements($e->body->statements);
+                    });
                     if ($this->flow->isReachable() && $expectedReturn !== null && !$expectedReturn->isUnknown() && $expectedReturn->kind !== 'void') {
                         $delegate = $this->delegateName(Type::closure([...$paramTypes, $expectedReturn]));
                         throw $this->error('SP1643', "Not all code paths return a value in lambda expression of type '$delegate'", $e);

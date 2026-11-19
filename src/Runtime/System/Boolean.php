@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Runtime\System;
 
+/**
+ * System.Boolean (C# bool): bool.Parse and bool.TryParse.
+ */
 final class Boolean
 {
     public const string TrueString = 'True';

@@ -54,10 +54,10 @@ final class Compiler
             }
         }
 
-        $units = $this->each($units, $diagnostics, static fn (CompilationUnit $u) => $declarator->register($u));
-        $units = $this->each($units, $diagnostics, static fn (CompilationUnit $u) => $declarator->define($u));
+        $units = $this->each($units, $diagnostics, $declarator->register(...));
+        $units = $this->each($units, $diagnostics, $declarator->define(...));
         $verifier = new ImplementationVerifier($symbols, $declarator);
-        $units = $this->each($units, $diagnostics, static fn (CompilationUnit $u) => $verifier->verify($u));
+        $units = $this->each($units, $diagnostics, $verifier->verify(...));
 
         $entryPoints = $declarator->entryPoints();
         if (count($entryPoints) > 1) {
@@ -114,7 +114,7 @@ final class Compiler
         $paths = [];
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS));
         foreach ($iterator as $file) {
-            if ($file->isFile() && strtolower($file->getExtension()) === self::EXTENSION) {
+            if ($file instanceof \SplFileInfo && $file->isFile() && strtolower($file->getExtension()) === self::EXTENSION) {
                 $paths[] = $file->getPathname();
             }
         }

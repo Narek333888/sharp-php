@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Syntax;
 
+/**
+ * A property: auto ({ get; set; }), with accessor bodies, or expression-bodied (=> value).
+ */
 final class PropertyDecl extends Node
 {
     public function __construct(

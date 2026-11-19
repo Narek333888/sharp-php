@@ -9,7 +9,7 @@ namespace SharpPhp\Runtime\System;
  */
 class ArgumentNullException extends ArgumentException
 {
-    protected const DEFAULT_MESSAGE = 'Value cannot be null.';
+    protected const ?string DEFAULT_MESSAGE = 'Value cannot be null.';
 
     public function __construct(?string $paramName = null, ?string $message = null)
     {
@@ -19,7 +19,7 @@ class ArgumentNullException extends ArgumentException
     public static function ThrowIfNull(mixed $argument, ?string $paramName = null): void
     {
         if ($argument === null) {
-            throw new static($paramName);
+            throw new self(null, $paramName);
         }
     }
 }

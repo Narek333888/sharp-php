@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Compiler;
 
+/**
+ * The PHP files generated for a project and its entry point class.
+ */
 final class CompilationResult
 {
     /**

@@ -678,8 +678,11 @@ trait EmitsMembers
         return Emitted::value("$recv$arrow$name($code)", Type::mixed());
     }
 
-    /** System.Object methods every class has in C#. */
-    /** @param list<Argument> $args */
+    /**
+     * System.Object methods every class has in C#.
+     *
+     * @param list<Argument> $args
+     */
     private function objectMethod(Emitted $target, string $name, array $args): ?Emitted
     {
         $op = $this->runtime('Op');

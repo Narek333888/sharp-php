@@ -214,6 +214,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable
         return count($this->items);
     }
 
+    /** @param mixed $offset any value: only valid indexes exist */
     public function offsetExists(mixed $offset): bool
     {
         return is_int($offset) && $offset >= 0 && $offset < count($this->items);
@@ -235,7 +236,9 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable
             return;
         }
         $this->assertIndex($offset);
-        $this->items[$offset] = $this->checked($value);
+        // An existing index (checked above) is replaced, so $items stays a list; proving that would
+        // need copying the array on every write.
+        $this->items[$offset] = $this->checked($value); // @phpstan-ignore assign.propertyType
     }
 
     public function offsetUnset(mixed $offset): void
@@ -243,6 +246,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable
         $this->RemoveAt($offset);
     }
 
+    /** @phpstan-assert int<0, max> $index */
     private function assertIndex(mixed $index): void
     {
         if (!is_int($index) || $index < 0 || $index >= count($this->items)) {
@@ -250,8 +254,15 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable
         }
     }
 
+    /**
+     * An item to store, checked against the element type when the list knows it (new List<int>()).
+     *
+     * @return T
+     */
     private function checked(mixed $item): mixed
     {
-        return $this->of === null ? $item : TypeCheck::check($item, $this->of, 'List<' . TypeName::ofSpec($this->of) . '>');
+        $checked = $this->of === null ? $item : TypeCheck::check($item, $this->of, 'List<' . TypeName::ofSpec($this->of) . '>');
+        /** @var T $checked the generated code only stores elements of the list's type */
+        return $checked;
     }
 }

@@ -11,6 +11,7 @@ use RuntimeException;
 use SharpPhp\CodeGen\Emitter;
 use SharpPhp\Compiler\CompilationFailed;
 use SharpPhp\Compiler\Compiler;
+use SharpPhp\Compiler\SourceFile;
 use SharpPhp\Runtime\Host;
 
 /**
@@ -41,14 +42,13 @@ final class Project
         $composer = $root . '/composer.json';
         if (is_file($composer)) {
             $json = json_decode((string) file_get_contents($composer), true);
-            $config = is_array($json['extra']['sharp'] ?? null) ? $json['extra']['sharp'] : [];
+            $extra = is_array($json) && is_array($json['extra'] ?? null) ? $json['extra'] : [];
+            $config = is_array($extra['sharp'] ?? null) ? $extra['sharp'] : [];
         }
+        $source = is_string($config['source'] ?? null) ? $config['source'] : self::DEFAULT_SOURCE;
+        $output = is_string($config['output'] ?? null) ? $config['output'] : self::DEFAULT_OUTPUT;
 
-        return new self(
-            $root,
-            $root . '/' . trim((string) ($config['source'] ?? self::DEFAULT_SOURCE), '/'),
-            $root . '/' . trim((string) ($config['output'] ?? self::DEFAULT_OUTPUT), '/'),
-        );
+        return new self($root, $root . '/' . trim($source, '/'), $root . '/' . trim($output, '/'));
     }
 
     /**
@@ -60,12 +60,13 @@ final class Project
     public function build(bool $force = false): array
     {
         $sources = Compiler::findSources($this->sourceDir);
-        $fingerprint = $this->fingerprint(array_map(static fn ($f): string => $f->path, $sources));
+        $fingerprint = $this->fingerprint(array_map(static fn (SourceFile $f): string => $f->path, $sources));
         $manifestFile = $this->buildDir . '/manifest.php';
 
         if (!$force && is_file($manifestFile)) {
             $manifest = include $manifestFile;
             if (is_array($manifest) && ($manifest['fingerprint'] ?? null) === $fingerprint) {
+                /** @var array{version: string, fingerprint: string, entry: ?string, classmap: array<string, string>, sourcemap: array<string, array{source: string, lines: array<int, int>}>} $manifest written by build() */
                 return $manifest;
             }
         }
@@ -136,12 +137,15 @@ final class Project
     /** Changes whenever the compiler itself changes (useful while developing it). */
     private static function compilerStamp(): string
     {
+        /** @var string|null $stamp */
         static $stamp = null;
         if ($stamp === null) {
             $latest = 0;
             $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__, FilesystemIterator::SKIP_DOTS));
             foreach ($iterator as $file) {
-                $latest = max($latest, $file->getMTime());
+                if ($file instanceof \SplFileInfo) {
+                    $latest = max($latest, (int) $file->getMTime());
+                }
             }
             $stamp = (string) $latest;
         }
@@ -181,7 +185,9 @@ final class Project
             RecursiveIteratorIterator::CHILD_FIRST,
         );
         foreach ($iterator as $file) {
-            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+            if ($file instanceof \SplFileInfo) {
+                $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+            }
         }
         rmdir($dir);
     }

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Syntax;
 
+/**
+ * foreach (var x in items) ..., or foreach (var (key, value) in pairs) ...
+ */
 final class ForeachStmt extends Stmt
 {
     public function __construct(

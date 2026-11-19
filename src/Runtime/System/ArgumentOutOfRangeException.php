@@ -9,7 +9,7 @@ namespace SharpPhp\Runtime\System;
  */
 class ArgumentOutOfRangeException extends ArgumentException
 {
-    protected const DEFAULT_MESSAGE = 'Specified argument was out of the range of valid values.';
+    protected const ?string DEFAULT_MESSAGE = 'Specified argument was out of the range of valid values.';
 
     public function __construct(?string $paramName = null, ?string $message = null)
     {

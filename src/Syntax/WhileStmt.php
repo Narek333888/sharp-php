@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace SharpPhp\Syntax;
 
+/**
+ * while (condition) ...
+ */
 final class WhileStmt extends Stmt
 {
     public function __construct(
