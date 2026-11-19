@@ -34,31 +34,63 @@ public record Person(string Name, int Age);
 
 ## Installation
 
+In your project folder (an empty folder or one with only `index.php` is fine: Composer creates
+`composer.json` and `vendor/` itself):
+
 ```bash
 composer require armdevstack/sharp-php
 ```
 
-
 ## Quick start
 
-1. Put your code in `src/Program.sphp` (any number of `.sphp` files in any sub-directories).
-2. Run it:
+**1. Write a program** in `src/Program.sphp` (any number of `.sphp` files in any sub-directories of `src/`):
+
+```csharp
+using System;
+
+namespace App;
+
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        Console.WriteLine("Hello from SharpPHP!");
+    }
+}
+```
+
+**2. Run it** from the command line:
 
 ```bash
 vendor/bin/sharp run            # build (if needed) and run Main
 vendor/bin/sharp run -- a b c   # pass arguments to Main(string[] args)
 ```
 
-or from PHP (e.g. `index.php`, which PhpStorm can run directly):
+or from PHP, e.g. `index.php` (PhpStorm runs it with the green ▶ button):
 
 ```php
 <?php
+
 require_once __DIR__ . '/vendor/autoload.php';
 
 exit(SharpPhp\Project::fromDirectory(__DIR__)->run(array_slice($argv ?? [], 1)));
 ```
 
+```console
+$ php index.php
+Hello from SharpPHP!
+```
+
 Builds are cached: sources are recompiled only when a `.sphp` file (or the compiler) changes.
+
+**3. Ignore the build output** if the project uses git — add to `.gitignore`:
+
+```gitignore
+/vendor/
+/var/
+```
+
+**4. Turn on highlighting** for `.sphp` files in your editor: see [Editor support](#editor-support).
 
 ## Command line
 
