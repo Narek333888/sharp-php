@@ -11,9 +11,9 @@ use SharpPhp\Semantics\ParameterSymbol;
 use SharpPhp\Semantics\Type;
 use SharpPhp\Semantics\TypeSymbol;
 use SharpPhp\Syntax\Accessor;
-use SharpPhp\Syntax\Block;
 use SharpPhp\Syntax\ArrayCreationExpr;
 use SharpPhp\Syntax\BinaryExpr;
+use SharpPhp\Syntax\Block;
 use SharpPhp\Syntax\CompilationUnit;
 use SharpPhp\Syntax\ConditionalExpr;
 use SharpPhp\Syntax\DefaultExpr;
@@ -322,44 +322,9 @@ trait EmitsDeclarations
         $this->w->line("$visibility$asymmetric $phpType \$$name {");
         $this->w->indent();
 
-        if ($property->exprBody !== null) {
-            $code = $this->inFunction(new FunctionContext(false, $type, $this->class->typeParamTypes), fn (): string => $this->convert($property->exprBody, $type)->code);
-            $this->w->line("get => $code;");
-        }
-        foreach ($property->accessors as $accessor) {
-            if ($accessor->body === null && $accessor->exprBody === null) {
-                throw $this->error('SP0202', "Mixing auto-implemented and custom accessors is not supported ('$name')", $accessor);
-            }
+        foreach ($this->accessorsOf($property) as $accessor) {
             $this->w->sourceLine = $accessor->line;
-            $isGet = $accessor->kind === 'get';
-            $context = new FunctionContext(false, $isGet ? $type : Type::void(), $this->class->typeParamTypes);
-            $this->inFunction($context, function () use ($accessor, $isGet, $type, $name): void {
-                $this->inScope(function () use ($accessor, $isGet, $type, $name): void {
-                    if (!$isGet) {
-                        $this->scope->declare('value', $type);
-                    }
-                    if ($accessor->exprBody !== null) {
-                        $code = ($isGet ? $this->convert($accessor->exprBody, $type) : $this->expr($accessor->exprBody))->code;
-                        if ($isGet) {
-                            $this->w->line("get => $code;");
-                        } else {
-                            $this->w->line('set {');
-                            $this->w->line("    $code;");
-                            $this->w->line('}');
-                        }
-
-                        return;
-                    }
-                    $this->w->line($isGet ? 'get {' : 'set {');
-                    $this->w->indent();
-                    $this->statements($accessor->body->statements);
-                    if ($isGet) {
-                        $this->requireReturnOnAllPaths($accessor->body, "'{$this->class?->csharpName()}.$name.get'", $accessor);
-                    }
-                    $this->w->outdent();
-                    $this->w->line('}');
-                });
-            });
+            $this->emitAccessor($accessor, $type, $name, static: false);
         }
 
         $this->w->outdent();
@@ -367,59 +332,91 @@ trait EmitsDeclarations
     }
 
     /**
+     * A property's accessors; "=> expr" is a get accessor.
+     *
+     * @return list<Accessor>
+     */
+    private function accessorsOf(PropertyDecl $property): array
+    {
+        if ($property->exprBody !== null) {
+            return [(new Accessor('get', [], null, $property->exprBody))->at($property->exprBody)];
+        }
+        foreach ($property->accessors as $accessor) {
+            if ($accessor->body === null && $accessor->exprBody === null) {
+                throw $this->error('SP0202', "Mixing auto-implemented and custom accessors is not supported ('$property->name')", $accessor);
+            }
+        }
+
+        return $property->accessors;
+    }
+
+    /**
+     * A get/set/init accessor: a PHP property hook for an instance property, the body of the
+     * get_X()/set_X() method for a static one.
+     */
+    private function emitAccessor(Accessor $accessor, Type $type, string $property, bool $static): void
+    {
+        $isGet = $accessor->kind === 'get';
+        $context = new FunctionContext($static, $isGet ? $type : Type::void(), $this->class?->typeParamTypes ?? []);
+        $this->inFunction($context, function () use ($accessor, $isGet, $type, $property, $static): void {
+            $this->inScope(function () use ($accessor, $isGet, $type, $property, $static): void {
+                if (!$isGet) {
+                    $this->scope->declare('value', $type);
+                }
+                if ($accessor->exprBody !== null) {
+                    $code = $isGet ? $this->convert($accessor->exprBody, $type)->code : $this->effect($accessor->exprBody);
+                    match (true) {
+                        $static => $this->w->line($isGet ? "return $code;" : "$code;"),
+                        $isGet => $this->w->line("get => $code;"),
+                        default => array_map($this->w->line(...), ['set {', "    $code;", '}']),
+                    };
+
+                    return;
+                }
+                if (!$static) {
+                    $this->w->line($isGet ? 'get {' : 'set {');
+                    $this->w->indent();
+                }
+                $this->statements($accessor->body?->statements ?? []);
+                if ($isGet && $accessor->body !== null) {
+                    $this->requireReturnOnAllPaths($accessor->body, "'{$this->class?->csharpName()}.$property.get'", $accessor);
+                }
+                if (!$static) {
+                    $this->w->outdent();
+                    $this->w->line('}');
+                }
+            });
+        });
+    }
+
+    /**
      * static int Count => _items.Count;  =>  public static function get_Count(): int { return ...; }
      * A setter becomes set_Count(int $value): void.
      */
-    private function emitStaticAccessors(PropertyDecl $property, \SharpPhp\Semantics\MemberSymbol $member, string $visibility, string $setVisibility): void
-    {
-        $type = $member->type;
-        $name = $property->name;
-        $phpType = (string) $this->typeDecl($type);
-        $accessors = $property->exprBody !== null ? [(new Accessor('get', [], null, $property->exprBody))->at($property)] : $property->accessors;
-
-        foreach ($accessors as $i => $accessor) {
-            if ($accessor->body === null && $accessor->exprBody === null) {
-                throw $this->error('SP0202', "Mixing auto-implemented and custom accessors is not supported ('$name')", $accessor);
-            }
-            $isGet = $accessor->kind === 'get';
-            if ($i > 0) {
-                $this->w->blank();
-            }
-            $this->w->sourceLine = $accessor->line;
-            $this->w->line($isGet
-                ? "$visibility static function get_$name(): $phpType"
-                : "$setVisibility static function set_$name($phpType \$value): void");
-            $this->w->line('{');
-            $this->w->indent();
-            $context = new FunctionContext(true, $isGet ? $type : Type::void(), $this->class->typeParamTypes);
-            $this->inFunction($context, function () use ($accessor, $isGet, $type, $name): void {
-                $this->inScope(function () use ($accessor, $isGet, $type, $name): void {
-                    if (!$isGet) {
-                        $this->scope->declare('value', $type);
-                    }
-                    if ($accessor->exprBody !== null) {
-                        $this->w->line($isGet
-                            ? 'return ' . $this->convert($accessor->exprBody, $type)->code . ';'
-                            : $this->effect($accessor->exprBody) . ';');
-
-                        return;
-                    }
-                    $this->statements($accessor->body->statements);
-                    if ($isGet) {
-                        $this->requireReturnOnAllPaths($accessor->body, "'{$this->class?->csharpName()}.$name.get'", $accessor);
-                    }
-                });
-            });
-            $this->w->outdent();
-            $this->w->line('}');
-        }
-    }
-
     private function asymmetricVisibility(string $visibility, string $setVisibility): string
     {
         $rank = ['public' => 3, 'protected' => 2, 'private' => 1];
 
         return $rank[$setVisibility] < $rank[$visibility] ? " $setVisibility(set)" : '';
+    }
+
+    private function emitStaticAccessors(PropertyDecl $property, \SharpPhp\Semantics\MemberSymbol $member, string $visibility, string $setVisibility): void
+    {
+        $phpType = (string) $this->typeDecl($member->type);
+        foreach ($this->accessorsOf($property) as $i => $accessor) {
+            if ($i > 0) {
+                $this->w->blank();
+            }
+            $this->w->sourceLine = $accessor->line;
+            $this->w->line($accessor->kind === 'get'
+                ? "$visibility static function get_{$property->name}(): $phpType"
+                : "$setVisibility static function set_{$property->name}($phpType \$value): void");
+            $this->w->line('{');
+            $this->w->indent();
+            $this->emitAccessor($accessor, $member->type, $property->name, static: true);
+            $this->w->outdent();
+            $this->w->line('}');
+        }
     }
 
     /**

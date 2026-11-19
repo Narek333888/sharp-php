@@ -202,11 +202,12 @@ trait EmitsExpressions
     /** Statement expression whose value is discarded (x++; in a for iterator, ...). */
     private function effect(Expr $e): string
     {
+        $outer = $this->discarded;
         $this->discarded = $e;
         try {
             return $this->expr($e)->code;
         } finally {
-            $this->discarded = null;
+            $this->discarded = $outer;
         }
     }
 
