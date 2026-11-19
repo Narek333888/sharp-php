@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- `sharp serve` (and `app.Run()` from the command line) always shows error details on the 500 page,
+  also when `display_errors` is off in php.ini: it is a development server
+
 ## 0.2.0
 
 - Web apps: `System.Web` with `WebApp` (routes with `MapGet`/`MapPost`/..., route constraints, optional and
