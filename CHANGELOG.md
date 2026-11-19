@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- `editors/lsp4ij/sharpphp/README.md`, missing from 0.3.1 (the README links to it)
+
 ## 0.3.1
 
 - README: how to upgrade (a plain `composer update` stays within a 0.x minor version:
