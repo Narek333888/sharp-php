@@ -35,7 +35,7 @@ public record Person(string Name, int Age);
 ## Installation
 
 ```bash
-composer require narek/sharp-php
+composer require armdevstack/sharp-php
 ```
 
 

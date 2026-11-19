@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- The package is now `armdevstack/sharp-php` (it was published as `narek/sharp-php` before):
+  `composer require armdevstack/sharp-php`
+
 ## 0.1.1
 
 - `sharp` command: read the command line from `$_SERVER['argv']`, which is set even when

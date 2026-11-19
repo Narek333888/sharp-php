@@ -7,7 +7,7 @@ declare(strict_types=1);
 $candidates = [
     $GLOBALS['_composer_autoload_path'] ?? null,
     __DIR__ . '/../vendor/autoload.php',       // running inside the package
-    __DIR__ . '/../../../autoload.php',        // installed as vendor/narek/sharp-php
+    __DIR__ . '/../../../autoload.php',        // installed as vendor/armdevstack/sharp-php
 ];
 foreach ($candidates as $autoload) {
     if (is_string($autoload) && is_file($autoload)) {

@@ -1,5 +1,5 @@
 {
-    "name": "narek/sharp-php",
+    "name": "armdevstack/sharp-php",
     "description": "SharpPHP: a C#-like language that compiles to modern PHP.",
     "type": "library",
     "license": "MIT",
