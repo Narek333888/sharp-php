@@ -9,9 +9,12 @@ namespace SharpPhp\Runtime\System\Linq;
  * Result element of GroupBy: a key plus the items that share it.
  *
  * @sharp-element mixed
+ *
+ * @implements \IteratorAggregate<int, mixed>
  */
 final class Grouping implements \IteratorAggregate, \Countable
 {
+    /** @use \SharpPhp\Runtime\System\Collections\Generic\EnumerableMethods<mixed> */
     use \SharpPhp\Runtime\System\Collections\Generic\EnumerableMethods;
 
     /** @param list<mixed> $items */
@@ -21,6 +24,7 @@ final class Grouping implements \IteratorAggregate, \Countable
     ) {
     }
 
+    /** @return \Iterator<int, mixed> */
     public function getIterator(): \Iterator
     {
         return new \ArrayIterator($this->items);

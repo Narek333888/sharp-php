@@ -583,7 +583,7 @@ trait EmitsStatements
             return '\\Throwable';
         }
         $types = [$this->classRef($fqn)];
-        $relative = str_starts_with($fqn, $runtime) ? substr($fqn, strlen($runtime)) : null;
+        $relative = str_starts_with($fqn, $runtime) ? substr($fqn, strlen($runtime)) : '';
         foreach (self::NATIVE_EXCEPTIONS[$relative] ?? [] as $native) {
             $types[] = '\\' . $native;
         }

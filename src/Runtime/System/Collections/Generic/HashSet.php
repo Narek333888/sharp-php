@@ -13,18 +13,22 @@ use SharpPhp\Runtime\TypeName;
  *
  * @template T
  * @sharp-element T
+ *
+ * @implements \IteratorAggregate<int, T>
  */
 class HashSet implements \IteratorAggregate, \Countable
 {
+    /** @use EnumerableMethods<T> */
     use EnumerableMethods;
 
-    /** @var array<string, mixed> */
+    /** @var array<string, T> */
     private array $items = [];
 
     public int $Count {
         get => count($this->items);
     }
 
+    /** @param iterable<T> $collection */
     public function __construct(iterable $collection = [], private readonly ?string $of = null)
     {
         foreach ($collection as $item) {
@@ -67,6 +71,7 @@ class HashSet implements \IteratorAggregate, \Countable
         $this->items = [];
     }
 
+    /** @param iterable<T> $other */
     public function UnionWith(iterable $other): void
     {
         foreach ($other as $item) {
@@ -74,6 +79,7 @@ class HashSet implements \IteratorAggregate, \Countable
         }
     }
 
+    /** @param iterable<T> $other */
     public function IntersectWith(iterable $other): void
     {
         $keep = new self($other);
@@ -84,6 +90,7 @@ class HashSet implements \IteratorAggregate, \Countable
         }
     }
 
+    /** @param iterable<T> $other */
     public function ExceptWith(iterable $other): void
     {
         foreach ($other as $item) {
@@ -96,6 +103,7 @@ class HashSet implements \IteratorAggregate, \Countable
         return 'System.Collections.Generic.HashSet`1[' . TypeName::ofSpec($this->of ?? 'mixed') . ']';
     }
 
+    /** @return \Iterator<int, T> */
     public function getIterator(): \Iterator
     {
         return new \ArrayIterator(array_values($this->items));

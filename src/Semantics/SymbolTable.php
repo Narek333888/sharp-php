@@ -35,6 +35,9 @@ final class SymbolTable
     /** File whose use statements apply to the docblock currently being read. */
     private ?string $docFile = null;
 
+    /** @var list<string> template names of the method being loaded (see load()) */
+    private array $methodTemplates = [];
+
     public function declare(TypeSymbol $symbol): ?TypeSymbol
     {
         $key = strtolower($symbol->fqn);
@@ -299,12 +302,15 @@ final class SymbolTable
             }
             $doc = (string) $method->getDocComment();
             $this->docFile = $method->getFileName() ?: null;
+            // Generic methods (Enumerable::Where<TSource>): their type parameters are in scope in their docs.
+            $this->methodTemplates = preg_match_all('/@template\s+(\w+)/', $doc, $m) > 0 ? $m[1] : [];
             // "@sharp-return char" states a C# type PHP has no name for; "@return" is the PHP view.
             $type = $this->docTag($doc, 'sharp-return', $symbol)
                 ?? $this->docTag($doc, 'return', $symbol)
                 ?? $this->reflectionType($method->getReturnType(), $symbol);
             $params = $this->reflectionParams($method, $symbol);
-            $member = new MemberSymbol('method', $method->getName(), $method->isStatic(), $type, $symbol, $params);
+            $member = new MemberSymbol('method', $method->getName(), $method->isStatic(), $type, $symbol, $params, $this->methodTemplates);
+            $this->methodTemplates = [];
             // Properties and methods live in different PHP namespaces (List.Count vs. list.Count()).
             $symbol->members[isset($symbol->members[$method->getName()]) ? $method->getName() . '()' : $method->getName()] = $member;
         }
@@ -461,7 +467,7 @@ final class SymbolTable
             return $type->withNullable($nullable);
         }
 
-        if (in_array($s, $self->typeParams, true)) {
+        if (in_array($s, $self->typeParams, true) || in_array($s, $this->methodTemplates, true)) {
             return Type::typeParam($s)->withNullable($nullable);
         }
         if (in_array(strtolower($s), ['int', 'float', 'string', 'char', 'bool', 'array', 'iterable', 'void', 'mixed', 'callable', 'object', 'self', 'static', 'true', 'false', 'never', 'closure', '\\closure'], true)

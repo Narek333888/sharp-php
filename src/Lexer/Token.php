@@ -17,6 +17,35 @@ final class Token
     ) {
     }
 
+    /**
+     * The text of an identifier, keyword or punctuation token. (Literal tokens keep their decoded
+     * value, which may be a number, in $value.)
+     */
+    public function text(): string
+    {
+        if (!is_string($this->value)) {
+            throw new \LogicException("A {$this->type->name} token has no text");
+        }
+
+        return $this->value;
+    }
+
+    /**
+     * The parts of an interpolated string token: literal text, or a hole with its expression's source.
+     *
+     * @return list<string|array{expr: string, line: int, column: int, offset: int, format: ?string}>
+     */
+    public function interpolationParts(): array
+    {
+        if ($this->type !== TokenType::InterpolatedString || !is_array($this->value)) {
+            throw new \LogicException("A {$this->type->name} token has no interpolation parts");
+        }
+        /** @var list<string|array{expr: string, line: int, column: int, offset: int, format: ?string}> $parts built by Lexer::interpolated() */
+        $parts = $this->value;
+
+        return $parts;
+    }
+
     public function is(string $punctOrKeyword): bool
     {
         return ($this->type === TokenType::Punct || $this->type === TokenType::Keyword)
@@ -41,7 +70,7 @@ final class Token
             TokenType::String, TokenType::InterpolatedString => 'string literal',
             TokenType::Char => 'character literal',
             TokenType::Int, TokenType::Float => 'number',
-            default => "'" . $this->value . "'",
+            default => "'" . $this->text() . "'",
         };
     }
 }

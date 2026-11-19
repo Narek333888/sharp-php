@@ -129,12 +129,10 @@ trait EmitsMembers
         }
     }
 
-
     /**
      * Rejects assignments C# does not allow: get-only and init-only properties outside the
      * constructor, inaccessible setters, readonly fields.
      */
-    /** Assignments C# does not allow: get-only/init-only properties, inaccessible setters, readonly fields. */
     private function requireWritable(MemberSymbol $member, Node $at, bool $initializer = false): void
     {
         $constructorOf = $this->fn !== null && $this->fn->isConstructor ? $this->class : null;
@@ -703,7 +701,11 @@ trait EmitsMembers
         $params = array_slice($member->params, 1);
         $this->checkArguments($args, $params, $name, $this->signature("$what.$name", $params), $callee, runtime: true);
         $elementType = $this->elementTypeOf($target->type);
-        $subst = $symbol->typeParams !== [] ? [$symbol->typeParams[0] => $elementType] : [];
+        // Enumerable::Where<TSource>(iterable<TSource> $source, ...): TSource comes from the receiver.
+        $subst = [];
+        if ($member->typeParams !== [] && isset($member->params[0])) {
+            $this->inferTypeArguments($member->params[0]->type, $target->type, $member->typeParams, $subst);
+        }
         [$code, $values] = $this->arguments($args, $params, $subst, $elementType, runtime: true);
         $ref = $this->runtime($class);
         $type = $this->resultType($member, $subst, $values);
@@ -743,10 +745,6 @@ trait EmitsMembers
      * Rejects calls that C# would not compile: too many arguments, a missing required argument,
      * or an unknown parameter name. (PHP would silently drop extra arguments.)
      *
-     * @param list<Argument> $args
-     * @param list<ParameterSymbol> $params
-     */
-    /**
      * @param list<Argument> $args
      * @param list<ParameterSymbol> $params
      */

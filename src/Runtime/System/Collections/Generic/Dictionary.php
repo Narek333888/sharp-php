@@ -17,15 +17,19 @@ use SharpPhp\Runtime\TypeName;
  * @template TKey
  * @template TValue
  * @sharp-element KeyValuePair<TKey, TValue>
+ *
+ * @implements \ArrayAccess<TKey, TValue>
+ * @implements \IteratorAggregate<int, KeyValuePair<TKey, TValue>>
  */
 class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable
 {
+    /** @use EnumerableMethods<KeyValuePair<TKey, TValue>> */
     use EnumerableMethods;
 
-    /** @var array<string, mixed> */
+    /** @var array<string, TKey> */
     private array $keys = [];
 
-    /** @var array<string, mixed> */
+    /** @var array<string, TValue> */
     private array $values = [];
 
     private readonly ?string $keyType;
@@ -46,7 +50,7 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable
     }
 
     /**
-     * @param iterable<mixed, mixed> $collection
+     * @param iterable<mixed, mixed> $collection pairs, or key => value
      * @param array{0: string, 1: string}|null $of key and value type specs
      */
     public function __construct(iterable $collection = [], ?array $of = null)
@@ -154,6 +158,7 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable
 
     // ---- PHP interfaces ----------------------------------------------
 
+    /** @return \Iterator<int, KeyValuePair<TKey, TValue>> */
     public function getIterator(): \Iterator
     {
         foreach ($this->keys as $hash => $key) {

@@ -16,12 +16,16 @@ use SharpPhp\Runtime\TypeName;
  *
  * @template T
  * @sharp-element T
+ *
+ * @implements \ArrayAccess<int, T>
+ * @implements \IteratorAggregate<int, T>
  */
 class List_ implements \ArrayAccess, \IteratorAggregate, \Countable
 {
+    /** @use EnumerableMethods<T> */
     use EnumerableMethods;
 
-    /** @var list<mixed> */
+    /** @var list<T> */
     private array $items = [];
 
     public int $Count {
@@ -29,7 +33,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable
     }
 
     /**
-     * @param iterable<mixed>|int $collection items to copy, or an initial capacity
+     * @param iterable<T>|int $collection items to copy, or an initial capacity
      */
     public function __construct(iterable|int $collection = [], private readonly ?string $of = null)
     {
@@ -46,6 +50,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable
         $this->items[] = $this->checked($item);
     }
 
+    /** @param iterable<T> $collection */
     public function AddRange(iterable $collection): void
     {
         foreach ($collection as $item) {
@@ -198,6 +203,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable
 
     // ---- PHP interfaces ----------------------------------------------
 
+    /** @return \Iterator<int, T> */
     public function getIterator(): \Iterator
     {
         return new \ArrayIterator($this->items);

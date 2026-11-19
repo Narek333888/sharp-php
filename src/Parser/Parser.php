@@ -186,7 +186,7 @@ final class Parser
             }
             $alias = null;
             if ($this->current()->isIdentifier() && $this->peek(1)->is('=')) {
-                $alias = $this->advance()->value;
+                $alias = $this->advance()->text();
                 $this->advance();
             }
             $name = $this->parseQualifiedName();
@@ -199,10 +199,10 @@ final class Parser
 
     private function parseQualifiedName(): string
     {
-        $name = $this->expectIdentifier()->value;
+        $name = $this->expectIdentifier()->text();
         while ($this->check('.') && $this->peek(1)->isIdentifier()) {
             $this->advance();
-            $name .= '.' . $this->advance()->value;
+            $name .= '.' . $this->advance()->text();
         }
 
         return $name;
@@ -244,7 +244,7 @@ final class Parser
             if (in_array($token->value, ['extern', 'unsafe', 'volatile', 'async'], true)) {
                 throw $this->error("The '{$token->value}' modifier is not supported", $token, 'SP1010');
             }
-            $modifiers[] = $token->value;
+            $modifiers[] = $token->text();
         }
 
         return $modifiers;
@@ -260,7 +260,7 @@ final class Parser
     /** Returns the relative index just after the bracket group starting at relative index $i. */
     private function skipBalancedFrom(int $i): int
     {
-        $open = $this->peek($i)->value;
+        $open = $this->peek($i)->text();
         $close = ['[' => ']', '(' => ')', '{' => '}', '<' => '>'][$open];
         $depth = 0;
         for (; ; $i++) {
@@ -295,12 +295,12 @@ final class Parser
             $this->accept('class');
         } elseif ($kindToken->is('class') || $kindToken->is('struct') || $kindToken->is('interface') || $kindToken->is('enum')) {
             $this->advance();
-            $kind = $kindToken->value;
+            $kind = $kindToken->text();
         } else {
             throw $this->error('Type declaration expected (class, interface, enum, struct or record)', $kindToken);
         }
 
-        $name = $this->expectIdentifier('type name')->value;
+        $name = $this->expectIdentifier('type name')->text();
         $typeParams = $this->check('<') ? $this->parseTypeParameterList() : [];
         $recordParams = $kind === 'record' && $this->check('(') ? $this->parseParameterList() : [];
 
@@ -343,7 +343,7 @@ final class Parser
             if ($this->check('in') || $this->check('out')) {
                 $this->advance();
             }
-            $names[] = $this->expectIdentifier('type parameter')->value;
+            $names[] = $this->expectIdentifier('type parameter')->text();
         } while ($this->accept(','));
         $this->expect('>');
 
@@ -360,7 +360,7 @@ final class Parser
         $constraints = [];
         while ($this->current()->isIdentifier('where')) {
             $this->advance();
-            $param = $this->expectIdentifier('type parameter')->value;
+            $param = $this->expectIdentifier('type parameter')->text();
             $this->expect(':');
             $constraints[$param] = [];
             do {
@@ -391,7 +391,7 @@ final class Parser
             $this->skipAttributes();
             $token = $this->expectIdentifier('enum member name');
             $value = $this->accept('=') ? $this->parseExpression() : null;
-            $members[] = (new EnumMember($token->value, $value))->at($token);
+            $members[] = (new EnumMember($token->text(), $value))->at($token);
             if (!$this->accept(',')) {
                 break;
             }
@@ -416,7 +416,7 @@ final class Parser
             throw $this->error('Finalizers are not supported', $token, 'SP1010');
         }
         if ($token->is('event') || $token->is('delegate')) {
-            throw $this->error("'{$token->value}' declarations are not supported", $token, 'SP1010');
+            throw $this->error("'{$token->text()}' declarations are not supported", $token, 'SP1010');
         }
         if ($token->is('implicit') || $token->is('explicit')) {
             throw $this->error('Conversion operators are not supported', $token, 'SP1010');
@@ -434,7 +434,7 @@ final class Parser
                     throw $this->error("'base' or 'this' expected", $kind);
                 }
                 $this->advance();
-                $initializer = $kind->value;
+                $initializer = $kind->text();
                 $initializerArgs = $this->parseArgumentList();
             }
             [$body, $exprBody] = $this->parseMethodBody();
@@ -469,7 +469,7 @@ final class Parser
             $constraints = $this->parseConstraints();
             [$body, $exprBody] = $this->parseMethodBody();
 
-            return (new MethodDecl($modifiers, $type, $nameToken->value, $typeParams, $params, $body, $exprBody, 'method', null, [], $constraints))->at($start);
+            return (new MethodDecl($modifiers, $type, $nameToken->text(), $typeParams, $params, $body, $exprBody, 'method', null, [], $constraints))->at($start);
         }
 
         // Property with accessors
@@ -481,7 +481,7 @@ final class Parser
                 $this->expect(';');
             }
 
-            return (new PropertyDecl($modifiers, $type, $nameToken->value, $accessors, null, $init))->at($start);
+            return (new PropertyDecl($modifiers, $type, $nameToken->text(), $accessors, null, $init))->at($start);
         }
 
         // Expression-bodied property
@@ -489,7 +489,7 @@ final class Parser
             $expr = $this->parseExpression();
             $this->expect(';');
 
-            return (new PropertyDecl($modifiers, $type, $nameToken->value, [], $expr, null))->at($start);
+            return (new PropertyDecl($modifiers, $type, $nameToken->text(), [], $expr, null))->at($start);
         }
 
         // Field(s)
@@ -497,7 +497,7 @@ final class Parser
         $declToken = $nameToken;
         while (true) {
             $init = $this->accept('=') ? $this->parseVariableInitializer() : null;
-            $declarators[] = (new VarDeclarator($declToken->value, $init))->at($declToken);
+            $declarators[] = (new VarDeclarator($declToken->text(), $init))->at($declToken);
             if (!$this->accept(',')) {
                 break;
             }
@@ -552,7 +552,7 @@ final class Parser
             } else {
                 $this->expect(';');
             }
-            $accessors[] = (new Accessor($kind->value, $modifiers, $body, $exprBody))->at($start);
+            $accessors[] = (new Accessor($kind->text(), $modifiers, $body, $exprBody))->at($start);
         }
         $this->expect('}');
 
@@ -569,7 +569,7 @@ final class Parser
             $start = $this->current();
             $modifier = null;
             if ($this->check('ref') || $this->check('out') || $this->check('in') || $this->check('params') || $this->check('this')) {
-                $modifier = $this->advance()->value;
+                $modifier = $this->advance()->text();
                 if ($modifier === 'this') {
                     throw $this->error('Extension methods are not supported', $start, 'SP1010');
                 }
@@ -577,7 +577,7 @@ final class Parser
             $type = $this->parseType();
             $name = $this->expectIdentifier('parameter name');
             $default = $this->accept('=') ? $this->parseExpression() : null;
-            $params[] = (new Parameter($name->value, $type, $default, $modifier))->at($start);
+            $params[] = (new Parameter($name->text(), $type, $default, $modifier))->at($start);
             if (!$this->accept(',')) {
                 break;
             }
@@ -620,12 +620,12 @@ final class Parser
 
         if ($token->type === TokenType::Keyword && in_array($token->value, self::PREDEFINED_TYPES, true)) {
             $this->advance();
-            $type = (new TypeRef($token->value, [], false))->at($token);
+            $type = (new TypeRef($token->text(), [], false))->at($token);
         } elseif ($token->isIdentifier()) {
-            $name = $this->advance()->value;
+            $name = $this->advance()->text();
             while ($this->check('.') && $this->peek(1)->isIdentifier()) {
                 $this->advance();
-                $name .= '.' . $this->advance()->value;
+                $name .= '.' . $this->advance()->text();
             }
             $args = [];
             if ($this->check('<')) {
@@ -823,7 +823,7 @@ final class Parser
                 case 'unchecked':
                 case 'unsafe':
                 case 'fixed':
-                    throw $this->error("'{$token->value}' statements are not supported", $token, 'SP1010');
+                    throw $this->error("'{$token->text()}' statements are not supported", $token, 'SP1010');
                 case 'else':
                     throw $this->error("Unexpected 'else' without matching 'if'", $token);
             }
@@ -914,7 +914,7 @@ final class Parser
             $this->advance();
             $this->advance();
             do {
-                $deconstruction[] = $this->expectIdentifier('variable name')->value;
+                $deconstruction[] = $this->expectIdentifier('variable name')->text();
             } while ($this->accept(','));
             $this->expect(')');
         } elseif ($this->check('(')) {
@@ -925,7 +925,7 @@ final class Parser
             } else {
                 $type = $this->parseType();
             }
-            $variable = $this->expectIdentifier('variable name')->value;
+            $variable = $this->expectIdentifier('variable name')->text();
         }
 
         $this->expect('in');
@@ -992,7 +992,7 @@ final class Parser
             if ($this->accept('(')) {
                 $type = $this->parseType();
                 if ($this->current()->isIdentifier()) {
-                    $variable = $this->advance()->value;
+                    $variable = $this->advance()->text();
                 }
                 $this->expect(')');
             }
@@ -1049,7 +1049,7 @@ final class Parser
         do {
             $name = $this->expectIdentifier('variable name');
             $init = $this->accept('=') ? $this->parseVariableInitializer() : null;
-            $declarators[] = (new VarDeclarator($name->value, $init))->at($name);
+            $declarators[] = (new VarDeclarator($name->text(), $init))->at($name);
         } while ($this->accept(','));
 
         return $declarators;
@@ -1143,21 +1143,21 @@ final class Parser
 
         if ($this->current()->isIdentifier()) {
             $name = $this->advance();
-            $params[] = (new Parameter($name->value, null, null, null))->at($name);
+            $params[] = (new Parameter($name->text(), null, null, null))->at($name);
         } else {
             $this->expect('(');
             while (!$this->check(')')) {
                 $paramStart = $this->current();
                 $modifier = null;
                 if ($this->check('ref') || $this->check('out') || $this->check('in')) {
-                    $modifier = $this->advance()->value;
+                    $modifier = $this->advance()->text();
                 }
                 if ($this->current()->isIdentifier() && ($this->peek(1)->is(',') || $this->peek(1)->is(')'))) {
-                    $params[] = (new Parameter($this->advance()->value, null, null, $modifier))->at($paramStart);
+                    $params[] = (new Parameter($this->advance()->text(), null, null, $modifier))->at($paramStart);
                 } else {
                     $type = $this->parseType();
                     $name = $this->expectIdentifier('parameter name');
-                    $params[] = (new Parameter($name->value, $type, null, $modifier))->at($paramStart);
+                    $params[] = (new Parameter($name->text(), $type, null, $modifier))->at($paramStart);
                 }
                 if (!$this->accept(',')) {
                     break;
@@ -1324,7 +1324,7 @@ final class Parser
             if (in_array($token->value, ['+', '-', '!', '~', '++', '--'], true)) {
                 $this->advance();
 
-                return (new UnaryExpr($token->value, $this->parseUnary(), false))->at($token);
+                return (new UnaryExpr($token->text(), $this->parseUnary(), false))->at($token);
             }
             if ($token->value === '(' && $this->isCast()) {
                 $this->advance();
@@ -1414,7 +1414,7 @@ final class Parser
                 }
                 $this->advance();
 
-                return (new NameExpr($token->value, $this->tryParseGenericArgumentsInExpression()))->at($token);
+                return (new NameExpr($token->text(), $this->tryParseGenericArgumentsInExpression()))->at($token);
             case TokenType::Keyword:
                 return $this->parseKeywordPrimary($token);
             case TokenType::Punct:
@@ -1504,14 +1504,14 @@ final class Parser
         if (in_array($token->value, self::PREDEFINED_TYPES, true)) {
             $this->advance();
 
-            return (new PredefinedTypeExpr($token->value))->at($token);
+            return (new PredefinedTypeExpr($token->text()))->at($token);
         }
 
         if ($token->value === 'delegate') {
             throw $this->error('Anonymous methods are not supported; use a lambda instead', $token, 'SP1010');
         }
 
-        throw $this->error("Invalid expression term '{$token->value}'", $token, 'SP1003');
+        throw $this->error("Invalid expression term '{$token->text()}'", $token, 'SP1003');
     }
 
     private function parsePostfix(Expr $expr): Expr
@@ -1528,7 +1528,7 @@ final class Parser
                     $this->advance();
                     $name = $this->expectIdentifier('member name');
                     $typeArgs = $this->tryParseGenericArgumentsInExpression();
-                    $expr = (new MemberAccessExpr($expr, $name->value, $token->value === '?.', $typeArgs))->at($name);
+                    $expr = (new MemberAccessExpr($expr, $name->text(), $token->text() === '?.', $typeArgs))->at($name);
                     break;
                 case '(':
                     $expr = (new InvocationExpr($expr, $this->parseArgumentList()))->at($token);
@@ -1549,7 +1549,7 @@ final class Parser
                 case '++':
                 case '--':
                     $this->advance();
-                    $expr = (new UnaryExpr($token->value, $expr, true))->at($token);
+                    $expr = (new UnaryExpr($token->text(), $expr, true))->at($token);
                     break;
                 case '!':
                     // null-forgiving operator: x!
@@ -1585,12 +1585,12 @@ final class Parser
             $start = $this->current();
             $name = null;
             if ($start->isIdentifier() && $this->peek(1)->is(':')) {
-                $name = $this->advance()->value;
+                $name = $this->advance()->text();
                 $this->advance();
             }
             $modifier = null;
             if ($this->check('ref') || $this->check('out') || $this->check('in')) {
-                $modifier = $this->advance()->value;
+                $modifier = $this->advance()->text();
             }
 
             $value = null;
@@ -1598,12 +1598,12 @@ final class Parser
                 $declStart = $this->current();
                 if ($declStart->isIdentifier('var') && $this->peek(1)->isIdentifier()) {
                     $this->advance();
-                    $value = (new DeclarationExpr(null, $this->advance()->value))->at($declStart);
+                    $value = (new DeclarationExpr(null, $this->advance()->text()))->at($declStart);
                 } else {
                     $save = $this->pos;
                     $type = $this->tryParseType();
                     if ($type !== null && $this->current()->isIdentifier() && ($this->peek(1)->is(',') || $this->peek(1)->is(')'))) {
-                        $value = (new DeclarationExpr($type, $this->advance()->value))->at($declStart);
+                        $value = (new DeclarationExpr($type, $this->advance()->text()))->at($declStart);
                     } else {
                         $this->pos = $save;
                     }
@@ -1696,7 +1696,7 @@ final class Parser
                 if ($this->check('{')) {
                     throw $this->error('Nested object initializers are not supported', $this->current(), 'SP1010');
                 }
-                $items[] = (new InitializerItem('member', $token->value, null, [$this->parseExpression()]))->at($token);
+                $items[] = (new InitializerItem('member', $token->text(), null, [$this->parseExpression()]))->at($token);
             } elseif ($token->is('[')) {
                 $this->advance();
                 $key = $this->parseExpression();
@@ -1721,7 +1721,7 @@ final class Parser
     private function parseInterpolatedString(Token $token): InterpolatedStringExpr
     {
         $parts = [];
-        foreach ($token->value as $part) {
+        foreach ($token->interpolationParts() as $part) {
             if (is_string($part)) {
                 $parts[] = $part;
                 continue;
@@ -1795,7 +1795,7 @@ final class Parser
         if ($token->type === TokenType::Punct && in_array($token->value, ['<', '<=', '>', '>='], true)) {
             $this->advance();
 
-            return (new Pattern('relational', $this->parseBinary(7), null, null, $token->value, []))->at($token);
+            return (new Pattern('relational', $this->parseBinary(7), null, null, $token->text(), []))->at($token);
         }
 
         if ($token->isIdentifier('_') && !$this->peek(1)->is('.') && !$this->peek(1)->is('(')) {
@@ -1807,7 +1807,7 @@ final class Parser
         if ($token->isIdentifier('var') && $this->peek(1)->isIdentifier()) {
             $this->advance();
 
-            return (new Pattern('var', null, null, $this->advance()->value, null, []))->at($token);
+            return (new Pattern('var', null, null, $this->advance()->text(), null, []))->at($token);
         }
 
         $isKeywordType = $token->type === TokenType::Keyword && in_array($token->value, self::PREDEFINED_TYPES, true) && !$this->peek(1)->is('.');
@@ -1821,7 +1821,7 @@ final class Parser
                 $next = $this->current();
                 $hasDesignation = $next->isIdentifier() && !in_array($next->value, ['and', 'or', 'when'], true);
                 if ($hasDesignation || $isKeywordType) {
-                    $designation = $hasDesignation ? $this->advance()->value : null;
+                    $designation = $hasDesignation ? $this->advance()->text() : null;
 
                     return (new Pattern('type', null, $type, $designation, null, []))->at($token);
                 }
@@ -1841,10 +1841,10 @@ final class Parser
         $patterns = [];
         while (!$this->check('}')) {
             $nameToken = $this->expectIdentifier('property name');
-            $memberNodes[] = (new NameExpr($nameToken->value, []))->at($nameToken);
-            $path = [$nameToken->value];
+            $memberNodes[] = (new NameExpr($nameToken->text(), []))->at($nameToken);
+            $path = [$nameToken->text()];
             while ($this->accept('.')) {
-                $path[] = $this->expectIdentifier('property name')->value;
+                $path[] = $this->expectIdentifier('property name')->text();
             }
             $this->expect(':');
             $pattern = $this->parsePattern();
@@ -1861,7 +1861,7 @@ final class Parser
         $this->expect('}');
 
         $next = $this->current();
-        $designation = $next->isIdentifier() && !in_array($next->value, ['and', 'or', 'when'], true) ? $this->advance()->value : null;
+        $designation = $next->isIdentifier() && !in_array($next->text(), ['and', 'or', 'when'], true) ? $this->advance()->text() : null;
 
         return (new Pattern('property', null, $type, $designation, null, $patterns, $members, $memberNodes))->at($start);
     }
@@ -1875,11 +1875,13 @@ final class Parser
         return $this->tokens[$this->pos];
     }
 
+    /** @phpstan-impure reads the parser position */
     private function peek(int $ahead): Token
     {
         return $this->tokens[min($this->pos + $ahead, count($this->tokens) - 1)];
     }
 
+    /** @phpstan-impure reads the parser position */
     private function advance(): Token
     {
         $token = $this->tokens[$this->pos];
@@ -1890,21 +1892,25 @@ final class Parser
         return $token;
     }
 
+    /** @phpstan-impure reads the parser position */
     private function atEnd(): bool
     {
         return $this->current()->type === TokenType::EndOfFile;
     }
 
+    /** @phpstan-impure reads the parser position */
     private function check(string $value): bool
     {
         return $this->current()->is($value);
     }
 
+    /** @phpstan-impure reads the parser position */
     private function accept(string $value): ?Token
     {
         return $this->check($value) ? $this->advance() : null;
     }
 
+    /** @phpstan-impure reads the parser position */
     private function expect(string $value): Token
     {
         if (!$this->check($value)) {
@@ -1918,7 +1924,7 @@ final class Parser
     {
         $token = $this->current();
         if (!$token->isIdentifier()) {
-            $hint = $token->type === TokenType::Keyword ? " ('{$token->value}' is a keyword; use @{$token->value})" : '';
+            $hint = $token->type === TokenType::Keyword ? " ('{$token->text()}' is a keyword; use @{$token->text()})" : '';
             throw $this->error(ucfirst($what) . " expected, found {$token->describe()}$hint", $token, 'SP1002');
         }
 

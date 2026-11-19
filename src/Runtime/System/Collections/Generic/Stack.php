@@ -13,18 +13,22 @@ use SharpPhp\Runtime\TypeName;
  *
  * @template T
  * @sharp-element T
+ *
+ * @implements \IteratorAggregate<int, T>
  */
 class Stack implements \IteratorAggregate, \Countable
 {
+    /** @use EnumerableMethods<T> */
     use EnumerableMethods;
 
-    /** @var list<mixed> */
+    /** @var list<T> */
     private array $items = [];
 
     public int $Count {
         get => count($this->items);
     }
 
+    /** @param iterable<T> $collection */
     public function __construct(iterable $collection = [], private readonly ?string $of = null)
     {
         foreach ($collection as $item) {
@@ -63,7 +67,11 @@ class Stack implements \IteratorAggregate, \Countable
         $this->items = [];
     }
 
-    /** Enumerates from the top of the stack, like C#. */
+    /**
+     * Enumerates from the top of the stack, like C#.
+     *
+     * @return \Iterator<int, T>
+     */
     public function getIterator(): \Iterator
     {
         return new \ArrayIterator(array_reverse($this->items));

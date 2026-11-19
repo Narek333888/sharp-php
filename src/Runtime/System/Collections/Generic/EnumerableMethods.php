@@ -8,7 +8,9 @@ use SharpPhp\Runtime\System\Linq\Enumerable;
 
 /**
  * LINQ methods available on every runtime collection (list.Where(...), set.Any(), ...).
- * The template T refers to the element type of the using class.
+ * T is the element type of the using class, which declares "@use EnumerableMethods<T>".
+ *
+ * @template T
  */
 trait EnumerableMethods
 {
@@ -143,7 +145,10 @@ trait EnumerableMethods
         return Enumerable::Distinct($this);
     }
 
-    /** @return List_<T> */
+    /**
+     * @param iterable<T> $second
+     * @return List_<T>
+     */
     public function Concat(iterable $second): List_
     {
         return Enumerable::Concat($this, $second);
@@ -161,6 +166,7 @@ trait EnumerableMethods
         return Enumerable::ToArray($this);
     }
 
+    /** @phpstan-return Dictionary<mixed, mixed> */
     public function ToDictionary(\Closure $keySelector, ?\Closure $elementSelector = null): Dictionary
     {
         return Enumerable::ToDictionary($this, $keySelector, $elementSelector);
@@ -177,6 +183,7 @@ trait EnumerableMethods
         return Enumerable::Aggregate($this, $seedOrFunc, $func);
     }
 
+    /** @param iterable<mixed> $other */
     public function SequenceEqual(iterable $other): bool
     {
         return Enumerable::SequenceEqual($this, $other);

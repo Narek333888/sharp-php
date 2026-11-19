@@ -12,6 +12,7 @@ use SharpPhp\Runtime\Op;
  *
  * @template TKey
  * @template TValue
+ * @implements \ArrayAccess<int, mixed> kv[0] is the key, kv[1] the value
  */
 final class KeyValuePair implements \ArrayAccess
 {

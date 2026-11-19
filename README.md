@@ -27,7 +27,7 @@ public record Person(string Name, int Age);
 
 ## Requirements
 
-- PHP 8.4 or newer (the generated code uses property hooks and asymmetric visibility)
+- PHP 8.4 or newer, tested on 8.4 and 8.5 (the generated code uses property hooks and asymmetric visibility)
 - `ext-mbstring`
 
 ## Installation
@@ -170,12 +170,18 @@ Like the C# compiler, SharpPHP rejects at compile time (not at runtime):
 
 - values that do not convert to the target type: `int a = "text";`, `if (count)`, `Sq("abc")`, `return "x";` from an `int` method, `list.Add("s")` on a `List<int>`
 - wrong argument counts and unknown named arguments, for methods, constructors, `base(...)` and delegates
-- methods, getters and lambdas where not all code paths return a value
-- reading a local variable before it is definitely assigned
+  (calling a .NET overload the runtime library does not implement is reported as such)
+- methods, getters and lambdas where not all code paths return a value; `switch` sections that fall through
+- reading a local variable before it is definitely assigned (`break`, `continue`, `return`, `try`/`finally` and
+  constant conditions such as `while (true)` are taken into account); `out` parameters not assigned before returning
 - `private`/`protected` members and constructors used from outside, assignments to get-only, init-only and `readonly` members, setters that are not accessible
-- classes that do not implement their interfaces or inherited abstract members
+- classes that do not implement their interfaces (with matching parameter counts) or inherited abstract members
 
-A conversion is only rejected when both types are known: values of type `object`, `dynamic` or unconstrained type parameters, and untyped PHP code, are checked at runtime.
+The checks never reject valid C#, so where SharpPHP cannot be sure it accepts the code:
+
+- a conversion is only rejected when both types are known: values of type `object`, `dynamic` or unconstrained type parameters, and untyped PHP code, are checked at runtime
+- all integer types are one type to the compiler, so narrowing (`int i = someLong;`) and nullable-to-value (`int i = maybeNull;`) assignments are not reported
+- assignments inside `&&`, `||` and `?:` count as definite assignments
 
 Uncaught exceptions are printed like .NET, with locations mapped back to the `.sphp` sources:
 
@@ -195,7 +201,10 @@ SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 - Integer arithmetic is 64-bit and does not wrap: `int.MaxValue + 1` is `2147483648`, not `-2147483648`
 - `ulong` is limited to `long.MaxValue` (there is no `ulong.MaxValue`); `decimal`/`float`/`double` are PHP floats
 - `char` is a one-character string at runtime (it converts to its code where C# would use it as a number)
-- Not supported: nested types, operator overloading, indexers, extension methods, events/delegates declarations, `async`/`await`, LINQ query syntax, tuples, `using` statements, `goto`, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record
+- Values only know their PHP type at runtime: `5L.GetType()` is `System.Int32`, while `typeof(long)` is `System.Int64`
+- The runtime library implements the common .NET APIs, not all of them (no `StringComparison`, `ThenBy`, `Zip`, `DateTime.Now`, ...)
+- A named argument for a `params` parameter (`string.Join(separator: ",", values: words)`) is not supported; pass it positionally
+- Not supported: nested types, operator overloading, indexers, extension methods, events/delegates declarations, `async`/`await`, LINQ query syntax, tuples, `using` statements, `goto`, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters
 
 ## Development
 
