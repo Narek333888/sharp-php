@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- `sharp` command: read the command line from `$_SERVER['argv']`, which is set even when
+  `register_argc_argv` is off
+- CI runs PHP 8.4 and 8.5 independently
+
 ## 0.1.0
 
 First release.
