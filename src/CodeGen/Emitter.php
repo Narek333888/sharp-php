@@ -185,6 +185,18 @@ final class Emitter
     // Shared helpers
     // ------------------------------------------------------------------
 
+    /** The method, accessor or lambda being emitted (statements only occur inside one). */
+    private function currentFunction(): FunctionContext
+    {
+        return $this->fn ?? throw new \LogicException('Not emitting a function body');
+    }
+
+    /** The class being emitted (members only occur inside one). */
+    private function currentClass(): TypeSymbol
+    {
+        return $this->class ?? throw new \LogicException('Not emitting a class');
+    }
+
     private function classRef(string $fqn): string
     {
         return $this->imports->name($fqn);
@@ -209,7 +221,7 @@ final class Emitter
     /** @return array<string, Type> */
     private function typeParamsInScope(): array
     {
-        return [...($this->class?->typeParamTypes ?? []), ...($this->fn?->typeParams ?? [])];
+        return [...($this->class->typeParamTypes ?? []), ...($this->fn->typeParams ?? [])];
     }
 
     private function error(string $code, string $message, Node $at): CompileError

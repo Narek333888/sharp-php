@@ -23,6 +23,7 @@ final class Type
         'SharpPhp\\Runtime\\System\\IEquatable',
     ];
 
+    /** @var array<string, self> shared instances of the simple types */
     private static array $cache = [];
 
     /**
@@ -198,6 +199,8 @@ final class Type
 
     /**
      * PHP type declaration for this type, or null when no declaration should be emitted.
+     *
+     * @param callable(string): string $classRef how to write a class name (imports)
      */
     public function phpDeclaration(callable $classRef): ?string
     {
@@ -206,7 +209,7 @@ final class Type
             'char' => 'string',
             'mixed', 'null' => 'mixed',
             'closure' => '\\Closure',
-            'class' => $classRef($this->class),
+            'class' => $classRef((string) $this->class),
             'typeparam' => $this->class !== null && !in_array($this->class, self::SCALAR_INTERFACES, true) ? $classRef($this->class) : 'mixed',
             default => null,
         };
@@ -225,7 +228,7 @@ final class Type
     {
         $base = match ($this->kind) {
             'int', 'float', 'string', 'char', 'bool', 'array' => $this->kind,
-            'class' => $this->class,
+            'class' => (string) $this->class,
             'closure' => 'Closure',
             default => 'mixed',
         };

@@ -105,11 +105,11 @@ trait EmitsExpressions
     {
         return match ($e->kind) {
             'int' => $expected !== null && $expected->isFloat()
-                ? Emitted::value(self::phpFloat((float) $e->value), Type::float())
-                : new Emitted((string) $e->value, Type::int(), intValue: (int) $e->value),
-            'float' => Emitted::value(self::phpFloat((float) $e->value), Type::float()),
-            'string' => Emitted::value(self::phpString((string) $e->value), Type::string()),
-            'char' => new Emitted(self::phpString((string) $e->value), Type::char(), intValue: mb_ord((string) $e->value)),
+                ? Emitted::value(self::phpFloat($e->floatValue()), Type::float())
+                : new Emitted((string) $e->intValue(), Type::int(), intValue: $e->intValue()),
+            'float' => Emitted::value(self::phpFloat($e->floatValue()), Type::float()),
+            'string' => Emitted::value(self::phpString($e->stringValue()), Type::string()),
+            'char' => new Emitted(self::phpString($e->stringValue()), Type::char(), intValue: mb_ord($e->stringValue())),
             'bool' => Emitted::value($e->value ? 'true' : 'false', Type::bool()),
             default => Emitted::value('null', Type::null()),
         };
@@ -796,7 +796,7 @@ trait EmitsExpressions
         }
         [$args] = $this->arguments($e->args, $ctorParams ?? [], $symbol->substitutionFor($type), runtime: $symbol->external);
         $of = $this->collectionElementSpec($type, $symbol);
-        $items = $e->initializer?->items ?? [];
+        $items = $e->initializer->items ?? [];
         $elementType = $this->elementTypeOf($type);
 
         // new List<int> { 1, 2, 3 }  =>  new List_([1, 2, 3], of: 'int')
@@ -815,7 +815,7 @@ trait EmitsExpressions
 
         $kinds = array_unique(array_map(static fn ($i): string => $i->kind, $items));
         if (count($kinds) > 1) {
-            throw $this->error('SP0747', 'Invalid initializer member declarator: object and collection initializers cannot be mixed', $e->initializer);
+            throw $this->error('SP0747', 'Invalid initializer member declarator: object and collection initializers cannot be mixed', $e->initializer ?? $e);
         }
         $op = $this->runtime('Op');
         $kind = $kinds[0];
@@ -831,7 +831,7 @@ trait EmitsExpressions
                     $this->requireAccessible($member, $item);
                     $this->requireWritable($member, $item, initializer: true);
                 }
-                $memberType = $member?->type->substitute($member->owner->substitutionFor($type)) ?? Type::mixed();
+                $memberType = $member !== null ? $member->type->substitute($member->owner->substitutionFor($type)) : Type::mixed();
                 $pairs[] = self::phpString((string) $item->name) . ' => ' . $this->convert($item->values[0], $memberType)->code;
             }
 
@@ -849,7 +849,8 @@ trait EmitsExpressions
                     $item->values,
                     array_keys($item->values),
                 )) . ']',
-                'index' => '[' . $this->convert($item->key, $keyType)->code . ', ' . $this->convert($item->values[0], $valueType)->code . ']',
+                'index' => '[' . $this->convert($item->key ?? throw new \LogicException('An index initializer has a key'), $keyType)->code . ', ' . $this->convert($item->values[0], $valueType)->code . ']',
+                default => throw new \LogicException("Unexpected initializer kind '$kind'"),
             };
         }
         $helper = ['element' => 'collect', 'pair' => 'addPairs', 'index' => 'setIndexes'][$kind];
@@ -876,7 +877,7 @@ trait EmitsExpressions
             : ($expected !== null && $expected->kind === 'array' ? $expected->element() : null);
 
         if ($e->elements === null) {
-            $size = $this->expr($e->size, Type::int());
+            $size = $this->expr($e->size ?? throw new \LogicException('An array without elements has a size'), Type::int());
             $default = $this->defaultValue($elementType);
 
             return Emitted::value("\\array_fill(0, {$size->code}, {$default->code})", Type::array($elementType ?? Type::mixed()));
@@ -952,7 +953,7 @@ trait EmitsExpressions
 
             $outerFn = $this->fn;
             $static = $e->isStatic || $this->class === null || $outerFn === null || $outerFn->isStatic;
-            $function = new FunctionContext($static, $expectedReturn ?? Type::mixed(), $outerFn?->typeParams ?? [], $outerFn);
+            $function = new FunctionContext($static, $expectedReturn ?? Type::mixed(), $outerFn->typeParams ?? [], $outerFn);
 
             if ($e->body instanceof Block) {
                 $outerWriter = $this->w;

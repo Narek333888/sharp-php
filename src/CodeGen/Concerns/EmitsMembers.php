@@ -163,15 +163,23 @@ trait EmitsMembers
     {
         return match ($result->kind) {
             'value' => $result,
-            'method' => Emitted::value(
-                $result->code . $result->member->name . '(...)',
-                Type::closure([...array_map(static fn (ParameterSymbol $p): Type => $p->type, $result->member->params), $result->member->type]),
-            ),
+            'method' => $this->methodGroup($result),
             'function' => Emitted::value($result->code . '(...)', Type::closure()),
-            'type' => throw $this->error('SP0119', "'{$result->symbol->csharpName()}' is a type, which is not valid in the given context", $at),
+            'type' => throw $this->error('SP0119', "'" . ($result->symbol?->csharpName() ?? $result->code) . "' is a type, which is not valid in the given context", $at),
             'namespace' => throw $this->namespaceError((string) $result->namespace, $at),
             default => throw $this->error('SP0175', "Use of keyword 'base' is not valid in this context", $at),
         };
+    }
+
+    /** A method used as a value (list.ForEach(Print)): a first-class callable. */
+    private function methodGroup(Emitted $result): Emitted
+    {
+        $member = $result->member ?? throw new \LogicException('A method group has a member');
+
+        return Emitted::value(
+            $result->code . $member->name . '(...)',
+            Type::closure([...array_map(static fn (ParameterSymbol $p): Type => $p->type, $member->params), $member->type]),
+        );
     }
 
     private function namespaceError(string $dotted, Node $at): CompileError
@@ -301,7 +309,7 @@ trait EmitsMembers
 
     private function staticMember(Emitted $type, MemberAccessExpr $e): Emitted
     {
-        $symbol = $type->symbol;
+        $symbol = $type->symbol ?? throw new \LogicException('A type result has a symbol');
         $name = $e->name;
         $member = $this->symbols->findMember($symbol, $name) ?? $this->symbols->findMember($symbol, $name . '()');
         if ($member === null) {
@@ -426,10 +434,10 @@ trait EmitsMembers
     private function temp(Node|Emitted $at): string
     {
         if ($this->fn === null) {
-            throw $this->error('SP0133', 'The expression being assigned must be constant', $at instanceof Node ? $at : $this->classDecl);
+            throw $this->error('SP0133', 'The expression being assigned must be constant', $at instanceof Node ? $at : ($this->classDecl ?? throw new \LogicException('Outside a function and a class')));
         }
 
-        return $this->fn->temp();
+        return $this->currentFunction()->temp();
     }
 
     // ------------------------------------------------------------------
@@ -450,7 +458,7 @@ trait EmitsMembers
             $result = $this->name($callee, 'invoke');
 
             return match ($result->kind) {
-                'method' => $this->callMember($result->code, $result->member, $e->args, null, $callee->typeArgs, null, $callee),
+                'method' => $this->callMember($result->code, $result->member ?? throw new \LogicException('A method group has a member'), $e->args, null, $callee->typeArgs, null, $callee),
                 'function' => Emitted::value($result->code . '(' . $this->arguments($e->args, [])[0] . ')', $result->type),
                 'value' => $this->callClosure($result, $e->args, $callee),
                 default => throw $this->error('SP1955', "Non-invocable member '{$callee->name}' cannot be used like a method", $callee),
@@ -464,7 +472,7 @@ trait EmitsMembers
                 throw $this->namespaceError($target->namespace . '.' . $callee->name, $callee);
             }
             if ($target->kind === 'type') {
-                $symbol = $target->symbol;
+                $symbol = $target->symbol ?? throw new \LogicException('A type result has a symbol');
                 $member = $this->findMethod($symbol, $callee->name);
                 if ($member === null) {
                     $other = $this->symbols->findMember($symbol, $callee->name);
@@ -671,6 +679,7 @@ trait EmitsMembers
     }
 
     /** System.Object methods every class has in C#. */
+    /** @param list<Argument> $args */
     private function objectMethod(Emitted $target, string $name, array $args): ?Emitted
     {
         $op = $this->runtime('Op');

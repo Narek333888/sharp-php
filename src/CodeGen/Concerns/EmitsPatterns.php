@@ -104,20 +104,20 @@ trait EmitsPatterns
             case 'relational':
                 $s = $subject();
 
-                return $this->infix((string) $p->operator, $s, $this->expr($p->expr, $s->type), Prec::REL, Type::bool());
+                return $this->infix((string) $p->operator, $s, $this->expr($p->expression(), $s->type), Prec::REL, Type::bool());
 
             case 'type':
-                return $this->typeTest($this->resolveType($p->type), $subject(), $p->designation);
+                return $this->typeTest($this->resolveType($p->typeRef()), $subject(), $p->designation);
 
             case 'property':
                 return $this->propertyPatternTest($p, $subject);
 
             case 'constant':
                 if ($this->patternExprIsType($p->expr)) {
-                    return $this->typeTest($this->target($p->expr)->type, $subject(), null);
+                    return $this->typeTest($this->target($p->expression())->type, $subject(), null);
                 }
                 $s = $subject();
-                $value = $this->expr($p->expr, $s->type);
+                $value = $this->expr($p->expression(), $s->type);
                 if ($value->type->isNull()) {
                     return $this->infix('===', $s, $value, Prec::EQ, Type::bool());
                 }
@@ -220,7 +220,7 @@ trait EmitsPatterns
         $types = [];
         foreach ($e->arms as $arm) {
             if ($simple) {
-                $key = $arm->pattern->kind === 'discard' ? 'default' : $this->expr($arm->pattern->expr, $subject->type)->code;
+                $key = $arm->pattern->kind === 'discard' ? 'default' : $this->expr($arm->pattern->expression(), $subject->type)->code;
             } elseif ($arm->pattern->kind === 'discard' && $arm->when === null) {
                 $key = 'default';
             } else {

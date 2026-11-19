@@ -26,4 +26,16 @@ final class Pattern extends Node
         public readonly array $memberNodes = [],
     ) {
     }
+
+    /** The expression of a constant or relational pattern. */
+    public function expression(): Expr
+    {
+        return $this->expr ?? throw new \LogicException("A {$this->kind} pattern has no expression");
+    }
+
+    /** The type of a type pattern. */
+    public function typeRef(): TypeRef
+    {
+        return $this->type ?? throw new \LogicException("A {$this->kind} pattern has no type");
+    }
 }

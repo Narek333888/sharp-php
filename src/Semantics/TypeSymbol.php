@@ -74,7 +74,11 @@ final class TypeSymbol
         $this->members[$member->name] = $member;
     }
 
-    /** Generic arguments of a receiver type mapped onto this symbol's type parameters. */
+    /**
+     * Generic arguments of a receiver type mapped onto this symbol's type parameters.
+     *
+     * @return array<string, Type>
+     */
     public function substitutionFor(Type $receiver): array
     {
         if ($this->typeParams === [] || $receiver->kind !== 'class') {

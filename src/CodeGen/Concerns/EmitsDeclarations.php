@@ -57,6 +57,7 @@ trait EmitsDeclarations
         }
     }
 
+    /** @param list<string> $typeParams */
     private function emitTemplateDoc(array $typeParams): void
     {
         if ($typeParams === []) {
@@ -109,7 +110,9 @@ trait EmitsDeclarations
         }
 
         /** @var list<array{0: string, 1: Expr, 2: Type, 3: int}> $instanceInits */
+        /** @var list<array{0: string, 1: Expr, 2: Type, 3: int}> $instanceInits */
         $instanceInits = [];
+        /** @var list<array{0: string, 1: Expr, 2: Type, 3: int}> $staticInits */
         /** @var list<array{0: string, 1: Expr, 2: Type, 3: int}> $staticInits */
         $staticInits = [];
 
@@ -205,7 +208,7 @@ trait EmitsDeclarations
 
         foreach ($field->declarators as $declarator) {
             $this->w->sourceLine = $declarator->line;
-            $member = $this->class->members[$declarator->name];
+            $member = $this->currentClass()->members[$declarator->name];
             $type = $member->type;
 
             if ($field->isConst) {
@@ -229,6 +232,9 @@ trait EmitsDeclarations
      * non-constant initializers for the constructor / static initializer.
      *
      * @return array{0: string, 1: ?string}
+     *
+     * @param list<array{0: string, 1: Expr, 2: Type, 3: int}> $instanceInits
+     * @param list<array{0: string, 1: Expr, 2: Type, 3: int}> $staticInits
      */
     private function storageFor(Type $type, ?Expr $init, bool $readonly, bool $static, string $instanceTarget, string $staticTarget, array &$instanceInits, array &$staticInits, int $line): array
     {
@@ -259,10 +265,14 @@ trait EmitsDeclarations
         };
     }
 
+    /**
+     * @param list<array{0: string, 1: Expr, 2: Type, 3: int}> $instanceInits
+     * @param list<array{0: string, 1: Expr, 2: Type, 3: int}> $staticInits
+     */
     private function emitProperty(PropertyDecl $property, array &$instanceInits, array &$staticInits): void
     {
         $this->w->sourceLine = $property->line;
-        $member = $this->class->members[$property->name];
+        $member = $this->currentClass()->members[$property->name];
         $type = $member->type;
         $visibility = Declarator::visibility($property->modifiers);
         $static = in_array('static', $property->modifiers, true);
@@ -357,7 +367,7 @@ trait EmitsDeclarations
     private function emitAccessor(Accessor $accessor, Type $type, string $property, bool $static): void
     {
         $isGet = $accessor->kind === 'get';
-        $context = new FunctionContext($static, $isGet ? $type : Type::void(), $this->class?->typeParamTypes ?? []);
+        $context = new FunctionContext($static, $isGet ? $type : Type::void(), $this->class->typeParamTypes ?? []);
         $this->inFunction($context, function () use ($accessor, $isGet, $type, $property, $static): void {
             $this->inScope(function () use ($accessor, $isGet, $type, $property, $static): void {
                 if (!$isGet) {
@@ -377,7 +387,7 @@ trait EmitsDeclarations
                     $this->w->line($isGet ? 'get {' : 'set {');
                     $this->w->indent();
                 }
-                $this->statements($accessor->body?->statements ?? []);
+                $this->statements($accessor->body->statements ?? []);
                 if ($isGet && $accessor->body !== null) {
                     $this->requireReturnOnAllPaths($accessor->body, "'{$this->class?->csharpName()}.$property.get'", $accessor);
                 }
@@ -424,7 +434,7 @@ trait EmitsDeclarations
      */
     private function emitConstructor(?MethodDecl $constructor, TypeDecl $decl, TypeSymbol $symbol, array $instanceInits): void
     {
-        $this->w->sourceLine = $constructor?->line ?? $decl->line;
+        $this->w->sourceLine = $constructor->line ?? $decl->line;
         $context = new FunctionContext(false, Type::void(), $symbol->typeParamTypes, isConstructor: true);
 
         $this->inFunction($context, function () use ($constructor, $decl, $symbol, $instanceInits): void {
@@ -446,7 +456,7 @@ trait EmitsDeclarations
                     }
                     $this->w->line(') {');
                 } else {
-                    $this->w->line("$visibility function __construct(" . $this->parameters($constructor?->params ?? []) . ')');
+                    $this->w->line("$visibility function __construct(" . $this->parameters($constructor->params ?? []) . ')');
                     $this->w->line('{');
                 }
 
@@ -470,7 +480,7 @@ trait EmitsDeclarations
             $this->w->line("$target = " . $this->convert($init, $type)->code . ';');
         }
 
-        $this->w->sourceLine = $constructor?->line ?? $decl->line;
+        $this->w->sourceLine = $constructor->line ?? $decl->line;
         if ($constructor?->initializer === 'this') {
             throw $this->error('SP0111', "Constructor chaining with ': this(...)' is not supported", $constructor);
         }
@@ -482,7 +492,7 @@ trait EmitsDeclarations
             if ($baseParams !== null) {
                 $this->checkArguments($constructor->initializerArgs, $baseParams, Names::csharpName((string) $symbol->baseClass), $this->baseConstructorSignature($symbol, $baseParams), $constructor, constructor: true);
             }
-            [$args] = $this->arguments($constructor->initializerArgs, $baseParams ?? [], runtime: $this->symbols->find((string) $symbol->baseClass)?->external ?? false);
+            [$args] = $this->arguments($constructor->initializerArgs, $baseParams ?? [], runtime: $this->symbols->find((string) $symbol->baseClass)->external ?? false);
             $this->w->line("parent::__construct($args);");
         } elseif ($symbol->baseClass !== null && $this->symbols->hasConstructor($symbol->baseClass)) {
             $baseParams = $this->baseConstructorParams($symbol);
@@ -541,11 +551,11 @@ trait EmitsDeclarations
     private function emitMethod(MethodDecl $method, bool $inInterface): void
     {
         $this->w->sourceLine = $method->line;
-        $member = $this->class->members[$method->name];
+        $member = $this->currentClass()->members[$method->name];
         $modifiers = $method->modifiers;
         $static = in_array('static', $modifiers, true);
         $abstract = in_array('abstract', $modifiers, true);
-        $typeParams = $this->declarator->typeParamsOf($method, $this->ctx, $this->class->typeParamTypes);
+        $typeParams = $this->declarator->typeParamsOf($method, $this->ctx, $this->currentClass()->typeParamTypes);
         $isGenerator = $method->body !== null && NodeFinder::contains($method->body, static fn (Node $n): bool => $n instanceof YieldStmt);
 
         if ($inInterface && ($method->body !== null || $method->exprBody !== null)) {
@@ -557,13 +567,13 @@ trait EmitsDeclarations
 
         $this->emitTemplateDoc($method->typeParams);
         if (in_array('override', $modifiers, true)) {
-            $base = $this->class->baseClass !== null ? $this->symbols->find($this->class->baseClass) : null;
+            $base = $this->currentClass()->baseClass !== null ? $this->symbols->find($this->currentClass()->baseClass) : null;
             $overridden = $base !== null ? $this->findMethod($base, $method->name) : null;
             if ($overridden !== null) {
                 $this->w->line('#[\\Override]');
             } elseif (!in_array($method->name, ['ToString', 'Equals', 'GetHashCode'], true)) {
                 // ToString/Equals/GetHashCode override System.Object, which has no PHP counterpart.
-                throw $this->error('SP0115', "'{$this->class->csharpName()}.{$method->name}()': no suitable method found to override", $method);
+                throw $this->error('SP0115', "'{$this->currentClass()->csharpName()}.{$method->name}()': no suitable method found to override", $method);
             }
         }
 
@@ -605,7 +615,7 @@ trait EmitsDeclarations
         if (!$this->flow->isReachable() || $this->fn === null) {
             return;
         }
-        foreach ($this->fn->outParams as $name) {
+        foreach ($this->currentFunction()->outParams as $name) {
             if ($this->flow->isUnassigned($this->scope, $name)) {
                 throw $this->error('SP0177', "The out parameter '$name' must be assigned to before control leaves the current method", $at);
             }
@@ -638,7 +648,7 @@ trait EmitsDeclarations
     /** The base class or interface method that $name overrides or implements, if any. */
     private function inheritedMethod(string $name): ?\SharpPhp\Semantics\MemberSymbol
     {
-        $candidates = [...($this->class->baseClass !== null ? [$this->class->baseClass] : []), ...$this->class->interfaces];
+        $candidates = [...($this->currentClass()->baseClass !== null ? [$this->currentClass()->baseClass] : []), ...$this->currentClass()->interfaces];
         foreach ($candidates as $fqn) {
             $symbol = $this->symbols->find($fqn);
             $method = $symbol !== null ? $this->findMethod($symbol, $name) : null;
@@ -663,7 +673,7 @@ trait EmitsDeclarations
     {
         $parts = [];
         foreach ($params as $i => $param) {
-            $type = $this->resolveType($param->type);
+            $type = $this->resolveType($param->type ?? throw new \LogicException('Method parameters are typed'));
             $localType = $type;
             $parentType = $inherited?->params[$i]->type ?? null;
             if ($parentType !== null && ($parentType->kind === 'typeparam' || $parentType->isUnknown())) {
@@ -695,8 +705,8 @@ trait EmitsDeclarations
             $decl = $this->typeDecl($type);
             $parts[] = ($decl !== null ? $decl . ' ' : '') . $prefix . '$' . $param->name . $default;
             $this->declareLocal($param->name, $localType, $param, assigned: $param->modifier !== 'out');
-            if ($param->modifier === 'out' && $this->fn !== null) {
-                $this->fn->outParams[] = $param->name;
+            if ($param->modifier === 'out') {
+                $this->currentFunction()->outParams[] = $param->name;
             }
         }
 
@@ -942,9 +952,11 @@ trait EmitsDeclarations
 
     private static function notConstant(): object
     {
+        /** @var \stdClass|null $marker */
         static $marker = null;
+        $marker ??= new \stdClass();
 
-        return $marker ??= new \stdClass();
+        return $marker;
     }
 
     /** Folds literal arithmetic; returns the notConstant() marker otherwise. */
@@ -1001,7 +1013,8 @@ trait EmitsDeclarations
         return match (true) {
             is_bool($value) => $value ? 'True' : 'False',
             $value === null => '',
-            default => (string) $value,
+            is_scalar($value) => (string) $value,
+            default => throw new \LogicException('Not a constant value: ' . get_debug_type($value)),
         };
     }
 
@@ -1012,7 +1025,8 @@ trait EmitsDeclarations
             is_bool($value) => $value ? 'true' : 'false',
             is_int($value) => (string) $value,
             is_float($value) => self::phpFloat($value),
-            default => self::phpString((string) $value),
+            is_string($value) => self::phpString($value),
+            default => throw new \LogicException('Not a constant value: ' . get_debug_type($value)),
         };
     }
 

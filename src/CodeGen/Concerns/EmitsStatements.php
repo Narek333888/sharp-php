@@ -237,12 +237,12 @@ trait EmitsStatements
      */
     private function loopBody(Stmt $body): array
     {
-        $this->fn->breakables[] = 'loop';
+        $this->currentFunction()->breakables[] = 'loop';
         $this->flow->enterJumpTarget('loop');
         try {
             $this->body($body);
         } finally {
-            array_pop($this->fn->breakables);
+            array_pop($this->currentFunction()->breakables);
         }
 
         return $this->flow->exitJumpTarget();
@@ -370,7 +370,7 @@ trait EmitsStatements
             $this->w->line('switch (' . $subject->code . ') {');
         } else {
             if (!$subject->isSimple()) {
-                $temp = $this->fn->temp('switch');
+                $temp = $this->currentFunction()->temp('switch');
                 $this->w->line("$temp = {$subject->code};");
                 $subject = Emitted::value($temp, $subject->type);
             }
@@ -379,7 +379,7 @@ trait EmitsStatements
 
         $before = $this->flow->save();
         $catchAll = false;
-        $this->fn->breakables[] = 'switch';
+        $this->currentFunction()->breakables[] = 'switch';
         $this->flow->enterJumpTarget('switch');
         try {
             $this->w->indent();
@@ -395,7 +395,7 @@ trait EmitsStatements
                         if ($label->pattern === null) {
                             $this->w->line('default:');
                         } elseif ($simple) {
-                            $this->w->line('case ' . $this->expr($label->pattern->expr)->code . ':');
+                            $this->w->line('case ' . $this->expr($label->pattern->expression())->code . ':');
                         } else {
                             $condition = $this->patternCondition($label->pattern, $subject, $label->pattern);
                             if ($label->when !== null) {
@@ -417,7 +417,7 @@ trait EmitsStatements
             }
             $this->w->outdent();
         } finally {
-            array_pop($this->fn->breakables);
+            array_pop($this->currentFunction()->breakables);
         }
         $jumps = $this->flow->exitJumpTarget();
         $catchAll = $catchAll || ($subject->type->isBool() && $this->coversTrueAndFalse($s));
@@ -442,10 +442,10 @@ trait EmitsStatements
     {
         if ($s->value === null) {
             $this->w->line('return;');
-        } elseif ($this->fn->returnType->kind === 'void') {
+        } elseif ($this->currentFunction()->returnType->kind === 'void') {
             throw $this->error('SP0127', 'Since this method returns void, a return keyword must not be followed by an object expression', $s);
         } else {
-            $this->w->line('return ' . $this->convert($s->value, $this->fn->returnType)->code . ';');
+            $this->w->line('return ' . $this->convert($s->value, $this->currentFunction()->returnType)->code . ';');
         }
         $this->requireOutParamsAssigned($s);
         $this->flow->markUnreachable();
@@ -453,7 +453,7 @@ trait EmitsStatements
 
     private function breakStatement(BreakStmt $s): void
     {
-        if ($this->fn->breakables === []) {
+        if ($this->currentFunction()->breakables === []) {
             throw $this->error('SP0139', 'No enclosing loop out of which to break or continue', $s);
         }
         $this->w->line('break;');
@@ -463,8 +463,8 @@ trait EmitsStatements
     private function continueStatement(ContinueStmt $s): void
     {
         $levels = 1;
-        for ($i = count($this->fn->breakables) - 1; $i >= 0; $i--) {
-            if ($this->fn->breakables[$i] === 'loop') {
+        for ($i = count($this->currentFunction()->breakables) - 1; $i >= 0; $i--) {
+            if ($this->currentFunction()->breakables[$i] === 'loop') {
                 $this->w->line($levels === 1 ? 'continue;' : "continue $levels;");
                 $this->flow->jumpContinue();
 
@@ -484,7 +484,7 @@ trait EmitsStatements
 
             return;
         }
-        $variable = $this->fn->catchVariables[array_key_last($this->fn->catchVariables) ?? -1] ?? null;
+        $variable = $this->currentFunction()->catchVariables[array_key_last($this->currentFunction()->catchVariables) ?? -1] ?? null;
         if ($variable === null) {
             throw $this->error('SP0156', 'A throw statement with no arguments is not allowed outside of a catch clause', $s);
         }
@@ -505,7 +505,7 @@ trait EmitsStatements
         }
         $this->body($s->body);
         if ($translate) {
-            $error = $this->fn->temp('error');
+            $error = $this->currentFunction()->temp('error');
             $this->w->line("} catch (\\Error $error) {");
             $this->w->line('    throw ' . $this->runtime('ErrorHandler') . "::translate($error);");
             $this->w->line('}');
@@ -523,7 +523,7 @@ trait EmitsStatements
             }
 
             $this->flow->restore($before); // the exception may come before any assignment in the try block
-            $variable = $catch->variable !== null ? '$' . $catch->variable : $this->fn->temp('e');
+            $variable = $catch->variable !== null ? '$' . $catch->variable : $this->currentFunction()->temp('e');
             $this->w->line('} catch (' . $this->catchTypes((string) $type->class) . " $variable) {");
             $this->w->indent();
             $this->inScope(function () use ($catch, $type, $variable): void {
@@ -534,7 +534,7 @@ trait EmitsStatements
                         $this->w->line("$variable = " . $this->runtime('ErrorHandler') . "::translate($variable);");
                     }
                 }
-                $this->fn->catchVariables[] = $variable;
+                $this->currentFunction()->catchVariables[] = $variable;
                 try {
                     if ($catch->when !== null) {
                         $this->w->line('if (!' . $this->wrap($this->expr($catch->when, Type::bool()), \SharpPhp\CodeGen\Prec::NOT) . ') {');
@@ -543,7 +543,7 @@ trait EmitsStatements
                     }
                     $this->statements($catch->body->statements);
                 } finally {
-                    array_pop($this->fn->catchVariables);
+                    array_pop($this->currentFunction()->catchVariables);
                 }
             });
             $this->w->outdent();
