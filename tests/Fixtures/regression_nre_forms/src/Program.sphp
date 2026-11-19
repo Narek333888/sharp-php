@@ -1,0 +1,21 @@
+using System;
+using System.Collections.Generic;
+public class Program {
+    static void T(string label, Action a) {
+        try { a(); Console.WriteLine(label + ": no exception"); }
+        catch (NullReferenceException) { Console.WriteLine(label + ": NRE"); }
+        catch (Exception e) { Console.WriteLine(label + ": " + e.GetType().Name + " / " + e.Message); }
+    }
+    public static void Main() {
+        string s = null;
+        List<int> list = null;
+        int[] arr = null;
+        T("s.Length", () => Console.WriteLine(s.Length));
+        T("s.ToUpper", () => Console.WriteLine(s.ToUpper()));
+        T("list.Count", () => Console.WriteLine(list.Count));
+        T("list.Add", () => list.Add(1));
+        T("foreach", () => { foreach (var x in list) { } });
+        T("arr[0]", () => Console.WriteLine(arr[0]));
+        T("arr.Length", () => Console.WriteLine(arr.Length));
+    }
+}

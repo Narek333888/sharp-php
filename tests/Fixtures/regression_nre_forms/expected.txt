@@ -1,0 +1,7 @@
+s.Length: NRE
+s.ToUpper: NRE
+list.Count: NRE
+list.Add: NRE
+foreach: NRE
+arr[0]: NRE
+arr.Length: NRE

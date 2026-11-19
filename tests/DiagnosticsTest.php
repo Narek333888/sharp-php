@@ -65,6 +65,13 @@ final class DiagnosticsTest extends TestCase
         yield 'with value type' => ["record R(int X);\nclass P { static void Main() { var r = new R(1); var s = r with { X = \"a\" }; } }", 'SP0029', "Cannot implicitly convert type 'string' to 'int'", 2, 71];
         yield 'unknown member in property pattern' => ["class A { public int X { get; set; } }\nclass P { static void Main() { object o = new A(); var b = o is A { Z: 1 }; } }", 'SP1061', "'A' does not contain a definition for 'Z'", 2, 69];
         yield 'static property passed by ref' => ["static class C { public static int X { get => 1; set { } } }\nclass P { static void F(ref int v) {} static void Main() { F(ref C.X); } }", 'SP0206', 'A property or indexer may not be passed as an out or ref parameter', 2, 68];
+        yield 'out parameter not assigned' => ["class P\n{\n    static void F(out int x) { }\n    static void Main() {}\n}", 'SP0177', "The out parameter 'x' must be assigned to before control leaves the current method", 3, 5];
+        yield 'static interface implementation' => ["interface I { void F(); }\nclass C : I { public static void F() {} }\nclass P { static void Main() {} }", 'SP0736', "'C.F()' cannot implement interface member 'I.F()' because it is static", 2, 1];
+        yield 'interface signature mismatch' => ["interface I { int F(int x); }\nclass C : I { public int F() => 1; }\nclass P { static void Main() {} }", 'SP0535', "'C' does not implement interface member 'I.F(int)'", 2, 1];
+        yield 'switch section falls through' => [$main('switch (1) { case 1: Console.WriteLine(1); case 2: break; }'), 'SP0163', 'Control cannot fall through from one case label to another; end the section with break, return or throw', 6, 22];
+        yield 'assigned only before an unreachable break' => ["class P\n{\n    static int F(int i) { int x; while (true) { if (i > 2) break; else continue; x = 1; } return x; }\n    static void Main() {}\n}", 'SP0165', "Use of unassigned local variable 'x'", 3, 98];
+        yield 'char to a user string parameter' => ["class P\n{\n    static void F(string s) {}\n    static void Main() { F('a'); }\n}", 'SP1503', "Argument 1: cannot convert from 'char' to 'string'", 4, 28];
+        yield 'missing .NET overload in the runtime' => [$main('"x".Trim(\'a\', \'b\');'), 'SP1501', "No overload for method 'Trim' takes 2 arguments (the SharpPHP runtime library does not implement this .NET overload)", 6, 13];
         yield 'nested types' => ["class P { class Inner {} static void Main() {} }", 'SP1010', 'Nested types are not supported; declare the type at namespace level', 1, 11];
     }
 

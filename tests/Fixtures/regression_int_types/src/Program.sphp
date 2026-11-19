@@ -1,0 +1,10 @@
+using System;
+public class Program {
+    public static void Main() {
+        Console.WriteLine(short.MaxValue + " " + byte.MinValue + " " + ushort.MaxValue + " " + uint.MaxValue + " " + long.MinValue + " " + sbyte.MinValue);
+        Console.WriteLine(Int64.MaxValue + " " + Int32.Parse("5") + " " + Byte.MaxValue + " " + UInt16.MaxValue + " " + Int16.Parse("-3"));
+        Console.WriteLine(long.TryParse("123", out long v) + " " + v);
+        Console.WriteLine(ushort.TryParse("70000", out ushort u) + " " + u);
+        Console.WriteLine(float.MaxValue > 1e38);
+    }
+}

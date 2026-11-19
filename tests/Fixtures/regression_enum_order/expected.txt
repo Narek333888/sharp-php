@@ -1,0 +1,4 @@
+Low,Low,Mid,High,High
+Low,Low,Mid,High,High
+High Low
+True

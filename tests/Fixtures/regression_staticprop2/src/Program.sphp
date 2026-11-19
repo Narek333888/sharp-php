@@ -1,0 +1,17 @@
+using System;
+public class Counter {
+    private static int _n;
+    public static int N { get { return _n; } set { _n = value; } }
+    public static void Inc(ref int v) { v++; }
+}
+public class Program {
+    public static void Main() {
+        Counter.N = 5;
+        Console.WriteLine(nameof(Counter.N));
+        Func<int> f = () => Counter.N;
+        Console.WriteLine(f());
+        Console.WriteLine($"{Counter.N}");
+        Counter.N -= 1;
+        Console.WriteLine(Counter.N);
+    }
+}

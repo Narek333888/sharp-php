@@ -1,0 +1,4 @@
+caught2 NullReferenceException True Object reference not set to an instance of an object.
+caught3 Object reference not set to an instance of an object.
+caught4 Object reference not set to an instance of an object.
+caught5 Object reference not set to an instance of an object.

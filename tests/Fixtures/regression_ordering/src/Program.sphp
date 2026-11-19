@@ -1,0 +1,24 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+public enum Prio { Low = 1, High = 3, Mid = 2 }
+public record Ver(int Major) : IComparable<Ver> {
+    public int CompareTo(Ver other) => Major.CompareTo(other.Major);
+}
+public class Program {
+    public static void Main() {
+        var ps = new List<Prio> { Prio.High, Prio.Low, Prio.Mid };
+        Console.WriteLine(string.Join(",", ps.OrderBy(p => p)));
+        Console.WriteLine(ps.Max());
+        ps.Sort();
+        Console.WriteLine(string.Join(",", ps));
+        var vs = new List<Ver> { new Ver(3), new Ver(1), new Ver(2) };
+        vs.Sort();
+        Console.WriteLine(string.Join(",", vs.Select(v => v.Major)));
+        Console.WriteLine(vs.Max().Major);
+        var ss = new List<string> { "10", "9", "100", "a", "B" };
+        Console.WriteLine(string.Join(",", ss.OrderBy(s => s)));
+        var withNull = new List<Ver> { new Ver(2), null, new Ver(1) };
+        Console.WriteLine(string.Join(",", withNull.OrderBy(v => v).Select(v => v == null ? "null" : v.Major.ToString())));
+    }
+}

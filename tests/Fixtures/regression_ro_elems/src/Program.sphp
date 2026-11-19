@@ -1,0 +1,14 @@
+using System;
+using System.Collections.Generic;
+public struct Pt { public int X; public int Y; }
+public class Store {
+    private readonly Dictionary<string, int> _counts = new();
+    private readonly int[] _arr = new int[3];
+    private readonly List<int> _list = new() { 0 };
+    public static readonly Dictionary<string, int> Shared = new();
+    public void Bump(string k) { _counts[k] = 1; this._counts[k] += 1; _list[0] = 7; Shared["a"] = 1; }
+    public override string ToString() => _counts["x"] + " " + _list[0] + " " + Shared["a"];
+}
+public class Program {
+    public static void Main() { var s = new Store(); s.Bump("x"); Console.WriteLine(s); }
+}

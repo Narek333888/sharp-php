@@ -1,0 +1,11 @@
+using System;
+using System.Linq;
+public record Ver(int Major) : IComparable<Ver> {
+    public int CompareTo(Ver other) => Major.CompareTo(other.Major);
+}
+public class Program {
+    public static void Main() {
+        Ver[] vs = { new Ver(2), null, new Ver(1) };
+        Console.WriteLine(string.Join(",", vs.OrderBy(v => v).Select(v => v == null ? "null" : v.Major.ToString())));
+    }
+}

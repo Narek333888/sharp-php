@@ -1,0 +1,11 @@
+2
+7
+Hi A1Hi B3Yo C1
+5 6
+s3
+base 2z
+base 7d
+3
+0
+act
+5

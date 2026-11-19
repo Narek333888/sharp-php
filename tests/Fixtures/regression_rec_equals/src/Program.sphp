@@ -1,0 +1,5 @@
+using System;
+public record P(int X);
+public class Program {
+    public static void Main() { Console.WriteLine(new P(1).Equals(new P(1))); Console.WriteLine(new P(1) == new P(1)); object o = new P(1); Console.WriteLine(o.Equals(new P(1))); }
+}

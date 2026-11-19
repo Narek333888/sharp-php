@@ -1,0 +1,5 @@
+using System;
+public class Program {
+    static int A(bool b) { switch (b) { case true: return 1; case false: return 0; } }
+    public static void Main() { Console.WriteLine(A(true)); }
+}

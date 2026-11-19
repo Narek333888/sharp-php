@@ -1,0 +1,15 @@
+set 5
+set 6
+set 7
+set 8
+6 8 8
+set 18
+18
+set 3
+3
+ab
+x
+b
+6
+set 1
+1

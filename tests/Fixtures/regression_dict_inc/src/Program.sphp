@@ -1,0 +1,18 @@
+using System;
+using System.Collections.Generic;
+public class Program {
+    public static void Main() {
+        var d = new Dictionary<string, int>();
+        d["a"] = 1;
+        d["a"]++;
+        d["a"] += 5;
+        Console.WriteLine(d["a"]);
+        var dc = new Dictionary<char, int>();
+        char ch = 'x';
+        dc[ch] = 1;
+        dc[ch] += 1;
+        Console.WriteLine(dc[ch]);
+        dc[ch]++;
+        Console.WriteLine(dc[ch]);
+    }
+}

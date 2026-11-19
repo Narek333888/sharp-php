@@ -1,0 +1,14 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+public enum Prio { Low, Mid, High }
+public class Program {
+    public static void Main() {
+        var ps = new List<Prio> { Prio.Mid, Prio.High, Prio.Low, Prio.High, Prio.Low };
+        Console.WriteLine(string.Join(",", ps.OrderBy(p => p)));
+        var copy = new List<Prio>(ps); copy.Sort();
+        Console.WriteLine(string.Join(",", copy));
+        Console.WriteLine(ps.Max() + " " + ps.Min());
+        Console.WriteLine(Prio.High > Prio.Low);
+    }
+}

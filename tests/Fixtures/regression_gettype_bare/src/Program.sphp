@@ -1,0 +1,10 @@
+using System;
+public class Animal {
+    public string A() => this.GetType().Name;
+    public string B() => GetType().ToString();
+    public bool C() => GetType() == typeof(Dog);
+}
+public class Dog : Animal { }
+public class Program {
+    public static void Main() { var d = new Dog(); Console.WriteLine(d.A()); Console.WriteLine(d.B()); Console.WriteLine(d.C()); }
+}

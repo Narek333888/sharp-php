@@ -1,0 +1,32 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+public class Program {
+    public static void Main() {
+        var list = new List<int> { 3, 1, 2 };
+        Console.WriteLine(list.IndexOf(2));
+        Console.WriteLine(list.GetRange(0, 2).Count);
+        Console.WriteLine(list.ToArray().Length);
+        Console.WriteLine(list.FirstOrDefault(x => x > 100));
+        Console.WriteLine(list.Max(x => x * 2));
+        var dict = new Dictionary<string, int>();
+        dict.Add("a", 1);
+        dict["b"] = 2;
+        Console.WriteLine(dict.GetValueOrDefault("z", 5));
+        Console.WriteLine(dict.TryAdd("b", 2));
+        var set = new HashSet<int>(list);
+        Console.WriteLine(set.Count);
+        var l2 = new List<int>(list);
+        Console.WriteLine(l2.Count);
+        var arr = new[] { 3, 1, 2 };
+        Array.Sort(arr);
+        Console.WriteLine(Array.IndexOf(arr, 2));
+        var q = new Queue<int>(arr);
+        Console.WriteLine(q.Count);
+        var st = new Stack<char>();
+        st.Push('a');
+        Console.WriteLine(st.Pop());
+        var kv = new KeyValuePair<string, int>("k", 1);
+        Console.WriteLine(kv.Key);
+    }
+}

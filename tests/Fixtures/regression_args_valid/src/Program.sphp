@@ -1,0 +1,33 @@
+using System;
+using System.Collections.Generic;
+public class Calc {
+    public Func<int, int> Op { get; set; } = x => x + 1;
+    public static int Sum(params int[] xs) { int s = 0; foreach (var x in xs) s += x; return s; }
+    public static string Greet(string name, string greeting = "Hi", int times = 1) => greeting + " " + name + times;
+    public static void Out(int a, out int b, ref int c) { b = a; c += a; }
+    public T Id<T>(T x) => x;
+}
+public class Base { public Base(int x, string y = "d") { Console.WriteLine("base " + x + y); } }
+public class Derived : Base { public Derived() : base(y: "z", x: 2) { } }
+public class D2 : Base { public D2(int v) : base(v) { } }
+public class Program {
+    public static void Main() {
+        var c = new Calc();
+        Console.WriteLine(c.Op(1));
+        Console.WriteLine(Calc.Sum() + Calc.Sum(1) + Calc.Sum(1, 2, 3));
+        Console.WriteLine(Calc.Greet("A") + Calc.Greet("B", times: 3) + Calc.Greet(greeting: "Yo", name: "C"));
+        int r = 1;
+        Calc.Out(5, out var o, ref r);
+        Console.WriteLine(o + " " + r);
+        Console.WriteLine(c.Id<string>("s") + c.Id(3));
+        new Derived(); new D2(7);
+        Action<int, int> act = (a, b) => Console.WriteLine(a + b);
+        act(1, 2);
+        Func<int> zero = () => 0;
+        Console.WriteLine(zero());
+        var actions = new List<Action> { () => Console.WriteLine("act") };
+        actions[0]();
+        Func<int, int, int> add = (a, b) => a + b;
+        Console.WriteLine(add(2, 3));
+    }
+}

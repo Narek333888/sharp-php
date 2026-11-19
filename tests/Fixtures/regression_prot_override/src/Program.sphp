@@ -1,0 +1,9 @@
+using System;
+public class Base {
+    protected virtual string Describe() => "base";
+    public static string Show(Derived d) => d.Describe();
+}
+public class Derived : Base { protected override string Describe() => "derived"; }
+public class Program {
+    public static void Main() { Console.WriteLine(Base.Show(new Derived())); }
+}

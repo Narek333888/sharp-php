@@ -1,0 +1,5 @@
+using System;
+public record P(int X) : IEquatable<P>;
+public class Program {
+    public static void Main() { Console.WriteLine(new P(1).Equals(new P(1))); }
+}

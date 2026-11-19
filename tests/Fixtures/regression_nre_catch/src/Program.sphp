@@ -1,0 +1,9 @@
+using System;
+public class Foo { public void Run() { Console.WriteLine("run"); } public string Name = "n"; }
+public class Program {
+    public static void Main() {
+        Foo f = null;
+        try { f.Run(); } catch (NullReferenceException e) { Console.WriteLine("caught " + e.Message); }
+        try { f.Run(); } catch (Exception e) { Console.WriteLine("caught2 " + e.GetType().Name + " " + (e is NullReferenceException)); }
+    }
+}

@@ -1,0 +1,6 @@
+using System;
+public class Program {
+    const bool Forever = true;
+    static int A(int x) { while (Forever) { if (x > 3) return x; x++; } }
+    public static void Main() { Console.WriteLine(A(1)); }
+}

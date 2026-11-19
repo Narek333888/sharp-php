@@ -1,0 +1,5 @@
+using System;
+public class Program {
+    static int A(int x) { while (true) { if (x > 3) return x; else continue; break; } }
+    public static void Main() { Console.WriteLine(A(5)); }
+}

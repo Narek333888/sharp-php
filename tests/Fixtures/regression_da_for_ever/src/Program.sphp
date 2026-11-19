@@ -1,0 +1,10 @@
+using System;
+public class Program {
+    public static void Main() {
+        string found;
+        for (int i = 0; ; i++) {
+            if (i == 3) { found = "three"; break; }
+        }
+        Console.WriteLine(found);
+    }
+}

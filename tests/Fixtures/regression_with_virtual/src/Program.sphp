@@ -1,0 +1,13 @@
+using System;
+public record R {
+    private int _age;
+    public int Age { get => _age; init { if (value < 0) throw new ArgumentException("neg"); _age = value; } }
+}
+public class Program {
+    public static void Main() {
+        var r = new R { Age = 5 };
+        var r2 = r with { Age = 10 };
+        Console.WriteLine(r2.Age);
+        try { var r3 = r with { Age = -1 }; Console.WriteLine("no throw " + r3.Age); } catch (ArgumentException e) { Console.WriteLine(e.Message); }
+    }
+}

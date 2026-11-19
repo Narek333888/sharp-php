@@ -1,0 +1,13 @@
+using System;
+using System.Collections.Generic;
+public class Bag : List<int> { }
+public class Program {
+    static int F() => 3;
+    public static void Main() {
+        bool ok = int.TryParse("5", out int ignored);
+        var unused = F();
+        Console.WriteLine(ok);
+        IList<int> l = new Bag();
+        Console.WriteLine(l.Count);
+    }
+}

@@ -1,0 +1,6 @@
+using System;
+public class Program {
+    public static void Main() {
+        Console.WriteLine(int.TryParse("010", out int r) + " " + r);
+    }
+}

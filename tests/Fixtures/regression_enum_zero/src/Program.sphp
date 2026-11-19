@@ -1,0 +1,11 @@
+using System;
+public enum Color { Red, Green }
+public class Program {
+    static string Name(Color c) => c.ToString();
+    public static void Main() {
+        Color c = 0;
+        Console.WriteLine(c == Color.Red);
+        Console.WriteLine(c);
+        Console.WriteLine(Name(0));
+    }
+}

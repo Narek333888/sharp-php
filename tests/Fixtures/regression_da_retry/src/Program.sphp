@@ -1,0 +1,13 @@
+using System;
+public class Program {
+    public static void Main() {
+        string[] inputs = { "x", "42" };
+        int i = 0;
+        int n;
+        while (true) {
+            try { n = int.Parse(inputs[i++]); break; }
+            catch (FormatException) { Console.WriteLine("again"); }
+        }
+        Console.WriteLine(n);
+    }
+}

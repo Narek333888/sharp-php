@@ -1,0 +1,27 @@
+using System;
+using System.Collections.Generic;
+public class Program {
+    static int A(int x) { while (true) { if (x > 3) return x; x++; } }
+    static int B(int x) { for (;;) { try { return 10 / x; } catch (DivideByZeroException) { x = 1; continue; } } }
+    static int C(int x) { switch (x) { case 1: return 1; default: return 2; } }
+    static int D(int x) { if (x > 0) return 1; else if (x < 0) return -1; else return 0; }
+    static int E(int x) { try { return x; } finally { Console.WriteLine("f"); } }
+    static int F(int x) { do { return x; } while (true); }
+    static int G(int x) { throw new NotImplementedException(); }
+    static int H(int x) { while (true) { switch (x) { case 1: return 1; default: x = 1; break; } } }
+    static int I(object o) { switch (o) { case int n: return n; case var other: return 0; } }
+    static int J(int x) { try { return x; } catch { throw; } }
+    static IEnumerable<int> K() { yield return 1; }
+    static int L(int x) { { return x; } }
+    static int M(int x) { while (true) { if (x > 5) break; x++; } return x; }
+    static int N(int x) { switch (x) { case 1: case 2: return 1; case 3: { return 3; } default: throw new Exception(); } }
+    static int P(int x) { if (true) return 1; }
+    static int Q(int x) => x switch { 1 => 1, _ => 0 };
+    static int R(int x) { switch (x) { case 1: return 1; case _: return 2; } }
+    public static void Main() {
+        Func<int, int> f = x => { if (x > 0) return 1; else return 2; };
+        Func<int> g = () => { throw new Exception(); };
+        Func<int, string> h = x => { switch (x) { case 1: return "a"; default: return "b"; } };
+        Console.WriteLine($"{A(1)} {B(0)} {C(1)} {D(5)} {E(2)} {F(3)} {H(1)} {I(5)} {J(1)} {L(1)} {M(1)} {N(2)} {P(1)} {Q(1)} {R(1)} {f(1)} {h(1)}");
+    }
+}

@@ -1,0 +1,20 @@
+using System;
+using System.Collections.Generic;
+public class Config {
+    private static Config? _instance;
+    public static Config Instance { get { if (_instance == null) _instance = new Config(); return _instance; } }
+    public static List<string> Log { get { return _log; } }
+    private static readonly List<string> _log = new();
+    private Config() { }
+    public string Name { get; set; } = "cfg";
+    public int Count { get; set; }
+}
+public class Program {
+    public static void Main() {
+        Config.Instance.Name = "x";
+        Config.Instance.Count += 2;
+        Config.Instance.Count++;
+        Config.Log.Add("a");
+        Console.WriteLine(Config.Instance.Name + Config.Instance.Count + Config.Log.Count);
+    }
+}

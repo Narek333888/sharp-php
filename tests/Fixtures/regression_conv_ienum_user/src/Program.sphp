@@ -1,0 +1,14 @@
+using System;
+using System.Collections.Generic;
+public class Bag : List<int> { }
+public class Program {
+    static int Sum(IEnumerable<int> xs) { int s = 0; foreach (var x in xs) s += x; return s; }
+    public static void Main() {
+        var b = new Bag();
+        b.Add(4); b.Add(5);
+        Console.WriteLine(Sum(b));
+        IEnumerable<int> e = b;
+        object o = b;
+        Console.WriteLine(o != null);
+    }
+}

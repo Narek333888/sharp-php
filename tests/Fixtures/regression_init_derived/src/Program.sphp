@@ -1,0 +1,11 @@
+using System;
+public class Base { public int X { get; init; } public string Name { get; protected set; } }
+public class Derived : Base {
+    public Derived() { X = 5; Name = "d"; }
+}
+public class Program {
+    public static void Main() {
+        var d = new Derived();
+        Console.WriteLine(d.X + " " + d.Name);
+    }
+}

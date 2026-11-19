@@ -1,0 +1,8 @@
+using System;
+public class A { protected internal int V = 3; internal int W = 4; }
+public class Program {
+    public static void Main() {
+        var a = new A();
+        Console.WriteLine(a.V + a.W);
+    }
+}

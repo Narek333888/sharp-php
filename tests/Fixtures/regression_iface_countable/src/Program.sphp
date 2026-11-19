@@ -1,0 +1,5 @@
+using System;
+public class Bag : Countable { public int Count() => 3; }
+public class Program {
+    public static void Main() { Console.WriteLine(count(new Bag())); }
+}

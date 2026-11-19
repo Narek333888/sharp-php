@@ -1,0 +1,6 @@
+using System;
+public interface INamed { string Name { get; } string ToString(); }
+public class A : INamed { public string Name => "a"; }
+public class Program {
+    public static void Main() { INamed n = new A(); Console.WriteLine(n.Name); }
+}

@@ -1,0 +1,34 @@
+using System;
+public class Counter {
+    private static int _n;
+    private static string _s = "a";
+    private static char _c = 'a';
+    public static int N { get { return _n; } set { Console.WriteLine("set " + value); _n = value; } }
+    public static string S { get => _s; set => _s = value; }
+    public static string? Opt { get => _o; set { Console.WriteLine("setOpt"); _o = value; } }
+    private static string? _o = "x";
+    public static char C { get => _c; set => _c = value; }
+    public static int Twice => _n * 2;
+}
+public class Program {
+    public static void Main() {
+        Counter.N = 5;
+        Counter.N++;
+        int old = Counter.N++;
+        int pre = ++Counter.N;
+        Console.WriteLine(old + " " + pre + " " + Counter.N);
+        Counter.N += 10;
+        Console.WriteLine(Counter.N);
+        int x = Counter.N = 3;
+        Console.WriteLine(x);
+        Counter.S += "b";
+        Console.WriteLine(Counter.S);
+        Counter.Opt ??= "y";
+        Console.WriteLine(Counter.Opt);
+        Counter.C += (char)1;
+        Console.WriteLine(Counter.C);
+        Console.WriteLine(Counter.Twice);
+        Counter.N /= 2;
+        Console.WriteLine(Counter.N);
+    }
+}
