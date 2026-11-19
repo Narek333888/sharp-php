@@ -86,10 +86,20 @@ final class WebServerTest extends TestCase
         $this->assertStringContainsString('error SP0029: Cannot implicitly convert type &#039;string&#039; to &#039;int&#039;', $error['body']);
     }
 
+    public function testErrorDetailsAreHiddenWhenDisplayErrorsIsOff(): void
+    {
+        $url = $this->serve(['src/Program.sphp' => "class P { static void Main() { throw new System.InvalidOperationException(\"secret\"); } }"], showErrors: false);
+
+        $error = $this->request("$url/");
+        $this->assertSame(500, $error['status']);
+        $this->assertStringContainsString('The details are in the server log.', $error['body']);
+        $this->assertStringNotContainsString('secret', $error['body']);
+    }
+
     private string $root = '';
 
     /** @param array<string, string> $files */
-    private function serve(array $files): string
+    private function serve(array $files, bool $showErrors = true): string
     {
         $this->root = $this->tempDir();
         foreach ($files as $path => $contents) {
@@ -104,7 +114,7 @@ final class WebServerTest extends TestCase
         $port = (int) substr((string) strrchr((string) stream_socket_get_name($socket, false), ':'), 1);
         fclose($socket);
 
-        [$command, $env] = DevServer::command($this->root, '127.0.0.1', $port);
+        [$command, $env] = DevServer::command($this->root, '127.0.0.1', $port, $showErrors);
         $server = proc_open($command, [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, $this->root, $env);
         self::assertIsResource($server);
         $this->servers[] = $server;

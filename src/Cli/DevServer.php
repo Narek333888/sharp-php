@@ -40,11 +40,12 @@ final class DevServer
     }
 
     /**
-     * The command line and environment of the built-in server for a project.
+     * The command line and environment of the built-in server for a project. It is a development
+     * server, so error pages show the details whatever php.ini says ($showErrors false: as in production).
      *
      * @return array{0: list<string>, 1: array<string, string>}
      */
-    public static function command(string $projectRoot, string $host, int $port): array
+    public static function command(string $projectRoot, string $host, int $port, bool $showErrors = true): array
     {
         $public = $projectRoot . '/wwwroot';
         $hasPublic = is_dir($public);
@@ -53,7 +54,9 @@ final class DevServer
         $env['SHARP_AUTOLOAD'] = self::autoloader();
         $env['SHARP_PUBLIC'] = $hasPublic ? $public : '';
 
-        return [[PHP_BINARY, '-S', "$host:$port", '-t', $hasPublic ? $public : $projectRoot, __DIR__ . '/router.php'], $env];
+        $command = [PHP_BINARY, '-d', 'display_errors=' . ($showErrors ? '1' : '0'), '-S', "$host:$port", '-t', $hasPublic ? $public : $projectRoot, __DIR__ . '/router.php'];
+
+        return [$command, $env];
     }
 
     /** @return array{0: string, 1: int} host and port of "http://localhost:8000", "localhost:8080" or ":9000" */
