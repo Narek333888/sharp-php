@@ -21,4 +21,8 @@ if (!class_exists(SharpPhp\Cli\Application::class)) {
     exit(1);
 }
 
-exit((new SharpPhp\Cli\Application())->run($argv));
+// $argv is not defined when register_argc_argv is off; $_SERVER['argv'] is.
+$arguments = $_SERVER['argv'] ?? [];
+$arguments = is_array($arguments) ? array_values(array_filter($arguments, is_string(...))) : [];
+
+exit((new SharpPhp\Cli\Application())->run($arguments));
