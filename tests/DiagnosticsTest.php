@@ -73,6 +73,15 @@ final class DiagnosticsTest extends TestCase
         yield 'char to a user string parameter' => ["class P\n{\n    static void F(string s) {}\n    static void Main() { F('a'); }\n}", 'SP1503', "Argument 1: cannot convert from 'char' to 'string'", 4, 28];
         yield 'missing .NET overload in the runtime' => [$main('"x".Trim(\'a\', \'b\');'), 'SP1501', "No overload for method 'Trim' takes 2 arguments (the SharpPHP runtime library does not implement this .NET overload)", 6, 13];
         yield 'nested types' => ["class P { class Inner {} static void Main() {} }", 'SP1010', 'Nested types are not supported; declare the type at namespace level', 1, 11];
+        yield 'anonymous type property assigned' => [$main('var a = new { X = 1 }; a.X = 2;'), 'SP0200', "Property or indexer '<anonymous type: int X>.X' cannot be assigned to -- it is read only", 6, 34];
+        yield 'anonymous type unknown property' => [$main('var a = new { X = 1 }; Console.WriteLine(a.Y);'), 'SP1061', "'<anonymous type: int X>' does not contain a definition for 'Y'", 6, 52];
+        yield 'anonymous type null property' => [$main('var a = new { X = null };'), 'SP0828', "Cannot assign '<null>' to anonymous type property", 6, 27];
+        yield 'anonymous type lambda property' => [$main('var a = new { F = (int x) => x };'), 'SP0828', 'Cannot assign lambda expression to anonymous type property', 6, 27];
+        yield 'anonymous type duplicate property' => [$main('var a = new { X = 1, X = 2 };'), 'SP0833', 'An anonymous type cannot have multiple properties with the same name', 6, 30];
+        yield 'anonymous type unnamed property' => [$main('var a = new { 1 + 2 };'), 'SP0746', 'Invalid anonymous type member declarator. Anonymous type members must be declared with a member assignment, simple name or member access.', 6, 23];
+        yield 'anonymous types of different shape' => [$main('var a = new { X = 1 }; a = new { X = "s" };'), 'SP0029', "Cannot implicitly convert type '<anonymous type: string X>' to '<anonymous type: int X>'", 6, 36];
+        yield 'route handler request is typed' => ["using System.Web;
+class P { static void Main() { WebApp.Create().MapGet(\"/\", req => { int m = req.Method; return m; }); } }", 'SP0029', "Cannot implicitly convert type 'string' to 'int'", 2, 81];
     }
 
     #[DataProvider('errors')]

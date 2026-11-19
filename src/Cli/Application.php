@@ -21,6 +21,8 @@ SharpPHP %s - a C#-like language for PHP
 
 Usage:
   sharp run [--project=DIR] [-- args...]   Build (if needed) and run the program's Main method
+  sharp serve [--project=DIR] [--port=N] [--host=NAME]
+                                           Serve a web app (WebApp) at http://localhost:8000
   sharp build [--project=DIR] [--force]    Compile all .sphp files to PHP
   sharp check [--project=DIR]              Compile without writing anything (for CI)
   sharp compile <file.sphp>                Print the PHP generated for a single file
@@ -42,6 +44,7 @@ TXT;
         try {
             return match ($command) {
                 'run' => $this->runCommand($rest),
+                'serve' => $this->serveCommand($rest),
                 'build' => $this->buildCommand($rest),
                 'check' => $this->checkCommand($rest),
                 'compile' => $this->compileCommand($rest),
@@ -67,6 +70,34 @@ TXT;
         $options = $separator === false ? $args : array_slice($args, 0, $separator);
 
         return $this->project($options)->run($programArgs);
+    }
+
+    /** @param list<string> $args */
+    private function serveCommand(array $args): int
+    {
+        $project = $this->project($args);
+        $host = 'localhost';
+        $port = '8000';
+        foreach ($args as $arg) {
+            if (str_starts_with($arg, '--port=')) {
+                $port = substr($arg, 7);
+            } elseif (str_starts_with($arg, '--host=')) {
+                $host = substr($arg, 7);
+            }
+        }
+        if (!ctype_digit($port)) {
+            return $this->fail("Invalid port '$port'");
+        }
+        try {
+            $project->build();
+        } catch (CompilationFailed $e) {
+            // Keep serving: the page shows the errors too, and the next request rebuilds.
+            fwrite(STDERR, $e->render(getcwd() ?: null) . PHP_EOL . PHP_EOL);
+        }
+
+        $host = str_contains($host, ':') ? "[$host]" : $host; // IPv6
+
+        return DevServer::serve($project->root, "http://$host:$port");
     }
 
     /** @param list<string> $args */

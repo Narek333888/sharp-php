@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Web apps: `System.Web` with `WebApp` (routes with `MapGet`/`MapPost`/..., route constraints, optional and
+  catch-all segments, fallback, 404/405), `HttpRequest`, `HttpResponse`, `Results` and `IResult`, in the
+  style of ASP.NET Core minimal APIs; `app.Handle(request)` for tests
+- `sharp serve`: serves a project with PHP's built-in web server (static files from `wwwroot/`);
+  `app.Run()` from the command line does the same
+- Programs work under a web server: compile errors and unhandled exceptions answer HTTP 500 with an error
+  page (details while `display_errors` is on) instead of failing on the undefined `STDERR`; console output
+  is sent as text/plain; `Console.ReadLine()` returns null
+- Anonymous types: `new { Id = 1, user.Name }`
+- `System.Text.Json.JsonSerializer.Serialize`, `System.Net.WebUtility`
+- Runtime methods can type the parameters of lambdas passed to them (`@param \Closure(HttpRequest): mixed`)
+
 ## 0.1.4
 
 - README: step-by-step quick start for an empty project (example program, `index.php`, `.gitignore`, editor setup)

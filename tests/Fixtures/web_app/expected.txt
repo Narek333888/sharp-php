@@ -1,0 +1,42 @@
+GET / -> 200 text/plain; charset=utf-8
+  Hello!
+GET /hello/World -> 200 text/plain; charset=utf-8
+  Hello, World!
+GET /users -> 200 application/json; charset=utf-8
+  [{"id":1,"name":"Ann"},{"id":2,"name":"Bob"}]
+GET /users/2 -> 200 application/json; charset=utf-8
+  {"id":2,"name":"Bob"}
+GET /USERS/9/ -> 404 application/json; charset=utf-8
+  {"error":"No user 9"}
+GET /users/me -> 200 text/plain; charset=utf-8
+  me
+GET /users/abc -> 404 -
+POST /users -> 201 application/json; charset=utf-8 Location: /users/3
+  {"id":3,"name":"Eve"}
+POST /users -> 400 application/json; charset=utf-8
+  {"error":"name is required"}
+PUT /users -> 405 - Allow: GET, POST
+GET /search?q=php&tag=a&tag=b&page=3 -> 200 text/plain; charset=utf-8
+  q=php found=True tags=a,b page=3
+GET /headers -> 200 text/plain; charset=utf-8
+  agent=test cookie=dark
+GET /files/docs/a b.txt -> 200 text/plain; charset=utf-8
+  file docs/a b.txt
+GET /files -> 200 text/plain; charset=utf-8
+  file 
+GET /archive -> 200 text/plain; charset=utf-8
+  year all
+GET /archive/2024 -> 200 text/plain; charset=utf-8
+  year 2024
+GET /archive/2024/01 -> 404 -
+GET /page -> 200 text/html; charset=utf-8
+  <h1>Hi</h1>
+GET /go -> 302 - Location: /
+GET /void -> 200 -
+GET /custom -> 418 text/plain; charset=utf-8
+  I'm a teapot
+HEAD /hello/x -> 200 text/plain; charset=utf-8
+  Hello, x!
+DELETE /users/1 -> 204 -
+GET /missing -> 404 text/plain; charset=utf-8
+  nothing at /missing

@@ -20,6 +20,9 @@ use ReflectionUnionType;
  */
 final class SymbolTable
 {
+    /** A closure type in a docblock: \Closure(int, string): bool (PHPStan syntax). */
+    private const CLOSURE_DOC = '\\\\?(?:Closure|callable)\([^)\r\n]*\)\s*:\s*[^\s$]+';
+
     /** @var array<string, TypeSymbol> */
     private array $project = [];
 
@@ -37,6 +40,9 @@ final class SymbolTable
 
     /** @var list<string> template names of the method being loaded (see load()) */
     private array $methodTemplates = [];
+
+    /** @var array<string, TypeSymbol> anonymous types by name; names are case-sensitive, like their properties */
+    private array $anonymous = [];
 
     public function declare(TypeSymbol $symbol): ?TypeSymbol
     {
@@ -63,6 +69,9 @@ final class SymbolTable
 
     public function find(string $fqn): ?TypeSymbol
     {
+        if (isset($this->anonymous[$fqn])) {
+            return $this->anonymous[$fqn];
+        }
         $fqn = ltrim($fqn, '\\');
         $key = strtolower($fqn);
         if (isset($this->project[$key])) {
@@ -229,6 +238,30 @@ final class SymbolTable
         return [];
     }
 
+    /**
+     * The anonymous type with these read-only properties, in this order. Like C#, objects with the
+     * same property names and types share one type, named as C# shows it: "<anonymous type: int Id>".
+     *
+     * @param array<string, Type> $properties
+     */
+    public function anonymousType(array $properties): Type
+    {
+        $parts = [];
+        foreach ($properties as $name => $type) {
+            $parts[] = $type->describe() . ' ' . $name;
+        }
+        $name = $parts === [] ? Type::ANONYMOUS_PREFIX . '>' : Type::ANONYMOUS_PREFIX . ': ' . implode(', ', $parts) . '>';
+        if (!isset($this->anonymous[$name])) {
+            $symbol = new TypeSymbol('class', $name, false);
+            foreach ($properties as $property => $type) {
+                $symbol->addMember(new MemberSymbol('property', $property, false, $type, $symbol));
+            }
+            $this->anonymous[$name] = $symbol;
+        }
+
+        return Type::class($name);
+    }
+
     /** Return type of a global PHP function (strlen => int). */
     public function functionReturnType(string $name): Type
     {
@@ -324,7 +357,8 @@ final class SymbolTable
         // "@param T $item" refines untyped (mixed) parameters of generic runtime classes; for an out
         // parameter, "@param-out T $value" is the type of what the method stores (out var x).
         $docTypes = ['param' => [], 'param-out' => []];
-        if (preg_match_all('/@(param|param-out)\s+(\S+(?:\s*<[^>\r\n]*>)?)\s+&?(?:\.\.\.)?\$(\w+)/', (string) $method->getDocComment(), $m, PREG_SET_ORDER)) {
+        // "@param \Closure(HttpRequest): mixed $handler" types the parameters of a lambda passed to $handler.
+        if (preg_match_all('/@(param|param-out)\s+(' . self::CLOSURE_DOC . '|\S+(?:\s*<[^>\r\n]*>)?)\s+&?(?:\.\.\.)?\$(\w+)/', (string) $method->getDocComment(), $m, PREG_SET_ORDER)) {
             foreach ($m as [, $tag, $spec, $name]) {
                 $docTypes[$tag][$name] = $spec;
             }
@@ -336,7 +370,8 @@ final class SymbolTable
             $spec = $parameter->isPassedByReference()
                 ? $docTypes['param-out'][$name] ?? $docTypes['param'][$name] ?? null
                 : $docTypes['param'][$name] ?? null;
-            if ($spec !== null && ($type->isUnknown() || $parameter->isPassedByReference())) {
+            $untypedClosure = $type->kind === 'closure' && $type->args === [];
+            if ($spec !== null && ($type->isUnknown() || $untypedClosure || $parameter->isPassedByReference())) {
                 $type = $this->docType($spec, $symbol);
             }
             $params[] = new ParameterSymbol(
@@ -452,6 +487,12 @@ final class SymbolTable
 
         if (str_ends_with($s, '[]')) {
             return Type::array($this->docType(substr($s, 0, -2), $self))->withNullable($nullable);
+        }
+
+        if (preg_match('/^\\\\?(?:closure|callable)\s*\((.*)\)\s*:\s*(.+)$/is', $s, $m)) {
+            $params = trim($m[1]) === '' ? [] : array_map(fn (string $p): Type => $this->docType($p, $self), self::splitTopLevel($m[1], ','));
+
+            return Type::closure([...$params, $this->docType($m[2], $self)])->withNullable($nullable);
         }
 
         if (preg_match('/^([\\\\\w]+)\s*<(.*)>$/s', $s, $m)) {

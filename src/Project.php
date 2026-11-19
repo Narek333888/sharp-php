@@ -110,12 +110,12 @@ final class Project
         try {
             $manifest = $this->build();
         } catch (CompilationFailed $e) {
-            fwrite(STDERR, $e->render($this->root) . PHP_EOL);
+            Host::fail($e->render($this->root));
 
             return 1;
         }
 
-        return Host::run($manifest, $this->buildDir, $args);
+        return Host::run($manifest, $this->buildDir, $args, $this->root);
     }
 
     public function clean(): void

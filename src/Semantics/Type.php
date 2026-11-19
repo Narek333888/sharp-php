@@ -23,6 +23,12 @@ final class Type
         'SharpPhp\\Runtime\\System\\IEquatable',
     ];
 
+    /** Start of an anonymous type's name ("<anonymous type: int Id>"); see SymbolTable::anonymousType(). */
+    public const ANONYMOUS_PREFIX = '<anonymous type';
+
+    /** The runtime class of every anonymous object. */
+    public const ANONYMOUS_CLASS = Names::RUNTIME_NAMESPACE . '\\AnonymousObject';
+
     /** @var array<string, self> shared instances of the simple types */
     private static array $cache = [];
 
@@ -150,6 +156,17 @@ final class Type
         return $this->kind === 'null';
     }
 
+    /** An anonymous type (new { Id = 1 }). */
+    public function isAnonymous(): bool
+    {
+        return $this->kind === 'class' && self::isAnonymousName((string) $this->class);
+    }
+
+    public static function isAnonymousName(string $class): bool
+    {
+        return str_starts_with($class, self::ANONYMOUS_PREFIX);
+    }
+
     /** True when nothing useful is known statically. */
     public function isUnknown(): bool
     {
@@ -228,7 +245,7 @@ final class Type
     {
         $base = match ($this->kind) {
             'int', 'float', 'string', 'char', 'bool', 'array' => $this->kind,
-            'class' => (string) $this->class,
+            'class' => $this->isAnonymous() ? self::ANONYMOUS_CLASS : (string) $this->class,
             'closure' => 'Closure',
             default => 'mixed',
         };

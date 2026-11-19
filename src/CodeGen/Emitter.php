@@ -199,7 +199,8 @@ final class Emitter
 
     private function classRef(string $fqn): string
     {
-        return $this->imports->name($fqn);
+        // Every anonymous type is the one runtime class at run time.
+        return $this->imports->name(Type::isAnonymousName($fqn) ? Type::ANONYMOUS_CLASS : $fqn);
     }
 
     /** Reference to a runtime helper class, e.g. runtime('Op') => Op (imported). */

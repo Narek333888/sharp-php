@@ -1,0 +1,94 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Web;
+
+namespace App;
+
+public class Program
+{
+    public static void Main()
+    {
+        var users = new List<User> { new(1, "Ann"), new(2, "Bob") };
+        var app = WebApp.Create();
+
+        app.MapGet("/", req => "Hello!");
+        app.MapGet("/hello/{name}", req => $"Hello, {req.Route["name"]}!");
+        app.MapGet("/users", req => users.Select(u => new { u.Id, u.Name }));
+        app.MapGet("/users/{id:int}", req =>
+        {
+            var id = int.Parse(req.Route["id"] ?? "0");
+            var user = users.FirstOrDefault(u => u.Id == id);
+            return user is null ? Results.NotFound(new { Error = $"No user {id}" }) : Results.Json(user);
+        });
+        app.MapGet("/users/me", req => "me");
+        app.MapPost("/users", req =>
+        {
+            var name = req.Form["name"];
+            if (string.IsNullOrEmpty(name))
+            {
+                return Results.BadRequest(new { Error = "name is required" });
+            }
+            return Results.Created("/users/3", new { Id = 3, Name = name });
+        });
+        app.MapGet("/search", req =>
+        {
+            var tags = string.Join(",", req.Query.GetValues("tag"));
+            var found = req.Query.TryGetValue("q", out var q);
+            return $"q={q} found={found} tags={tags} page={req.Query["PAGE"] ?? "1"}";
+        });
+        app.MapGet("/headers", req => $"agent={req.Headers["user-agent"]} cookie={req.Cookies["theme"]}");
+        app.MapGet("/files/{*path}", req => $"file {req.Route["path"]}");
+        app.MapGet("/archive/{year?}", req => $"year {req.Route["year"] ?? "all"}");
+        app.MapGet("/page", req => Results.Html("<h1>Hi</h1>").WithHeader("X-Demo", "1").WithCookie("seen", "yes"));
+        app.MapGet("/go", req => Results.Redirect("/"));
+        app.MapGet("/void", req => { Console.Write(""); });
+        app.MapGet("/custom", req => new Teapot());
+        app.MapDelete("/users/{id:int}", req => Results.NoContent());
+
+        Show(app, new HttpRequest("GET", "/"));
+        Show(app, new HttpRequest("GET", "/hello/World"));
+        Show(app, new HttpRequest("GET", "/users"));
+        Show(app, new HttpRequest("GET", "/users/2"));
+        Show(app, new HttpRequest("GET", "/USERS/9/"));
+        Show(app, new HttpRequest("GET", "/users/me"));
+        Show(app, new HttpRequest("GET", "/users/abc"));
+        Show(app, new HttpRequest("POST", "/users", form: new Dictionary<string, string> { ["name"] = "Eve" }));
+        Show(app, new HttpRequest("POST", "/users"));
+        Show(app, new HttpRequest("PUT", "/users"));
+        Show(app, new HttpRequest("GET", "/search?q=php&tag=a&tag=b&page=3"));
+        Show(app, new HttpRequest("GET", "/headers", headers: new Dictionary<string, string> { ["User-Agent"] = "test" }, cookies: new Dictionary<string, string> { ["theme"] = "dark" }));
+        Show(app, new HttpRequest("GET", "/files/docs/a%20b.txt"));
+        Show(app, new HttpRequest("GET", "/files"));
+        Show(app, new HttpRequest("GET", "/archive"));
+        Show(app, new HttpRequest("GET", "/archive/2024"));
+        Show(app, new HttpRequest("GET", "/archive/2024/01"));
+        Show(app, new HttpRequest("GET", "/page"));
+        Show(app, new HttpRequest("GET", "/go"));
+        Show(app, new HttpRequest("GET", "/void"));
+        Show(app, new HttpRequest("GET", "/custom"));
+        Show(app, new HttpRequest("HEAD", "/hello/x"));
+        Show(app, new HttpRequest("DELETE", "/users/1"));
+
+        app.MapFallback(req => Results.Text($"nothing at {req.Path}", statusCode: 404));
+        Show(app, new HttpRequest("GET", "/missing"));
+    }
+
+    static void Show(WebApp app, HttpRequest request)
+    {
+        var response = app.Handle(request);
+        var location = response.Headers["Location"];
+        Console.WriteLine($"{request.Method} {request.Path}{request.QueryString} -> {response.StatusCode} {response.ContentType ?? "-"}{(location is null ? "" : " Location: " + location)}{(response.Headers.ContainsKey("Allow") ? " Allow: " + response.Headers["Allow"] : "")}");
+        if (response.Body != "")
+        {
+            Console.WriteLine("  " + response.Body);
+        }
+    }
+}
+
+public record User(int Id, string Name);
+
+public class Teapot : IResult
+{
+    public HttpResponse ToResponse() => Results.Text("I'm a teapot", statusCode: 418);
+}

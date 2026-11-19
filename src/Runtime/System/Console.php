@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SharpPhp\Runtime\System;
 
+use SharpPhp\Runtime\Host;
 use SharpPhp\Runtime\Op;
 
 /**
@@ -27,8 +28,12 @@ final class Console
         echo self::text($value, array_values($args));
     }
 
+    /** Null at the end of input, and in a web request (there is no terminal to read from). */
     public static function ReadLine(): ?string
     {
+        if (Host::isWebRequest()) {
+            return null;
+        }
         self::$input ??= defined('STDIN') ? STDIN : (fopen('php://stdin', 'r') ?: null);
         $line = self::$input === null ? false : fgets(self::$input);
 

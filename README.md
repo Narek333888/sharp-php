@@ -97,10 +97,105 @@ Builds are cached: sources are recompiled only when a `.sphp` file (or the compi
 | Command | Description |
 |---|---|
 | `sharp run [--project=DIR] [-- args]` | Build if needed and run the entry point |
+| `sharp serve [--project=DIR] [--port=8000] [--host=localhost]` | Serve a web app with PHP's built-in web server |
 | `sharp build [--project=DIR] [--force]` | Compile all sources to PHP |
 | `sharp check [--project=DIR]` | Compile without writing files (CI) |
 | `sharp compile <file.sphp>` | Print the PHP generated for one file |
 | `sharp clean [--project=DIR]` | Delete the build directory |
+
+## Web apps
+
+The same program can answer HTTP requests. `System.Web` is a small web framework in the style of
+ASP.NET Core minimal APIs:
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Web;
+
+namespace App;
+
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        var users = new List<User> { new(1, "Ann"), new(2, "Bob") };
+        var app = WebApp.Create();
+
+        app.MapGet("/", req => "Hello from SharpPHP!");
+        app.MapGet("/hello/{name}", req => Results.Html($"<h1>Hello, {WebUtility.HtmlEncode(req.Route["name"])}!</h1>"));
+        app.MapGet("/users", req => users.Select(u => new { u.Id, u.Name }));
+        app.MapGet("/users/{id:int}", req =>
+        {
+            var user = users.FirstOrDefault(u => u.Id == int.Parse(req.Route["id"]!));
+            return user is null ? Results.NotFound() : Results.Json(user);
+        });
+        app.MapPost("/users", req =>
+        {
+            var name = req.Form["name"];
+            if (string.IsNullOrEmpty(name))
+            {
+                return Results.BadRequest(new { Error = "name is required" });
+            }
+            return Results.Created("/users/3", new { Id = 3, Name = name });
+        });
+
+        app.Run();
+    }
+}
+
+public record User(int Id, string Name);
+```
+
+**Run it:** `vendor/bin/sharp serve` (or `php index.php`, or `sharp run`: `app.Run()` started from the
+command line starts the server, like `dotnet run`) and open http://localhost:8000. Sources are
+recompiled on the next request after a change. Files in `wwwroot/` (CSS, images, scripts) are served as
+they are; nothing else of the project is reachable from the browser.
+
+**Routes:** `MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `Map` (any method), `MapFallback`.
+Patterns: `/users/{id}`, constraints `{id:int}` (`int`, `long`, `bool`, `alpha`, `guid`), optional
+`{year?}`, catch-all `{*path}`. Literal segments match case-insensitively; the most specific route
+wins (`/users/me` beats `/users/{id}`); a path with no route for the method gets `405` with `Allow`.
+
+**The request** (`HttpRequest req`): `Method`, `Path`, `QueryString`, `Url`, `Body`, `ContentType`, and the
+read-only collections `Query`, `Form`, `Route`, `Headers`, `Cookies`. Their keys are case-insensitive and a
+missing key reads as `null`: `req.Query["page"] ?? "1"`. `GetValues("tag")` returns every value of a
+repeated key, `TryGetValue("q", out var q)` and `ContainsKey(...)` work as on a dictionary.
+
+**The response:** what the handler returns.
+
+| Handler returns | Response |
+|---|---|
+| a `string` | `200`, `text/plain` |
+| `Results.Html(html)`, `Results.Text(...)`, `Results.Content(text, type)` | that content |
+| `Results.Json(value)` or any other value (objects, anonymous objects, lists, dictionaries) | JSON with camelCase names |
+| `Results.Ok()`, `Created(uri, value)`, `NoContent()`, `BadRequest()`, `Unauthorized()`, `Forbid()`, `NotFound()`, `Conflict()`, `StatusCode(n)`, `Redirect(url)` | that status (with the value as JSON when one is given) |
+| nothing | an empty `200` |
+
+Responses are immutable; add headers and cookies with `.WithHeader(name, value)`,
+`.WithCookie(name, value, maxAgeSeconds: 3600)` and `.WithStatusCode(n)`. A class of your own can
+implement `IResult` (`HttpResponse ToResponse()`).
+
+**Testing:** `app.Handle(new HttpRequest("GET", "/users/2"))` returns the `HttpResponse`
+(`StatusCode`, `Body`, `Headers`, `ContentType`) without a server.
+
+**In production** point the web server at the project and send every request that is not a file in
+`wwwroot/` to `index.php` (PHP-FPM, Apache or nginx), e.g. for nginx:
+
+```nginx
+root /var/www/app/wwwroot;
+location / { try_files $uri /index.php$is_args$args; }
+location = /index.php { fastcgi_pass unix:/run/php/php-fpm.sock; include fastcgi_params;
+                        fastcgi_param SCRIPT_FILENAME /var/www/app/index.php; }
+```
+
+**Errors:** an unhandled exception or a compile error answers `500` with a page that shows the error and
+the `.sphp` line while PHP's `display_errors` is on (development), and a generic page when it is off
+(production). The details always go to the server log. `Console.WriteLine` in a handler writes to the
+server's terminal or log, not to the page, as in ASP.NET Core; a console program (no `WebApp`) opened in
+a browser shows its output as plain text.
 
 ## Editor support
 
@@ -160,6 +255,7 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - String interpolation with format specifiers `$"{price:F2}"`, verbatim strings `@"C:\path"`, `$@"..."`
 - `?.`, `?[]`, `??`, `??=`, `is`, `as`, casts, `typeof` / `GetType()` (a `System.Type` with `Name`, `FullName`, `Namespace`), `nameof`, `default`
 - Object and collection initializers: `new User { Name = "Ann" }`, `new Dictionary<string, int> { ["a"] = 1 }`, `new()`, `[1, 2, 3]`
+- Anonymous types: `new { Id = 1, user.Name }`, with read-only typed properties, value equality and C#'s `ToString()` (`{ Id = 1, Name = Ann }`)
 
 ### Semantics that match C#
 
@@ -188,6 +284,8 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - Integral types with their real ranges: `int.MaxValue`, `long.MaxValue`, `short`, `byte`, `sbyte`, `ushort`, `uint` (`Parse` throws `OverflowException` when out of range)
 - `System.Collections.Generic`: `List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `Queue<T>`, `Stack<T>`, `KeyValuePair`
 - `System.Linq`: `Where`, `Select`, `SelectMany`, `OrderBy(Descending)`, `GroupBy`, `First(OrDefault)`, `Any`, `All`, `Count`, `Sum`, `Min`, `Max`, `Average`, `Distinct`, `Take`, `Skip`, `Aggregate`, `ToList`, `ToArray`, `ToDictionary`, `Enumerable.Range`, ... (on arrays and all collections)
+- `System.Web`: `WebApp`, `HttpRequest`, `HttpResponse`, `Results`, `IResult` (see [Web apps](#web-apps)); `System.Net.WebUtility` (`HtmlEncode`, `UrlEncode`, ...)
+- `System.Text.Json`: `JsonSerializer.Serialize(value, options)` with `JsonSerializerOptions` (`WriteIndented`, `PropertyNamingPolicy = JsonNamingPolicy.CamelCase`)
 - Exceptions: `Exception`, `ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`, `InvalidOperationException`, `NotImplementedException`, `NotSupportedException`, `FormatException`, `IndexOutOfRangeException`, `DivideByZeroException`, `InvalidCastException`, `NullReferenceException`, `KeyNotFoundException`, ...
 
 ## Using PHP from SharpPHP

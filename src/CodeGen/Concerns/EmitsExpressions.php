@@ -11,6 +11,7 @@ use SharpPhp\CodeGen\LambdaContext;
 use SharpPhp\CodeGen\Prec;
 use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\Type;
+use SharpPhp\Syntax\AnonymousObjectExpr;
 use SharpPhp\Syntax\ArrayCreationExpr;
 use SharpPhp\Syntax\AsExpr;
 use SharpPhp\Syntax\AssignExpr;
@@ -81,6 +82,7 @@ trait EmitsExpressions
             $e instanceof AsExpr => $this->asExpr($e),
             $e instanceof CastExpr => $this->cast($e),
             $e instanceof NewExpr => $this->newExpr($e, $expected),
+            $e instanceof AnonymousObjectExpr => $this->anonymousObject($e),
             $e instanceof ArrayCreationExpr => $this->arrayCreation($e, $expected),
             $e instanceof CollectionExpr => $this->collectionExpr($e, $expected),
             $e instanceof LambdaExpr => $this->lambda($e, $expected),
@@ -913,6 +915,31 @@ trait EmitsExpressions
         }
 
         return Emitted::value($array, Type::array($elementType ?? Type::mixed()));
+    }
+
+    /** new { Id = 1, name }: a runtime AnonymousObject; its static type knows the properties and their types. */
+    private function anonymousObject(AnonymousObjectExpr $e): Emitted
+    {
+        $properties = [];
+        $items = [];
+        foreach ($e->names as $i => $name) {
+            $node = $e->values[$i];
+            if ($node instanceof LambdaExpr) {
+                throw $this->error('SP0828', 'Cannot assign lambda expression to anonymous type property', $node);
+            }
+            $value = $this->expr($node);
+            if ($value->type->isNull() || $value->type->kind === 'void') {
+                $what = $value->type->isNull() ? '<null>' : 'void';
+                throw $this->error('SP0828', "Cannot assign '$what' to anonymous type property", $node);
+            }
+            $properties[$name] = $value->type;
+            $items[] = self::phpString($name) . ' => ' . $value->code;
+        }
+
+        return Emitted::value(
+            'new ' . $this->runtime('AnonymousObject') . '([' . implode(', ', $items) . '])',
+            $this->symbols->anonymousType($properties),
+        );
     }
 
     // ------------------------------------------------------------------

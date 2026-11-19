@@ -1,0 +1,45 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+
+namespace App;
+
+public class Program
+{
+    public static void Main()
+    {
+        var name = "Ann";
+        var user = new { Id = 1, name, Tags = new List<string> { "admin", "dev" } };
+        Console.WriteLine(user);
+        Console.WriteLine(user.Id + 1);
+        Console.WriteLine(user.name.ToUpper());
+        Console.WriteLine(user.Tags.Count);
+
+        var same = new { Id = 1, name, Tags = user.Tags };
+        var other = new { Id = 2, name, Tags = user.Tags };
+        Console.WriteLine(user.Equals(same));
+        Console.WriteLine(user.Equals(other));
+        Console.WriteLine(new { }.ToString());
+
+        var people = new List<Person> { new("Bob", 31), new("Eve", 17) };
+        foreach (var p in people.Select(p => new { p.Name, Adult = p.Age >= 18 }))
+        {
+            Console.WriteLine($"{p.Name}: {p.Adult}");
+        }
+
+        var nested = new { Outer = new { X = 1.5, Letter = 'z' } };
+        Console.WriteLine(nested.Outer.X);
+        Console.WriteLine(nested.Outer.Letter);
+
+        Console.WriteLine(JsonSerializer.Serialize(user));
+        Console.WriteLine(JsonSerializer.Serialize(new List<Person> { new("Bob", 31) }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+        Console.WriteLine(JsonSerializer.Serialize(new Dictionary<string, int> { ["a"] = 1, ["b"] = 2 }));
+        Console.WriteLine(JsonSerializer.Serialize(new { Level = Level.High, Empty = new List<int>(), Text = "Привет \"мир\"", Ratio = 0.5 }));
+        Console.WriteLine(JsonSerializer.Serialize(new { A = 1, B = new { C = true } }, new JsonSerializerOptions { WriteIndented = true }));
+    }
+}
+
+public record Person(string Name, int Age);
+
+public enum Level { Low, High }

@@ -10,6 +10,7 @@ use SharpPhp\Lexer\Lexer;
 use SharpPhp\Lexer\Token;
 use SharpPhp\Lexer\TokenType;
 use SharpPhp\Syntax\Accessor;
+use SharpPhp\Syntax\AnonymousObjectExpr;
 use SharpPhp\Syntax\Argument;
 use SharpPhp\Syntax\ArrayCreationExpr;
 use SharpPhp\Syntax\AsExpr;
@@ -1625,6 +1626,10 @@ final class Parser
     {
         $token = $this->advance();
 
+        if ($this->check('{')) {
+            return $this->parseAnonymousObject($token);
+        }
+
         if ($this->check('[')) {
             $this->advance();
             $this->expect(']');
@@ -1661,6 +1666,41 @@ final class Parser
         }
 
         return (new NewExpr($type, $args, $init))->at($token);
+    }
+
+    /** new { Id = 1, name, user.Email }: a property name is given, or taken from a name or member access. */
+    private function parseAnonymousObject(Token $new): AnonymousObjectExpr
+    {
+        $this->expect('{');
+        $names = [];
+        $values = [];
+        while (!$this->check('}')) {
+            $token = $this->current();
+            if ($token->isIdentifier() && $this->peek(1)->is('=')) {
+                $this->advance();
+                $this->advance();
+                $name = $token->text();
+                $value = $this->parseExpression();
+            } else {
+                $value = $this->parseExpression();
+                $name = match (true) {
+                    $value instanceof NameExpr && $value->typeArgs === [] => $value->name,
+                    $value instanceof MemberAccessExpr => $value->name,
+                    default => throw $this->error('Invalid anonymous type member declarator. Anonymous type members must be declared with a member assignment, simple name or member access.', $token, 'SP0746'),
+                };
+            }
+            if (in_array($name, $names, true)) {
+                throw $this->error('An anonymous type cannot have multiple properties with the same name', $token, 'SP0833');
+            }
+            $names[] = $name;
+            $values[] = $value;
+            if (!$this->accept(',')) {
+                break;
+            }
+        }
+        $this->expect('}');
+
+        return (new AnonymousObjectExpr($names, $values))->at($new);
     }
 
     /** @return list<Expr> */
