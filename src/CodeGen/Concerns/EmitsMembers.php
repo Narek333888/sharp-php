@@ -7,6 +7,7 @@ namespace SharpPhp\CodeGen\Concerns;
 use SharpPhp\CodeGen\Emitted;
 use SharpPhp\CodeGen\Prec;
 use SharpPhp\Compiler\CompileError;
+use SharpPhp\Compiler\SemanticModel;
 use SharpPhp\Semantics\MemberSymbol;
 use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\ParameterSymbol;
@@ -57,13 +58,20 @@ trait EmitsMembers
     private function name(NameExpr $e, string $mode): Emitted
     {
         $name = $e->name;
+        if ($this->model !== null && $name === SemanticModel::PLACEHOLDER) {
+            $this->model->scope($this->file, $e, $this->scope->visible(), $this->class, $this->fn === null || $this->fn->isStatic, $this->ctx);
+        }
 
         $local = $this->scope->lookup($name);
         if ($local !== null) {
+            [$type, $crossed] = $local;
+            if ($this->model !== null) {
+                $declaring = $this->scope->declaringScope($name);
+                $this->model->reference($this->file, $e, $name, 'local', $type, declaration: $declaring !== null ? $this->model->localDeclaration($this->file, $declaring->id, $name) : null);
+            }
             if ($mode !== 'assign' && $mode !== 'nameof') {
                 $this->requireAssigned($name, $e);
             }
-            [$type, $crossed] = $local;
             foreach ($crossed as $lambda) {
                 $lambda->capture($name, $mode === 'assign');
             }
@@ -74,13 +82,18 @@ trait EmitsMembers
         if ($this->class !== null) {
             $member = $this->symbols->findMember($this->class, $name);
             if ($member !== null) {
+                $this->model?->reference($this->file, $e, $name, $member->kind, $member->type, $member);
+
                 return $this->ownMember($member, $e);
             }
         }
 
         $symbol = $this->resolver->findClass($name, $this->ctx, $e);
         if ($symbol !== null) {
-            return $this->typeResult($symbol, $e->typeArgs);
+            $result = $this->typeResult($symbol, $e->typeArgs);
+            $this->model?->reference($this->file, $e, $name, 'type', $result->type, symbol: $symbol);
+
+            return $result;
         }
 
         if ($mode === 'invoke' && function_exists($name)) {
@@ -268,11 +281,25 @@ trait EmitsMembers
      */
     private function memberAccess(MemberAccessExpr $e, string $mode): Emitted
     {
+        $result = $this->resolveMemberAccess($e, $mode);
+        $this->recordReference($e, $e->name, $result);
+
+        return $result;
+    }
+
+    /**
+     * @param 'value'|'target'|'assign' $mode
+     */
+    private function resolveMemberAccess(MemberAccessExpr $e, string $mode): Emitted
+    {
         $colorColor = $this->colorColorType($e->target, $e->name);
         if ($colorColor !== null) {
+            $this->recordReceiver($e, $colorColor);
+
             return $this->staticMember($colorColor, $e);
         }
         $target = $this->target($e->target);
+        $this->recordReceiver($e, $target);
 
         switch ($target->kind) {
             case 'namespace':
@@ -467,6 +494,7 @@ trait EmitsMembers
 
         if ($callee instanceof MemberAccessExpr) {
             $target = $this->colorColorType($callee->target, $callee->name) ?? $this->target($callee->target);
+            $this->recordReceiver($callee, $target);
 
             if ($target->kind === 'namespace') {
                 throw $this->namespaceError($target->namespace . '.' . $callee->name, $callee);
@@ -512,6 +540,7 @@ trait EmitsMembers
      */
     private function callMember(string $prefix, MemberSymbol $member, array $args, ?Type $receiver, array $typeArgs, ?Type $elementHint, Node $at): Emitted
     {
+        $this->model?->reference($this->file, $at, $member->name, 'method', $member->type, $member);
         $runtime = $member->owner->external;
         $this->checkArguments($args, $member->params, $member->name, $member->displayName(), $at, runtime: $runtime);
         $subst = $receiver !== null ? $member->owner->substitutionFor($receiver) : [];
@@ -709,6 +738,7 @@ trait EmitsMembers
         if ($member === null || !$member->isStatic) {
             throw $this->error('SP1061', "'$what' does not contain a definition for '$name'", $callee);
         }
+        $this->model?->reference($this->file, $callee, $name, 'method', $member->type, $member);
 
         $params = array_slice($member->params, 1);
         $this->checkArguments($args, $params, $name, $this->signature("$what.$name", $params), $callee, runtime: true);

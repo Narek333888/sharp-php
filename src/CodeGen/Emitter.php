@@ -12,6 +12,7 @@ use SharpPhp\CodeGen\Concerns\EmitsPatterns;
 use SharpPhp\CodeGen\Concerns\EmitsStatements;
 use SharpPhp\Compiler\CompileError;
 use SharpPhp\Compiler\Declarator;
+use SharpPhp\Compiler\SemanticModel;
 use SharpPhp\Compiler\GeneratedFile;
 use SharpPhp\Compiler\SourceFile;
 use SharpPhp\Semantics\AccessRules;
@@ -63,10 +64,15 @@ final class Emitter
     /** @var list<string> */
     private array $staticInitCalls = [];
 
+    /**
+     * @param SemanticModel|null $model analysis mode (Compiler::analyze): record what names mean and
+     *        go on after errors, so the editor learns as much as possible about code being typed
+     */
     public function __construct(
         private readonly SymbolTable $symbols,
         private readonly TypeResolver $resolver,
         private readonly Declarator $declarator,
+        private readonly ?SemanticModel $model = null,
     ) {
         $this->scope = new Scope();
         $this->conversions = new Conversions($symbols);
@@ -99,7 +105,7 @@ final class Emitter
                 if ($i > 0) {
                     $this->w->blank();
                 }
-                $this->emitType($decl);
+                $this->tolerating(fn () => $this->emitType($decl));
                 $classes[] = $this->declarator->symbolOf($decl)->fqn;
             }
             if ($hasProgram && $phpNs === '') {
@@ -216,7 +222,33 @@ final class Emitter
 
     private function resolveType(TypeRef $ref): Type
     {
-        return $this->resolver->resolve($ref, $this->ctx, $this->typeParamsInScope());
+        $type = $this->resolver->resolve($ref, $this->ctx, $this->typeParamsInScope());
+        if ($this->model !== null) {
+            $this->recordTypeRef($ref, $type);
+        }
+
+        return $type;
+    }
+
+    /** Analysis mode: the classes named in a type ("List<Person>": List and Person), for hover and go to definition. */
+    private function recordTypeRef(TypeRef $ref, Type $type): void
+    {
+        if ($ref->name === '[]') {
+            if (isset($ref->args[0])) {
+                $this->recordTypeRef($ref->args[0], $type->element());
+            }
+
+            return;
+        }
+        $symbol = $type->kind === 'class' ? $this->symbolForType($type) : null;
+        if ($symbol !== null) {
+            $this->model?->reference($this->file, $ref, $ref->name, 'type', $type, symbol: $symbol);
+        }
+        foreach ($ref->args as $i => $arg) {
+            if (isset($type->args[$i])) {
+                $this->recordTypeRef($arg, $type->args[$i]);
+            }
+        }
     }
 
     /** @return array<string, Type> */
@@ -269,6 +301,55 @@ final class Emitter
         }
         $this->scope->declare($name, $type);
         $this->flow->declare($this->scope, $name, $assigned);
+        $this->model?->localDeclared($this->file, $this->scope->id, $name, $at);
+    }
+
+    /**
+     * Runs $emit; in analysis mode an error in it is recorded and emission goes on with what follows
+     * (the next statement or member), as an IDE needs. Otherwise the error stops the file.
+     */
+    private function tolerating(callable $emit): void
+    {
+        if ($this->model === null) {
+            $emit();
+
+            return;
+        }
+        try {
+            $emit();
+        } catch (CompileError $e) {
+            $this->model->errors[] = $e->diagnostic;
+        }
+    }
+
+    /** Analysis mode: what a member access's receiver is ("user" in user.Name), for completion after the dot. */
+    private function recordReceiver(Node $memberName, Emitted $target): void
+    {
+        $this->model?->receiver(
+            $this->file,
+            $memberName,
+            $target->kind,
+            $target->type,
+            $target->symbol ?? $this->symbolForType($target->type),
+            $target->namespace,
+            $this->class,
+        );
+    }
+
+    /** Analysis mode: what a name or member name refers to, for hover and go to definition. */
+    private function recordReference(Node $at, string $name, Emitted $result): void
+    {
+        if ($this->model === null) {
+            return;
+        }
+        $member = $result->member;
+        if ($member !== null) {
+            $this->model->reference($this->file, $at, $name, $member->kind, $member->type, $member);
+        } elseif ($result->kind === 'type' && $result->symbol !== null) {
+            $this->model->reference($this->file, $at, $name, 'type', $result->type, symbol: $result->symbol);
+        } elseif ($result->kind === 'namespace') {
+            $this->model->reference($this->file, $at, $name, 'namespace', Type::mixed());
+        }
     }
 
     /** Definite assignment: "int x; Console.WriteLine(x);" does not compile in C#. */

@@ -84,6 +84,41 @@ final class Compiler
     }
 
     /**
+     * Analysis for editors: compiles like compile() without producing code, records what names mean
+     * in $model, and goes on after errors (inside a file too) instead of stopping.
+     *
+     * @param list<SourceFile> $files
+     * @return array{symbols: SymbolTable, diagnostics: list<Diagnostic>}
+     */
+    public function analyze(array $files, SemanticModel $model): array
+    {
+        $symbols = new SymbolTable();
+        $resolver = new TypeResolver($symbols);
+        $declarator = new Declarator($symbols, $resolver);
+        $diagnostics = [];
+
+        $units = [];
+        foreach ($files as $file) {
+            try {
+                $units[] = Parser::parseFile($file);
+            } catch (CompileError $e) {
+                $diagnostics[] = $e->diagnostic;
+            }
+        }
+        $units = $this->each($units, $diagnostics, $declarator->register(...));
+        $units = $this->each($units, $diagnostics, $declarator->define(...));
+        foreach ($units as $unit) {
+            try {
+                (new Emitter($symbols, $resolver, $declarator, $model))->emit($unit);
+            } catch (CompileError $e) {
+                $diagnostics[] = $e->diagnostic;
+            }
+        }
+
+        return ['symbols' => $symbols, 'diagnostics' => [...$diagnostics, ...$model->errors]];
+    }
+
+    /**
      * Runs $phase on every unit; units that fail are dropped from later phases.
      *
      * @param list<CompilationUnit> $units

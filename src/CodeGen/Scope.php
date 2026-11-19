@@ -37,6 +37,21 @@ final class Scope
         return isset($this->vars[$name]);
     }
 
+    /**
+     * Every variable visible here, the innermost declaration of each name first.
+     *
+     * @return array<string, Type>
+     */
+    public function visible(): array
+    {
+        $vars = [];
+        for ($scope = $this; $scope !== null; $scope = $scope->parent) {
+            $vars += $scope->vars;
+        }
+
+        return $vars;
+    }
+
     /** The scope that declares $name (this one or an enclosing one). */
     public function declaringScope(string $name): ?Scope
     {

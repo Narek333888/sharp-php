@@ -1,0 +1,17 @@
+{
+  "id": "sharpphp",
+  "name": "SharpPHP",
+  "programArgs": {
+    "default": "php $PROJECT_DIR$/vendor/bin/sharp lsp",
+    "windows": "php.exe $PROJECT_DIR$/vendor/bin/sharp lsp"
+  },
+  "fileTypeMappings": [
+    {
+      "fileType": {
+        "name": "SharpPHP",
+        "patterns": ["*.sphp"]
+      },
+      "languageId": "sharpphp"
+    }
+  ]
+}

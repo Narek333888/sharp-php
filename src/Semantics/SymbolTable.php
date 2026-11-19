@@ -291,6 +291,9 @@ final class SymbolTable
         $kind = $class->isInterface() ? 'interface' : ($class->isEnum() ? 'enum' : 'class');
         $symbol = new TypeSymbol($kind, $class->getName(), true);
         $this->external[strtolower($fqn)] = $symbol; // guard against recursion
+        if ($class->getFileName() !== false) {
+            $symbol->location = [$class->getFileName(), (int) $class->getStartLine(), 1];
+        }
 
         $symbol->baseClass = $class->getParentClass() !== false ? $class->getParentClass()->getName() : null;
         $symbol->interfaces = $class->getInterfaceNames();
@@ -343,6 +346,9 @@ final class SymbolTable
                 ?? $this->reflectionType($method->getReturnType(), $symbol);
             $params = $this->reflectionParams($method, $symbol);
             $member = new MemberSymbol('method', $method->getName(), $method->isStatic(), $type, $symbol, $params, $this->methodTemplates);
+            if ($method->getFileName() !== false) {
+                $member->location = [$method->getFileName(), (int) $method->getStartLine(), 1];
+            }
             $this->methodTemplates = [];
             // Properties and methods live in different PHP namespaces (List.Count vs. list.Count()).
             $symbol->members[isset($symbol->members[$method->getName()]) ? $method->getName() . '()' : $method->getName()] = $member;

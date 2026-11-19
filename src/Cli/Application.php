@@ -23,6 +23,7 @@ Usage:
   sharp run [--project=DIR] [-- args...]   Build (if needed) and run the program's Main method
   sharp serve [--project=DIR] [--port=N] [--host=NAME]
                                            Serve a web app (WebApp) at http://localhost:8000
+  sharp lsp                                Language server for editors (stdin/stdout)
   sharp build [--project=DIR] [--force]    Compile all .sphp files to PHP
   sharp check [--project=DIR]              Compile without writing anything (for CI)
   sharp compile <file.sphp>                Print the PHP generated for a single file
@@ -45,6 +46,7 @@ TXT;
             return match ($command) {
                 'run' => $this->runCommand($rest),
                 'serve' => $this->serveCommand($rest),
+                'lsp' => (new \SharpPhp\Lsp\Server(STDIN, STDOUT))->run(),
                 'build' => $this->buildCommand($rest),
                 'check' => $this->checkCommand($rest),
                 'compile' => $this->compileCommand($rest),

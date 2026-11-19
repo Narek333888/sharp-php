@@ -199,9 +199,32 @@ a browser shows its output as plain text.
 
 ## Editor support
 
-Syntax highlighting for `.sphp` files in PhpStorm (and other JetBrains IDEs) and VS Code ships with the
+**Syntax highlighting** for `.sphp` files in PhpStorm (and other JetBrains IDEs) and VS Code ships with the
 package: in PhpStorm, open **Settings → Editor → TextMate Bundles**, click **+** and choose
 `vendor/armdevstack/sharp-php/editors/sharpphp`. See [editors/sharpphp](editors/sharpphp/README.md).
+
+**Completion, errors while typing, hover and go to definition** come from the SharpPHP language server,
+`vendor/bin/sharp lsp`, which speaks the Language Server Protocol:
+
+- members after a dot (`user.` → `Name`, `Age`, `Greet()`; `Console.` → `WriteLine`, ...; LINQ on lists),
+  locals, members of the class, types and keywords; namespaces after `using`
+- compile errors as you type, exactly as `sharp build` reports them
+- the type of what is under the mouse, and Ctrl/⌘-click to where it is declared
+
+In **PhpStorm** (and other JetBrains IDEs) it runs through the free LSP4IJ plugin:
+
+1. **Settings → Plugins → Marketplace**, install **LSP4IJ** and restart the IDE.
+2. **Settings → Languages & Frameworks → Language Servers (LSP4IJ)**, click **+**.
+3. In **Template**, choose **Import from custom template...** and select the folder
+   `vendor/armdevstack/sharp-php/editors/lsp4ij/sharpphp`. Click **OK**.
+
+The template runs `php $PROJECT_DIR$/vendor/bin/sharp lsp` for `*.sphp` files. If the server does not
+start because the IDE cannot find `php`, put the full path in the **Command** field (`which php` prints it),
+e.g. `/opt/homebrew/bin/php $PROJECT_DIR$/vendor/bin/sharp lsp`. The server's messages are in the LSP
+console (**View → Tool Windows → Language Servers**).
+
+Any other editor with an LSP client can run `php vendor/bin/sharp lsp` for `.sphp` files (language id
+`sharpphp`) the same way.
 
 ## Configuration
 

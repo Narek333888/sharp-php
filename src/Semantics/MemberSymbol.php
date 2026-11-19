@@ -30,6 +30,9 @@ final class MemberSymbol
      */
     public bool $isStaticAccessor = false;
 
+    /** @var array{0: string, 1: int, 2: int}|null where it is declared: file, line, column */
+    public ?array $location = null;
+
     /**
      * @param list<ParameterSymbol> $params
      * @param list<string> $typeParams

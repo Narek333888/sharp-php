@@ -58,6 +58,7 @@ final class Declarator
                 $symbol->isStruct = $decl->kind === 'struct';
                 $symbol->isAbstract = in_array('abstract', $decl->modifiers, true);
                 $symbol->typeParams = $decl->typeParams;
+                $symbol->location = [$unit->file->path, $decl->line, $decl->column];
                 if ($this->symbols->declare($symbol) !== null) {
                     $where = $ns->name === '' ? 'the global namespace' : "namespace '{$ns->name}'";
                     throw $this->error('SP0101', "The $where already contains a definition for '{$decl->name}'", $unit->file, $decl);
@@ -305,6 +306,7 @@ final class Declarator
         if (isset($symbol->members[$member->name])) {
             throw $this->error('SP0102', "The type '{$symbol->csharpName()}' already contains a definition for '{$member->name}'", $file, $at);
         }
+        $member->location = [$file->path, $at->line, $at->column];
         $symbol->addMember($member);
     }
 

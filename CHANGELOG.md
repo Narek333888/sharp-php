@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Language server: `sharp lsp` gives editors completion (members after a dot, names in scope, namespaces
+  after `using`), errors while typing, hover and go to definition; PhpStorm uses it through the LSP4IJ
+  plugin with the template in `editors/lsp4ij/sharpphp`
+- The compiler's analysis mode (`Compiler::analyze`) records what names mean and goes on after errors
+
 ## 0.2.1
 
 - `sharp serve` (and `app.Run()` from the command line) always shows error details on the 500 page,

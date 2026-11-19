@@ -41,6 +41,9 @@ final class TypeSymbol
     /** Element type when iterated (runtime collections declare it with @sharp-element). */
     public ?Type $elementType = null;
 
+    /** @var array{0: string, 1: int, 2: int}|null where it is declared: file, line, column */
+    public ?array $location = null;
+
     public function __construct(
         public readonly string $kind,
         public readonly string $fqn,

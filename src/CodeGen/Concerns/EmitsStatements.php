@@ -49,7 +49,7 @@ trait EmitsStatements
     private function statements(array $statements): void
     {
         foreach ($statements as $statement) {
-            $this->statement($statement);
+            $this->tolerating(fn () => $this->statement($statement));
         }
     }
 
@@ -116,7 +116,15 @@ trait EmitsStatements
                 continue;
             }
 
-            $value = $declared !== null ? $this->convert($declarator->init, $declared) : $this->expr($declarator->init);
+            try {
+                $value = $declared !== null ? $this->convert($declarator->init, $declared) : $this->expr($declarator->init);
+            } catch (\SharpPhp\Compiler\CompileError $e) {
+                // Analysis mode goes on after the error: later uses of the variable still resolve.
+                if ($this->model !== null && !$this->scope->declaresLocally($declarator->name)) {
+                    $this->declareLocal($declarator->name, $declared ?? Type::mixed(), $declarator);
+                }
+                throw $e;
+            }
             if ($declared === null && $value->type->isNull()) {
                 throw $this->error('SP0815', "Cannot assign <null> to an implicitly-typed variable", $declarator);
             }

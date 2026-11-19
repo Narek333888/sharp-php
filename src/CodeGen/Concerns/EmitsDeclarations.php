@@ -123,7 +123,9 @@ trait EmitsDeclarations
                 $this->w->blank();
             }
             foreach ($group as $field) {
-                $this->emitField($field, $instanceInits, $staticInits);
+                $this->tolerating(function () use ($field, &$instanceInits, &$staticInits): void {
+                    $this->emitField($field, $instanceInits, $staticInits);
+                });
             }
         }
 
@@ -131,21 +133,23 @@ trait EmitsDeclarations
             if ($sections++ > 0) {
                 $this->w->blank();
             }
-            $this->emitProperty($property, $instanceInits, $staticInits);
+            $this->tolerating(function () use ($property, &$instanceInits, &$staticInits): void {
+                $this->emitProperty($property, $instanceInits, $staticInits);
+            });
         }
 
         if ($constructor !== null || $instanceInits !== [] || $decl->recordParams !== []) {
             if ($sections++ > 0) {
                 $this->w->blank();
             }
-            $this->emitConstructor($constructor, $decl, $symbol, $instanceInits);
+            $this->tolerating(fn () => $this->emitConstructor($constructor, $decl, $symbol, $instanceInits));
         }
 
         foreach ($methods as $method) {
             if ($sections++ > 0) {
                 $this->w->blank();
             }
-            $this->emitMethod($method, false);
+            $this->tolerating(fn () => $this->emitMethod($method, false));
         }
 
         if ($symbol->isRecord && !isset($symbol->members['ToString'])) {
