@@ -2,6 +2,7 @@
 
 Highlighting for `.sphp` files in PhpStorm (and every other JetBrains IDE) and in VS Code.
 The folder is a VS Code extension, which JetBrains IDEs can load as a TextMate bundle.
+Completion and errors while typing come from the language server: see [editors/lsp4ij/sharpphp](../lsp4ij/sharpphp/README.md).
 
 ## PhpStorm
 

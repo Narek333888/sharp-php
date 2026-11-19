@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- README: how to upgrade (a plain `composer update` stays within a 0.x minor version:
+  `composer require armdevstack/sharp-php:^0.3`)
+- Step-by-step PhpStorm setup and troubleshooting for the language server in `editors/lsp4ij/sharpphp`
+
 ## 0.3.0
 
 - Language server: `sharp lsp` gives editors completion (members after a dot, names in scope, namespaces

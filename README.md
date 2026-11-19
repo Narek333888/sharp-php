@@ -41,6 +41,19 @@ In your project folder (an empty folder or one with only `index.php` is fine: Co
 composer require armdevstack/sharp-php
 ```
 
+### Upgrading
+
+```bash
+composer update armdevstack/sharp-php        # bug-fix releases: 0.3.0 → 0.3.x
+composer require armdevstack/sharp-php:^0.3  # a newer minor version: 0.1.x / 0.2.x → 0.3.x
+```
+
+While SharpPHP is 0.x, a plain `composer update` stays within the minor version you installed: the
+constraint Composer writes for you, e.g. `^0.1.3`, means `>=0.1.3 <0.2.0`, because `^` does not cross a 0.x
+minor version. Require the newer version once, as above, and `composer update` follows it from then on.
+`composer show armdevstack/sharp-php` prints the installed version; [CHANGELOG.md](CHANGELOG.md) lists
+what changed. The build in `var/sharp` is redone automatically after an upgrade.
+
 ## Quick start
 
 **1. Write a program** in `src/Program.sphp` (any number of `.sphp` files in any sub-directories of `src/`):
@@ -211,7 +224,9 @@ package: in PhpStorm, open **Settings → Editor → TextMate Bundles**, click *
 - compile errors as you type, exactly as `sharp build` reports them
 - the type of what is under the mouse, and Ctrl/⌘-click to where it is declared
 
-In **PhpStorm** (and other JetBrains IDEs) it runs through the free LSP4IJ plugin:
+It needs SharpPHP 0.3 or newer in the project (see [Upgrading](#upgrading)). In **PhpStorm** (and other
+JetBrains IDEs) it runs through the free LSP4IJ plugin
+(step by step in [editors/lsp4ij/sharpphp](editors/lsp4ij/sharpphp/README.md)):
 
 1. **Settings → Plugins → Marketplace**, install **LSP4IJ** and restart the IDE.
 2. **Settings → Languages & Frameworks → Language Servers (LSP4IJ)**, click **+**.
