@@ -2,7 +2,7 @@
     "name": "sharpphp",
     "displayName": "SharpPHP",
     "description": "Syntax highlighting for SharpPHP (.sphp), a C#-like language that compiles to PHP",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "publisher": "armdevstack",
     "license": "MIT",
     "repository": {

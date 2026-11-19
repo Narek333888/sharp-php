@@ -41,7 +41,7 @@ final class Emitter
     use EmitsPatterns;
     use ChecksTypes;
 
-    public const VERSION = '0.1.3';
+    public const VERSION = '0.1.4';
 
     private CodeWriter $w;
     private ResolutionContext $ctx;

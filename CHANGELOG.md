@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- README: step-by-step quick start for an empty project (example program, `index.php`, `.gitignore`, editor setup)
+
 ## 0.1.3
 
 - Syntax highlighting for `.sphp` files in PhpStorm (TextMate bundle) and VS Code: `editors/sharpphp`
