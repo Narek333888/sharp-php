@@ -224,9 +224,11 @@ End-to-end tests live in `tests/Fixtures/<name>/`: `src/*.sphp` plus the expecte
 src/
   Lexer/       source text -> tokens
   Parser/      tokens -> syntax tree (src/Syntax)
-  Semantics/   types, symbols (project + PHP reflection), name resolution
-  Compiler/    Declarator (project-wide symbols), Compiler (pipeline), diagnostics
-  CodeGen/     Emitter: syntax tree -> PHP, with type inference and source maps
+  Semantics/   types, symbols (project + PHP reflection), name resolution, and the language
+               rules: Conversions, AccessRules, ArgumentMatcher
+  Compiler/    Declarator (project-wide symbols), ImplementationVerifier, Compiler (pipeline), diagnostics
+  CodeGen/     Emitter: syntax tree -> PHP, with type inference and source maps; FlowState
+               (reachability and definite assignment)
   Runtime/     the System library and helpers used by generated code
   Project.php  cached builds and running
   Cli/         the `sharp` command
