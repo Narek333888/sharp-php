@@ -1,0 +1,19 @@
+using Shop.Models;
+
+namespace Shop.Services;
+
+public class NotFoundException : Exception
+{
+    public NotFoundException(string what) : base($"{what} not found") { }
+}
+
+public class Repository<T> where T : Product
+{
+    private readonly Dictionary<int, T> _items = new();
+    public int Count => _items.Count;
+    public void Add(T item) => _items[item.Id] = item;
+    public T Get(int id) => _items.TryGetValue(id, out var item) ? item : throw new NotFoundException($"Item {id}");
+    public IEnumerable<T> All() => _items.Values;
+    public T? Find(Func<T, bool> predicate) => _items.Values.FirstOrDefault(predicate);
+}
+

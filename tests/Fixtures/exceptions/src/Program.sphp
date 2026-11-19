@@ -1,0 +1,90 @@
+using System;
+
+namespace Errors;
+
+public class InsufficientFundsException : Exception
+{
+    public decimal Missing { get; }
+
+    public InsufficientFundsException(decimal missing)
+        : base($"Insufficient funds: missing {missing:F2}")
+    {
+        Missing = missing;
+    }
+}
+
+public class Account
+{
+    public decimal Balance { get; private set; }
+
+    public void Deposit(decimal amount)
+    {
+        if (amount <= 0) throw new ArgumentException("Amount must be positive", nameof(amount));
+        Balance += amount;
+    }
+
+    public void Withdraw(decimal amount)
+    {
+        if (amount > Balance) throw new InsufficientFundsException(amount - Balance);
+        Balance -= amount;
+    }
+}
+
+public static class Program
+{
+    static int Divide(int a, int b) => a / b;
+
+    public static void Main()
+    {
+        var account = new Account();
+        account.Deposit(100);
+        try
+        {
+            account.Withdraw(30);
+            account.Withdraw(100);
+        }
+        catch (InsufficientFundsException e) when (e.Missing > 10)
+        {
+            Console.WriteLine($"{e.Message} (balance {account.Balance})");
+        }
+
+        try { account.Deposit(-5); }
+        catch (ArgumentException e) { Console.WriteLine(e.Message); }
+
+        try { Divide(1, 0); }
+        catch (DivideByZeroException) { Console.WriteLine("Caught divide by zero"); }
+
+        try
+        {
+            try { throw new InvalidOperationException("inner"); }
+            catch (InvalidOperationException) { Console.WriteLine("rethrowing"); throw; }
+            finally { Console.WriteLine("inner finally"); }
+        }
+        catch (Exception e) { Console.WriteLine($"outer caught: {e.Message}"); }
+
+        try
+        {
+            throw new Exception("wrapped", new FormatException("bad format"));
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"{e.Message} <- {e.InnerException?.Message}");
+        }
+
+        try
+        {
+            object o = null;
+            o.ToString();
+        }
+        catch (NullReferenceException e)
+        {
+            Console.WriteLine(e.Message);
+        }
+
+        int[] arr = new int[3];
+        try { Console.WriteLine(arr[7]); }
+        catch (IndexOutOfRangeException e) { Console.WriteLine(e.Message); }
+
+        Console.WriteLine(Divide(7, 2));
+    }
+}

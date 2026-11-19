@@ -1,0 +1,9 @@
+#1 C# in Depth (Book) 45.50 USD
+  with tax: 45.50
+#2 ThinkPad (Electronics) 1200.00 USD
+  with tax: 1440.00
+ThinkPad: 1080 / 32 GB
+Error: Specified argument was out of the range of valid values. (Parameter 'value')
+USD
+Jon Skeet
+False

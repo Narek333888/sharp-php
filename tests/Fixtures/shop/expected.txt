@@ -1,0 +1,15 @@
+#3 C# in Depth (Books) 40.00 -> book by Skeet
+#1 Zen (Tech) 1200.00 -> laptop
+#2 Pro (Tech) 2500.00 -> workstation
+Cheapest: C# in Depth
+Tech total: 3700.00
+Discounted: 2000.00
+Tech: 2
+Books: 1
+Order 1: 3 items, 3740.00, coupon=none
+Error: Item 99 not found
+7
+0,1,1,2,3,5,8,13,21,34
+RAM 32
+72 85 90 avg=82.3
+i4 s4 p2 m1

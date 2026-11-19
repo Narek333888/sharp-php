@@ -1,0 +1,36 @@
+using System.Collections.Generic;
+using System.Linq;
+using MyApp.Models;
+
+namespace MyApp.Services;
+
+public interface IUserRepository
+{
+    void Add(User user);
+    IEnumerable<User> All();
+}
+
+public class InMemoryUserRepository : IUserRepository
+{
+    private readonly List<User> users = new();
+
+    public void Add(User user) => users.Add(user);
+
+    public IEnumerable<User> All() => users;
+}
+
+public class UserService
+{
+    private readonly IUserRepository repository;
+
+    public UserService(IUserRepository repository) => this.repository = repository;
+
+    public User Register(string name, string email, bool admin = false)
+    {
+        var user = new User { Name = name, Email = email, IsAdmin = admin };
+        repository.Add(user);
+        return user;
+    }
+
+    public List<User> Admins() => repository.All().Where(u => u.IsAdmin).ToList();
+}

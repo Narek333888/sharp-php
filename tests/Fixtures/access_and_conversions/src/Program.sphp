@@ -1,0 +1,10 @@
+namespace App;
+public abstract class Shape { protected string Label { get; set; } = "s"; protected abstract double Area(); public string Describe() => $"{Label}:{Area()}"; }
+public class Sq : Shape { private readonly double _side; public Sq(double side) { _side = side; Label = "sq"; } protected override double Area() => _side * _side; }
+public class Counter { private static int _count; public static int Next() => ++_count; public int Value { get; private set; } public Counter() { Value = Next(); } }
+public class Program { public static void Main() {
+  Console.WriteLine(new Sq(3).Describe());
+  new Counter(); Console.WriteLine(new Counter().Value);
+  var p = new Point { X = 1, Y = 2 }; Console.WriteLine(p.X + p.Y);
+} }
+public class Point { public int X { get; init; } public int Y { get; set; } }

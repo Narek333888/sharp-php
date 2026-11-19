@@ -1,0 +1,88 @@
+using Shop.Models;
+using Shop.Services;
+
+namespace Shop;
+
+public static class Program
+{
+    static string Classify(Product p) => p switch
+    {
+        Laptop l when l.RamGb >= 32 => "workstation",
+        Laptop => "laptop",
+        Book b => $"book by {b.Author}",
+        _ => "other",
+    };
+
+    static int CountVowels(string text)
+    {
+        var count = 0;
+        foreach (var ch in text.ToLower())
+        {
+            switch (ch)
+            {
+                case 'a': case 'e': case 'i': case 'o': case 'u':
+                    count++;
+                    break;
+            }
+        }
+        return count;
+    }
+
+    static int Fib(int n)
+    {
+        if (n < 2) return n;
+        int a = 0, b = 1;
+        for (var i = 2; i <= n; i++)
+        {
+            var next = a + b;
+            a = b;
+            b = next;
+        }
+        return b;
+    }
+
+    public static int Main(string[] args)
+    {
+        var repo = new Repository<Product>();
+        repo.Add(new Laptop("Zen", 1200m, 16));
+        repo.Add(new Laptop("Pro", 2500m, 32));
+        var book = new Book("C# in Depth", 45.5m, "Skeet");
+        repo.Add(book);
+        book.Reprice(40);
+
+        foreach (var p in repo.All().OrderBy(p => p.Price))
+            Console.WriteLine($"{p} -> {Classify(p)}");
+
+        var cheapest = repo.All().Min();
+        Console.WriteLine($"Cheapest: {cheapest?.Name}");
+        Console.WriteLine($"Tech total: {repo.All().Where(p => p.Category == Category.Tech).Sum(p => p.Price):F2}");
+        Console.WriteLine($"Discounted: {repo.Get(2).Discount(30):F2}");
+
+        var byCategory = repo.All().GroupBy(p => p.Category).ToDictionary(g => g.Key.ToString(), g => g.Count());
+        foreach (var (cat, n) in byCategory) Console.WriteLine($"{cat}: {n}");
+
+        var order = new Order(1, repo.All().ToList());
+        Console.WriteLine($"Order {order.Id}: {order.Items.Count} items, {order.Total:F2}, coupon={order.Coupon ?? "none"}");
+
+        try
+        {
+            repo.Get(99);
+        }
+        catch (NotFoundException ex) when (ex.Message.Contains("99"))
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+
+        Console.WriteLine(CountVowels("Programming Language"));
+        Console.WriteLine(string.Join(",", Enumerable.Range(0, 10).Select(Fib)));
+        var found = repo.Find(p => p.Name.StartsWith("P"));
+        Console.WriteLine(found is Laptop lap ? $"RAM {lap.RamGb}" : "none");
+        int[] scores = { 90, 72, 85 };
+        Array.Sort(scores);
+        Console.WriteLine(string.Join(" ", scores) + " avg=" + scores.Average().ToString("F1"));
+        var letters = new Dictionary<char, int>();
+        foreach (var c in "mississippi") letters[c] = letters.GetValueOrDefault(c) + 1;
+        Console.WriteLine(string.Join(" ", letters.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key}{kv.Value}")));
+        return repo.Count;
+    }
+}

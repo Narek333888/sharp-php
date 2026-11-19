@@ -1,0 +1,33 @@
+{
+    "name": "narek/sharp-php",
+    "description": "SharpPHP: a C#-like language that compiles to modern PHP.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["transpiler", "compiler", "csharp", "language"],
+    "require": {
+        "php": ">=8.4",
+        "ext-mbstring": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "SharpPhp\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SharpPhp\\Tests\\": "tests/"
+        }
+    },
+    "bin": [
+        "bin/sharp"
+    ],
+    "scripts": {
+        "test": "phpunit"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

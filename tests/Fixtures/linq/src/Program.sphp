@@ -1,0 +1,66 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+var people = new List<Person>
+{
+    new Person("Ann", 31, "Paris"),
+    new Person("Bob", 25, "Berlin"),
+    new Person("Cid", 42, "Paris"),
+    new Person("Dee", 20, "Rome"),
+};
+
+var adults = people.Where(p => p.Age >= 21).OrderBy(p => p.Name).Select(p => p.Name);
+Console.WriteLine(string.Join(", ", adults));
+
+var byCity = people.GroupBy(p => p.City);
+foreach (var group in byCity)
+{
+    Console.WriteLine($"{group.Key}: {group.Count()} ({string.Join("/", group.Select(p => p.Name))})");
+}
+
+Console.WriteLine($"Average age: {people.Average(p => p.Age):F1}");
+Console.WriteLine($"Oldest: {people.OrderByDescending(p => p.Age).First().Name}");
+Console.WriteLine(people.Any(p => p.City == "Rome"));
+Console.WriteLine(people.All(p => p.Age > 20));
+Console.WriteLine(people.Sum(p => p.Age));
+
+int[] numbers = { 5, 3, 8, 1 };
+Console.WriteLine(numbers.Max() + numbers.Min());
+Console.WriteLine(string.Join(" ", numbers.OrderBy(n => n)));
+Console.WriteLine(numbers.Length);
+Console.WriteLine(numbers.Contains(8));
+
+var ages = new Dictionary<string, int>();
+foreach (var p in people) ages[p.Name] = p.Age;
+ages["Eve"] = 28;
+Console.WriteLine(ages.Count);
+Console.WriteLine(ages.ContainsKey("Bob") ? ages["Bob"] : -1);
+if (ages.TryGetValue("Zed", out var zed)) Console.WriteLine(zed); else Console.WriteLine("no Zed");
+foreach (var (name, age) in ages)
+{
+    if (age < 25) continue;
+    Console.Write($"{name}={age} ");
+}
+Console.WriteLine();
+
+var queue = new Queue<string>();
+queue.Enqueue("a");
+queue.Enqueue("b");
+var stack = new Stack<int>(new[] { 1, 2, 3 });
+Console.WriteLine($"{queue.Dequeue()} {queue.Count} {stack.Pop()} {stack.Peek()}");
+
+var set = new HashSet<string> { "x", "y" };
+set.Add("x");
+Console.WriteLine(set.Count);
+
+try
+{
+    var missing = ages["nobody"];
+}
+catch (KeyNotFoundException e)
+{
+    Console.WriteLine(e.Message);
+}
+
+record Person(string Name, int Age, string City);

@@ -1,0 +1,106 @@
+using System;
+
+namespace Flow;
+
+enum Direction { North, East, South, West }
+
+class Program
+{
+    static string Describe(object value) => value switch
+    {
+        null => "null",
+        int n when n < 0 => "negative int",
+        int n => $"int {n}",
+        string s => $"string '{s}'",
+        double d => $"double {d:F1}",
+        Direction dir => $"direction {dir}",
+        _ => "something else",
+    };
+
+    static int Classify(int score)
+    {
+        switch (score / 10)
+        {
+            case 10:
+            case 9:
+                return 5;
+            case 8:
+                return 4;
+            case 7:
+            case 6:
+                return 3;
+            default:
+                return score >= 0 ? 2 : 0;
+        }
+    }
+
+    static Direction TurnRight(Direction d) => d switch
+    {
+        Direction.North => Direction.East,
+        Direction.East => Direction.South,
+        Direction.South => Direction.West,
+        _ => Direction.North,
+    };
+
+    static void Main()
+    {
+        Console.WriteLine(Describe(null));
+        Console.WriteLine(Describe(-5));
+        Console.WriteLine(Describe(42));
+        Console.WriteLine(Describe("hi"));
+        Console.WriteLine(Describe(2.5));
+        Console.WriteLine(Describe(Direction.South));
+        Console.WriteLine(Describe(true));
+
+        Console.WriteLine($"{Classify(95)} {Classify(81)} {Classify(65)} {Classify(12)} {Classify(-3)}");
+
+        var d = Direction.West;
+        for (var i = 0; i < 3; i++) d = TurnRight(d);
+        Console.WriteLine(d);
+        Console.WriteLine((int)d);
+        Console.WriteLine((Direction)2);
+
+        // break and continue inside a switch inside a loop
+        var output = "";
+        for (int i = 0; i < 10; i++)
+        {
+            switch (i % 3)
+            {
+                case 0:
+                    continue;
+                case 1:
+                    output += i;
+                    break;
+                default:
+                    if (i > 7) break;
+                    output += "-";
+                    break;
+            }
+            output += ".";
+        }
+        Console.WriteLine(output);
+
+        int x = 0;
+        do { x += 3; } while (x < 10);
+        Console.WriteLine(x);
+
+        int? maybe = null;
+        Console.WriteLine(maybe ?? 99);
+        maybe ??= 7;
+        Console.WriteLine(maybe);
+
+        var n = 17;
+        var kind = n % 2 == 0 ? "even" : n > 10 ? "big odd" : "small odd";
+        Console.WriteLine(kind);
+        Console.WriteLine(n is > 10 and < 20 ? "teen" : "not teen");
+        Console.WriteLine(n is not 17);
+
+        int total = 0;
+        while (true)
+        {
+            total++;
+            if (total >= 5) break;
+        }
+        Console.WriteLine(total);
+    }
+}

@@ -1,0 +1,15 @@
+using System;
+
+class Program
+{
+    static void Fail(string reason)
+    {
+        throw new InvalidOperationException(reason);
+    }
+
+    static void Main()
+    {
+        Console.WriteLine("before");
+        Fail("boom");
+    }
+}

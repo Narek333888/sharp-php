@@ -1,0 +1,105 @@
+using System;
+using System.Collections.Generic;
+
+namespace Shop;
+
+public abstract class Product
+{
+    private static int nextId = 1;
+    public const string Currency = "USD";
+
+    public int Id { get; }
+    public string Name { get; set; }
+    public decimal Price { get; protected set; }
+
+    protected Product(string name, decimal price)
+    {
+        Id = nextId++;
+        Name = name;
+        Price = price;
+    }
+
+    public abstract string Category { get; }
+
+    public virtual decimal PriceWithTax() => Price * 1.2m;
+
+    public override string ToString() => $"#{Id} {Name} ({Category}) {Price:F2} {Currency}";
+}
+
+public class Book : Product
+{
+    public string Author { get; }
+
+    public Book(string name, string author, decimal price) : base(name, price)
+    {
+        Author = author;
+    }
+
+    public override string Category => "Book";
+
+    public override decimal PriceWithTax() => Price; // books are tax free
+}
+
+public sealed class Laptop : Product
+{
+    private int ramGb;
+
+    public Laptop(string name, decimal price, int ramGb) : base(name, price)
+    {
+        RamGb = ramGb;
+    }
+
+    public int RamGb
+    {
+        get { return ramGb; }
+        set
+        {
+            if (value <= 0) throw new ArgumentOutOfRangeException(nameof(value));
+            ramGb = value;
+        }
+    }
+
+    public override string Category => "Electronics";
+
+    public void Discount(decimal percent)
+    {
+        Price = Price - Price * percent / 100;
+    }
+}
+
+public class Program
+{
+    public static void Main()
+    {
+        var items = new List<Product>
+        {
+            new Book("C# in Depth", "Jon Skeet", 45.5m),
+            new Laptop("ThinkPad", 1200, 16),
+        };
+
+        foreach (var item in items)
+        {
+            Console.WriteLine(item);
+            Console.WriteLine($"  with tax: {item.PriceWithTax():F2}");
+        }
+
+        var laptop = (Laptop)items[1];
+        laptop.Discount(10);
+        laptop.RamGb = 32;
+        Console.WriteLine($"{laptop.Name}: {laptop.Price} / {laptop.RamGb} GB");
+
+        try
+        {
+            laptop.RamGb = 0;
+        }
+        catch (ArgumentOutOfRangeException e)
+        {
+            Console.WriteLine("Error: " + e.Message);
+        }
+
+        Console.WriteLine(Product.Currency);
+        Book b = items[0] as Book;
+        Console.WriteLine(b?.Author ?? "none");
+        Console.WriteLine(items[1] is Book);
+    }
+}

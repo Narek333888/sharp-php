@@ -1,0 +1,35 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+namespace App;
+public interface IAnimal { string Speak(); }
+public class Dog : IAnimal { public string Speak() => "Woof"; }
+public class Program
+{
+    static double Half(double x) => x / 2;
+    static T First<T>(List<T> xs) => xs[0];
+    static IAnimal Make() => new Dog();
+    static object Box(int x) => x;
+    public static void Main()
+    {
+        var d = new Dictionary<string, List<int>>();
+        d["a"] = new List<int> { 1, 2 };
+        if (d.TryGetValue("a", out var list)) Console.WriteLine(list.Count + list[0]);
+        double h = 3; h = Half(5); Console.WriteLine(h);
+        IAnimal a = new Dog(); Console.WriteLine(a.Speak() + Make().Speak());
+        object o = 5; o = "s"; Console.WriteLine(o);
+        int? n = null; n = 3; Console.WriteLine(n);
+        string s = null; s ??= "x"; Console.WriteLine(s);
+        var nums = new List<double> { 1, 2.5 }; nums.Add(3); Console.WriteLine(nums.Sum());
+        Func<int, bool> even = x => x % 2 == 0; Console.WriteLine(even(4));
+        var hs = new HashSet<string>(); hs.Add("q"); Console.WriteLine(hs.Contains("q"));
+        Console.WriteLine("a,b".Contains(',') + " " + "abc".IndexOf('c') + " " + "x".PadLeft(3, '.'));
+        IEnumerable<int> seq = new[] { 3, 1, 2 }; Console.WriteLine(string.Join(",", seq.OrderBy(x => x)));
+        IComparable<int> cmp = 5; Console.WriteLine(cmp != null);
+        var q = new Queue<char>(); q.Enqueue('z'); Console.WriteLine((int)q.Dequeue());
+        Console.WriteLine(First(new List<string> { "f" }) + Box(1));
+        bool ok = !(1 > 2) && "a" != "b"; Console.WriteLine(ok);
+        var arr = new int[] { 1, 2 }; long big = arr[0]; Console.WriteLine(big);
+        Exception ex = new InvalidOperationException("io"); Console.WriteLine(ex.Message);
+    }
+}

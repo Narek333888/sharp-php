@@ -1,0 +1,124 @@
+using System;
+using System.Collections.Generic;
+
+namespace Demo;
+
+public interface IShape
+{
+    string Name { get; }
+    double Area();
+}
+
+public record Square(double Side) : IShape
+{
+    public string Name => "square";
+    public double Area() => Side * Side;
+}
+
+public class Circle : IShape
+{
+    public double Radius { get; }
+    public Circle(double radius) { Radius = radius; }
+    public string Name => "circle";
+    public double Area() => Math.Round(Math.PI * Radius * Radius, 2);
+}
+
+public class Box<T>
+{
+    private readonly List<T> items = new List<T>();
+
+    public int Count => items.Count;
+
+    public void Put(T item) => items.Add(item);
+
+    public T Get(int index) => items[index];
+
+    public Box<TResult> Map<TResult>(Func<T, TResult> selector)
+    {
+        var result = new Box<TResult>();
+        foreach (var item in items) result.Put(selector(item));
+        return result;
+    }
+}
+
+public static class Util
+{
+    public static T Max<T>(T a, T b) where T : IComparable<T> => a.CompareTo(b) >= 0 ? a : b;
+
+    public static TShape Largest<TShape>(List<TShape> shapes) where TShape : IShape
+    {
+        TShape best = shapes[0];
+        foreach (var s in shapes)
+            if (s.Area() > best.Area()) best = s;
+        return best;
+    }
+
+    public static void Swap<T>(ref T a, ref T b)
+    {
+        T tmp = a;
+        a = b;
+        b = tmp;
+    }
+}
+
+public class Pair<TKey, TValue>
+{
+    public TKey Key { get; }
+    public TValue Value { get; }
+    public Pair(TKey key, TValue value) { Key = key; Value = value; }
+    public override string ToString() => $"{Key} => {Value}";
+}
+
+public class Program
+{
+    public static void Main()
+    {
+        var box = new Box<int>();
+        box.Put(3);
+        box.Put(4);
+        var doubled = box.Map(x => x * 2);
+        Console.WriteLine($"{doubled.Get(0)} {doubled.Get(1)} count={doubled.Count}");
+
+        var labels = box.Map(x => "#" + x);
+        Console.WriteLine(labels.Get(1).ToUpper());
+
+        Console.WriteLine(Util.Max(3, 7));
+        Console.WriteLine(Util.Max("apple", "pear"));
+
+        var shapes = new List<IShape> { new Square(3), new Circle(2) };
+        var largest = Util.Largest(shapes);
+        Console.WriteLine($"{largest.Name}: {largest.Area()}");
+
+        int a = 1, b = 2;
+        Util.Swap(ref a, ref b);
+        Console.WriteLine($"a={a}, b={b}");
+
+        var pair = new Pair<string, int>("answer", 42);
+        Console.WriteLine(pair);
+
+        var numbers = new List<int> { 1, 2, 3 };
+        try
+        {
+            object boxed = "four";
+            numbers.Add((int)boxed);
+        }
+        catch (InvalidCastException e)
+        {
+            Console.WriteLine("Cast failed: " + e.Message);
+        }
+
+        dynamic any = numbers;
+        try
+        {
+            any.Add("five");
+        }
+        catch (ArgumentException e)
+        {
+            Console.WriteLine(e.Message);
+        }
+        Console.WriteLine(numbers.Count);
+
+        Console.WriteLine(new Square(2) == new Square(2));
+        Console.WriteLine(new Square(2));
+    }
+}

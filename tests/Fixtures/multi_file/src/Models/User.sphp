@@ -1,0 +1,10 @@
+namespace MyApp.Models;
+
+public class User
+{
+    public string Name { get; init; }
+    public string Email { get; init; }
+    public bool IsAdmin { get; set; }
+
+    public override string ToString() => IsAdmin ? $"{Name} <{Email}> [admin]" : $"{Name} <{Email}>";
+}

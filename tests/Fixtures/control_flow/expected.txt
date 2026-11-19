@@ -1,0 +1,19 @@
+null
+negative int
+int 42
+string 'hi'
+double 2.5
+direction South
+something else
+5 4 3 2 0
+South
+2
+South
+1.-.4.-.7..
+12
+99
+7
+big odd
+teen
+False
+5

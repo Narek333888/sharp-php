@@ -1,0 +1,13 @@
+// Top-level statements, like a modern C# Program.cs
+using System;
+
+var name = args.Length > 0 ? args[0] : "World";
+Console.WriteLine($"Hello, {name}!");
+
+for (var i = 1; i <= 3; i++)
+{
+    Console.Write(i);
+    Console.Write(i < 3 ? ", " : "\n");
+}
+
+return 0;

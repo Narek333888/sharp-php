@@ -1,0 +1,8 @@
+namespace App;
+public class V : IComparable<V> { public int N; public V(int n) { N = n; } public int CompareTo(V? o) => N.CompareTo(o.N); }
+public class Program { public static void Main() {
+ var l = new List<V> { new V(3), new V(1), new V(2) }; l.Sort(); Console.WriteLine(string.Join(",", l.Select(v => v.N)));
+ Console.WriteLine(l.Max().N + " " + l.OrderByDescending(v => v).First().N);
+ var a = new[] { new V(9), new V(4) }; Array.Sort(a); Console.WriteLine(a[0].N);
+ Console.WriteLine(new[] {3,1,2}.Max() + " " + new[] {"b","a"}.Min());
+} }

@@ -1,0 +1,20 @@
+Ann, Bob, Cid
+Paris: 2 (Ann/Cid)
+Berlin: 1 (Bob)
+Rome: 1 (Dee)
+Average age: 29.5
+Oldest: Cid
+True
+False
+118
+9
+1 3 5 8
+4
+True
+5
+25
+no Zed
+Ann=31 Bob=25 Cid=42 Eve=28 
+a 1 3 2
+2
+The given key 'nobody' was not present in the dictionary.

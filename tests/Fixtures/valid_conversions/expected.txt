@@ -1,0 +1,17 @@
+3
+2.5
+WoofWoof
+s
+3
+x
+6.5
+True
+True
+True 2 ..x
+1,2,3
+True
+122
+f1
+True
+1
+io

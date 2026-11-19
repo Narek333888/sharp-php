@@ -1,0 +1,46 @@
+namespace Shop.Models;
+
+public enum Category { Food, Tech, Books }
+
+public interface IPriced { decimal Price { get; } }
+
+public abstract class Product : IPriced, IComparable<Product>
+{
+    private static int _nextId = 1;
+    public int Id { get; }
+    public string Name { get; init; }
+    public abstract Category Category { get; }
+    public decimal Price { get; protected set; }
+
+    protected Product(string name, decimal price)
+    {
+        Id = _nextId++;
+        Name = name;
+        Price = price;
+    }
+
+    public int CompareTo(Product? other) => other is null ? 1 : Price.CompareTo(other.Price);
+    public virtual decimal Discount(int percent) => Price * (100 - percent) / 100;
+    public override string ToString() => $"#{Id} {Name} ({Category}) {Price:F2}";
+}
+
+public class Laptop : Product
+{
+    public int RamGb { get; set; }
+    public Laptop(string name, decimal price, int ram) : base(name, price) { RamGb = ram; }
+    public override Category Category => Category.Tech;
+    public override decimal Discount(int percent) => percent > 20 ? base.Discount(20) : base.Discount(percent);
+}
+
+public class Book : Product
+{
+    public string Author { get; }
+    public Book(string name, decimal price, string author) : base(name, price) => Author = author;
+    public override Category Category => Category.Books;
+    public void Reprice(decimal price) { Price = price; }
+}
+
+public record Order(int Id, List<Product> Items, string? Coupon = null)
+{
+    public decimal Total => Items.Sum(i => i.Price);
+}

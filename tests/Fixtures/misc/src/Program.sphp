@@ -1,0 +1,69 @@
+using System;
+using System.Collections.Generic;
+
+namespace Misc;
+
+public static class Sequences
+{
+    public static IEnumerable<int> Fibonacci(int count)
+    {
+        int a = 0, b = 1;
+        for (int i = 0; i < count; i++)
+        {
+            yield return a;
+            int next = a + b;
+            a = b;
+            b = next;
+        }
+    }
+
+    public static IEnumerable<string> Words(string text)
+    {
+        foreach (var w in text.Split(' '))
+        {
+            if (w == "") continue;
+            if (w == "stop") yield break;
+            yield return w;
+        }
+    }
+}
+
+public class Config
+{
+    public static readonly List<string> Defaults;
+    public const int Version = 3;
+
+    static Config()
+    {
+        Defaults = new List<string> { "a", "b" };
+    }
+}
+
+class Program
+{
+    static void Main()
+    {
+        foreach (var n in Sequences.Fibonacci(8)) Console.Write(n + " ");
+        Console.WriteLine();
+        Console.WriteLine(string.Join(",", Sequences.Words("one two  three stop four")));
+        Console.WriteLine(Config.Defaults.Count + Config.Version);
+        Console.WriteLine(nameof(Config.Defaults));
+        Console.WriteLine(default(int) + default(double));
+
+        int[] squares = new int[4];
+        for (int i = 0; i < squares.Length; i++) squares[i] = i * i;
+        Console.WriteLine(string.Join(" ", squares));
+
+        var matrix = new int[][] { new[] { 1, 2 }, new[] { 3, 4 } };
+        Console.WriteLine(matrix[1][0]);
+
+        long big = 3_000_000_000;
+        Console.WriteLine(big * 2);
+        Console.WriteLine(0x1F + 0b101);
+        Console.WriteLine(7 % 3 + 7.5 % 2);
+        Console.WriteLine(Math.Max(3, 9) - Math.Abs(-4));
+        Console.WriteLine(int.Parse("12") + int.MaxValue / 1000000000);
+        Console.WriteLine(10 / 4 * 1.0);
+        Console.WriteLine(10 / 4.0);
+    }
+}

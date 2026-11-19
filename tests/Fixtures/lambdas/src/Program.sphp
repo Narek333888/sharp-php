@@ -1,0 +1,63 @@
+using System;
+using System.Collections.Generic;
+
+class Counter
+{
+    private int count;
+    public Func<int> MakeIncrementer() => () => ++count;
+    public int Count => count;
+}
+
+class Program
+{
+    static int Apply(Func<int, int> f, int value) => f(value);
+    static int Twice(int x) => x * 2;
+
+    static void Main()
+    {
+        int total = 0;
+        Action<int> add = n => total += n;
+        add(5);
+        add(10);
+        Console.WriteLine(total);
+
+        var actions = new List<Func<int>>();
+        for (int i = 0; i < 3; i++)
+        {
+            int copy = i;
+            actions.Add(() => copy * 10);
+        }
+        foreach (var a in actions) Console.Write(a() + " ");
+        Console.WriteLine();
+
+        Func<int, int, int> mul = (x, y) => x * y;
+        Console.WriteLine(mul(6, 7));
+        Console.WriteLine(Apply(x => x + 1, 41));
+        Console.WriteLine(Apply(Twice, 21));
+
+        var counter = new Counter();
+        var inc = counter.MakeIncrementer();
+        inc();
+        inc();
+        inc();
+        Console.WriteLine(counter.Count);
+
+        Func<int, Func<int, int>> adder = a => b => a + b;
+        Console.WriteLine(adder(3)(4));
+
+        var names = new List<string> { "b", "c", "a" };
+        names.Sort((x, y) => string.Compare(x, y));
+        names.ForEach(n => Console.Write(n));
+        Console.WriteLine();
+
+        int calls = 0;
+        Func<int> next = () =>
+        {
+            calls++;
+            return calls * calls;
+        };
+        next();
+        next();
+        Console.WriteLine($"{next()} after {calls} calls");
+    }
+}

@@ -1,0 +1,36 @@
+using System;
+
+class Item
+{
+    public string Name { get; set; }
+
+    public void Use() { }
+}
+
+class Program
+{
+    static void Main()
+    {
+        Item item = null;
+        try
+        {
+            Console.WriteLine(item.Name);
+        }
+        catch (NullReferenceException e)
+        {
+            Console.WriteLine("caught: " + e.Message);
+        }
+
+        int[] numbers = null;
+        try
+        {
+            Console.WriteLine(numbers[0]);
+        }
+        catch (NullReferenceException)
+        {
+            Console.WriteLine("caught array");
+        }
+
+        item.Use();
+    }
+}

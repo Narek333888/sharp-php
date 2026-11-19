@@ -1,0 +1,19 @@
+namespace App;
+public enum Kind { A, B }
+public class Program
+{
+    static int W() { while (true) { } }
+    static int F(int x) { for (;;) { if (x > 3) return x; x++; } }
+    static int T(int x) { try { return x; } finally { Console.Write(""); } }
+    static int C(int x) { try { return 10 / x; } catch (DivideByZeroException) { return -1; } }
+    static int S(Kind k) { switch (k) { case Kind.A: return 1; default: return 2; } }
+    static int S2(object o) { switch (o) { case int i: return i; case var other: return 0; } }
+    static int I(bool b) { if (b) return 1; else return 2; }
+    static int Th(int x) { if (x > 0) return x; throw new ArgumentException("neg"); }
+    static int D(int x) { do { return x; } while (x > 0); }
+    static int W2(int x) { while (true) { if (x > 5) break; x++; } return x; }
+    static string Sw(int x) => x switch { 1 => "one", _ => "many" };
+    static IEnumerable<int> G() { yield return 1; }
+    static int Nested(int x) { while (true) { switch (x) { case 1: break; default: return x; } x = 2; } }
+    public static void Main() { Console.WriteLine(F(1) + T(2) + C(0) + S(Kind.B) + S2(7) + I(false) + Th(3) + D(4) + W2(0) + Sw(1) + Nested(1)); }
+}

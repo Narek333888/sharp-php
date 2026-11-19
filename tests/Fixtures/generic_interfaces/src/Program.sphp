@@ -1,0 +1,40 @@
+using System;
+using System.Collections.Generic;
+
+public interface IRepository<T>
+{
+    void Save(T item);
+    T Get(int id);
+}
+
+public abstract class Handler<TMessage>
+{
+    public abstract string Handle(TMessage message);
+}
+
+public record User(int Id, string Name);
+
+public class UserRepository : IRepository<User>
+{
+    private readonly Dictionary<int, User> users = new();
+    public void Save(User item) => users[item.Id] = item;
+    public User Get(int id) => users[id];
+}
+
+public class GreetHandler : Handler<User>
+{
+    public override string Handle(User message) => $"Hello, {message.Name}";
+}
+
+public class Program
+{
+    public static void Main()
+    {
+        IRepository<User> repo = new UserRepository();
+        repo.Save(new User(1, "Ann"));
+        var user = repo.Get(1);
+        Console.WriteLine(user.Name);
+        Handler<User> handler = new GreetHandler();
+        Console.WriteLine(handler.Handle(user));
+    }
+}

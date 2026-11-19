@@ -1,0 +1,222 @@
+# SharpPHP
+
+SharpPHP is a C#-like language that compiles to modern PHP. You write `.sphp` files with C# syntax — classes, `static void Main`, properties, generics, LINQ, `switch` expressions, pattern matching — and the compiler turns them into clean, readable PHP 8.4 code.
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace App;
+
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        var people = new List<Person> { new("Ann", 31), new("Bob", 17) };
+
+        foreach (var adult in people.Where(p => p.Age >= 18))
+        {
+            Console.WriteLine($"{adult.Name} is {adult.Age}");
+        }
+    }
+}
+
+public record Person(string Name, int Age);
+```
+
+## Requirements
+
+- PHP 8.4 or newer (the generated code uses property hooks and asymmetric visibility)
+- `ext-mbstring`
+
+## Installation
+
+```bash
+composer require narek/sharp-php
+```
+
+Inside this repository the package is linked as a Composer path repository (`packages/sharp-php`).
+
+## Quick start
+
+1. Put your code in `src/Program.sphp` (any number of `.sphp` files in any sub-directories).
+2. Run it:
+
+```bash
+vendor/bin/sharp run            # build (if needed) and run Main
+vendor/bin/sharp run -- a b c   # pass arguments to Main(string[] args)
+```
+
+or from PHP (e.g. `index.php`, which PhpStorm can run directly):
+
+```php
+<?php
+require_once __DIR__ . '/vendor/autoload.php';
+
+exit(SharpPhp\Project::fromDirectory(__DIR__)->run(array_slice($argv ?? [], 1)));
+```
+
+Builds are cached: sources are recompiled only when a `.sphp` file (or the compiler) changes.
+
+## Command line
+
+| Command | Description |
+|---|---|
+| `sharp run [--project=DIR] [-- args]` | Build if needed and run the entry point |
+| `sharp build [--project=DIR] [--force]` | Compile all sources to PHP |
+| `sharp check [--project=DIR]` | Compile without writing files (CI) |
+| `sharp compile <file.sphp>` | Print the PHP generated for one file |
+| `sharp clean [--project=DIR]` | Delete the build directory |
+
+## Configuration
+
+Optional, in the project's `composer.json`:
+
+```json
+"extra": {
+    "sharp": { "source": "src", "output": "var/sharp" }
+}
+```
+
+The output directory contains the generated PHP (`classes/`) and `manifest.php` (class map, entry point, source map). Add it to `.gitignore`.
+
+## Language guide
+
+### Program structure
+
+- `namespace App;` (file-scoped) or `namespace App { ... }`
+- `using System;`, `using MyApp.Models;`, aliases `using Col = System.Collections.Generic;`
+- `System`, `System.Collections.Generic` and `System.Linq` are imported implicitly
+- Entry point: a `static void Main()` / `static int Main(string[] args)` method, or top-level statements (the returned `int` becomes the exit code)
+
+### Types
+
+- `class`, `abstract`, `sealed`, `static class`, `interface`, `enum`, `record`, `struct` (compiled as a final class, so it has reference semantics)
+- Single inheritance plus interfaces: `class Book : Product, IComparable<Book>`
+- Constructors with `: base(...)`, expression-bodied constructors, static constructors
+- Fields, `const`, `readonly`, `static`
+- Properties: auto (`{ get; set; }`, `{ get; private set; }`, `{ get; init; }`, get-only), with initializers, expression-bodied (`=> ...`), full `get { } set { }` with `value`, abstract and interface properties
+- Methods: `virtual` / `override` / `abstract`, expression bodies, default and named arguments, `params`, `ref`, `out` (incl. `out var x`)
+- Records: `record Point(int X, int Y);` with value equality (`==`) and C#-style `ToString()`
+- Enums: `enum Color { Red, Green = 5 }`, `(int)color`, `(Color)1`, `color.ToString()`
+
+### Generics
+
+- Generic classes, interfaces and methods: `class Box<T>`, `interface IRepository<T>`, `T Max<T>(T a, T b)`
+- Constraints: `where T : IShape, new()` — a class/interface constraint becomes the PHP parameter type
+- Type inference for generic methods, including through lambdas: `box.Map(x => x * 2)` is a `Box<int>`
+- The compiler tracks generic arguments, so `List<string>` elements are known to be strings (`names[0].Length`)
+- Runtime checks: `new List<int>()` rejects non-integers, like C# (`ArgumentException`)
+- Implementing a generic interface with a concrete type (`IRepository<User>`) is supported
+
+### Statements and expressions
+
+- `if`/`else`, `while`, `do`, `for`, `foreach` (incl. `foreach (var (key, value) in dict)`), `break`, `continue`
+- `switch` statements (with patterns and `when`), `switch` expressions
+- `try`/`catch`/`finally`, exception filters (`catch (E e) when (...)`), `throw;`, throw expressions (`x ?? throw ...`)
+- `yield return` / `yield break` with `IEnumerable<T>`
+- Lambdas `x => x * 2`, `(a, b) => { ... }`, closures with C# capture semantics, method groups (`list.ForEach(Print)`)
+- Pattern matching: `is T x`, `is null`, `is not null`, `is > 0 and < 10`, `or`, `not`, `var`, `_`
+- String interpolation with format specifiers `$"{price:F2}"`, verbatim strings `@"C:\path"`, `$@"..."`
+- `?.`, `?[]`, `??`, `??=`, `is`, `as`, casts, `typeof`, `nameof`, `default`
+- Object and collection initializers: `new User { Name = "Ann" }`, `new Dictionary<string, int> { ["a"] = 1 }`, `new()`, `[1, 2, 3]`
+
+### Semantics that match C#
+
+| C# | Generated PHP |
+|---|---|
+| `7 / 2` (ints) | `\intdiv(7, 2)` → 3 |
+| `"a" + 1` | `'a' . 1` |
+| `a == b` | `$a === $b` (records compare by value) |
+| `true.ToString()` | `"True"` |
+| `(int)obj` | checked unboxing (`InvalidCastException`) |
+| `(Laptop)product` | checked cast |
+| `catch (Exception e)` | catches every PHP `\Throwable` |
+| `arr[10]` (out of range) | `IndexOutOfRangeException` |
+| `Math.Round(2.5)` | 2 (banker's rounding) |
+| `(int)'A'`, `'a' + 1`, `c - '0'` | `65`, `97 + 1`, `\mb_ord($c) - 48` (char is an integral type) |
+| `(char)66`, `c++` | `\mb_chr(66)`, `$c = \mb_chr(\mb_ord($c) + 1)` |
+| `obj.Name` when `obj` is null | `NullReferenceException` |
+
+## Runtime library
+
+`System` maps to `SharpPhp\Runtime\System`:
+
+- `Console` (`WriteLine`, `Write`, `ReadLine`, composite formatting `"{0:F2}"`)
+- `Math`, `Convert`, `Environment`, `Random`, `Array`
+- `string` / `String` (`Join`, `Format`, `IsNullOrEmpty`, `Split`, `Substring`, `PadLeft`, `Contains`, ...), `char`, `int.Parse`/`TryParse`, `double.Parse`
+- Integral types with their real ranges: `int.MaxValue`, `long.MaxValue`, `short`, `byte`, `sbyte`, `ushort`, `uint` (`Parse` throws `OverflowException` when out of range)
+- `System.Collections.Generic`: `List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `Queue<T>`, `Stack<T>`, `KeyValuePair`
+- `System.Linq`: `Where`, `Select`, `SelectMany`, `OrderBy(Descending)`, `GroupBy`, `First(OrDefault)`, `Any`, `All`, `Count`, `Sum`, `Min`, `Max`, `Average`, `Distinct`, `Take`, `Skip`, `Aggregate`, `ToList`, `ToArray`, `ToDictionary`, `Enumerable.Range`, ... (on arrays and all collections)
+- Exceptions: `Exception`, `ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`, `InvalidOperationException`, `NotImplementedException`, `NotSupportedException`, `FormatException`, `IndexOutOfRangeException`, `DivideByZeroException`, `InvalidCastException`, `NullReferenceException`, `KeyNotFoundException`, ...
+
+## Using PHP from SharpPHP
+
+- Any PHP class is visible: global classes directly (`new DateTime()`), namespaced ones through `using`: `using GuzzleHttp;` then `new Client()`
+- Global PHP functions and constants can be called directly: `strlen(s)`, `PHP_EOL`
+- Generated classes are regular PHP classes, so PHP code can use them too
+
+## Errors
+
+Compile errors are reported in MSBuild style with a code frame:
+
+```
+src/Program.sphp(12,27): error SP0103: The name 'x' does not exist in the current context
+   12 |         Console.WriteLine(x);
+      |                           ^
+```
+
+Like the C# compiler, SharpPHP rejects at compile time (not at runtime):
+
+- values that do not convert to the target type: `int a = "text";`, `if (count)`, `Sq("abc")`, `return "x";` from an `int` method, `list.Add("s")` on a `List<int>`
+- wrong argument counts and unknown named arguments, for methods, constructors, `base(...)` and delegates
+- methods, getters and lambdas where not all code paths return a value
+- reading a local variable before it is definitely assigned
+- `private`/`protected` members and constructors used from outside, assignments to get-only, init-only and `readonly` members, setters that are not accessible
+- classes that do not implement their interfaces or inherited abstract members
+
+A conversion is only rejected when both types are known: values of type `object`, `dynamic` or unconstrained type parameters, and untyped PHP code, are checked at runtime.
+
+Uncaught exceptions are printed like .NET, with locations mapped back to the `.sphp` sources:
+
+```
+Unhandled exception. System.InvalidOperationException: Queue empty.
+   at App.Worker.Next() in /app/src/Worker.sphp:line 14
+   at App.Program.Main() in /app/src/Program.sphp:line 8
+```
+
+## Differences from C#
+
+SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
+
+- No method or constructor overloading (PHP has one method per name; names are case-insensitive)
+- Generics are checked by the compiler and erased at runtime (only the built-in collections check element types)
+- Arrays (`int[]`) are PHP arrays and are copied on assignment (value semantics)
+- Integer arithmetic is 64-bit and does not wrap: `int.MaxValue + 1` is `2147483648`, not `-2147483648`
+- `ulong` is limited to `long.MaxValue` (there is no `ulong.MaxValue`); `decimal`/`float`/`double` are PHP floats
+- `char` is a one-character string at runtime (it converts to its code where C# would use it as a number)
+- Not supported: nested types, operator overloading, indexers, extension methods, events/delegates declarations, `async`/`await`, LINQ query syntax, tuples, `with` expressions, `using` statements, `goto`, local functions, property patterns
+
+## Development
+
+```bash
+composer install
+composer test        # PHPUnit: lexer, diagnostics, code generation, runtime, end-to-end fixtures
+```
+
+End-to-end tests live in `tests/Fixtures/<name>/`: `src/*.sphp` plus the expected output.
+
+### Architecture
+
+```
+src/
+  Lexer/       source text -> tokens
+  Parser/      tokens -> syntax tree (src/Syntax)
+  Semantics/   types, symbols (project + PHP reflection), name resolution
+  Compiler/    Declarator (project-wide symbols), Compiler (pipeline), diagnostics
+  CodeGen/     Emitter: syntax tree -> PHP, with type inference and source maps
+  Runtime/     the System library and helpers used by generated code
+  Project.php  cached builds and running
+  Cli/         the `sharp` command
+```

@@ -1,0 +1,85 @@
+using System;
+using System.Collections.Generic;
+
+namespace App;
+
+public class Program
+{
+    static int Code(int x) => x;
+
+    public static void Main()
+    {
+        // char is an integral type
+        Console.WriteLine((int)'A');
+        char c = 'z';
+        int i = c;
+        Console.WriteLine(i);
+        Console.WriteLine((char)66);
+        Console.WriteLine('a' + 1);
+        Console.WriteLine((char)('a' + 2));
+        Console.WriteLine("x" + 'y');
+        Console.WriteLine('a' + 'b');
+        Console.WriteLine("" + 'a' + 'b');
+        var s = "a7z";
+        Console.WriteLine(s[1] - '0');
+        Console.WriteLine(char.IsDigit(s[1]));
+        char d = 'a';
+        d++;
+        d += 2;
+        Console.WriteLine(d);
+        char e = 'z';
+        var old = e++;
+        Console.WriteLine($"{old}{e}");
+        for (char ch = 'a'; ch <= 'e'; ch++)
+        {
+            Console.Write(ch);
+        }
+        Console.WriteLine();
+        Console.WriteLine(Code('A'));
+        var total = 0;
+        foreach (var ch in "abc")
+        {
+            total += ch;
+        }
+        Console.WriteLine(total);
+        Console.WriteLine(c == 'z');
+        Console.WriteLine(c > 'a');
+        Console.WriteLine(c == 122);
+        Console.WriteLine((int)char.ToUpper(c));
+        char[] letters = "hey".ToCharArray();
+        Console.WriteLine((int)letters[0]);
+        Console.WriteLine(c.ToString() + "!");
+        object boxed = 'q';
+        Console.WriteLine(boxed is char);
+        Console.WriteLine((char)boxed);
+        Console.WriteLine(default(char) == '\0');
+        Console.WriteLine((int)'\n' + (int)'\'' + (int)'\\');
+        Console.WriteLine((int)'é');
+        var counts = new Dictionary<char, int>();
+        foreach (var ch in "hello")
+        {
+            counts[ch] = counts.ContainsKey(ch) ? counts[ch] + 1 : 1;
+        }
+        Console.WriteLine(counts['l']);
+        Console.WriteLine(Math.Max('a', 'b'));
+
+        // integer ranges
+        Console.WriteLine(long.MaxValue);
+        Console.WriteLine(long.MinValue);
+        Console.WriteLine(int.MaxValue);
+        Console.WriteLine(short.MaxValue);
+        Console.WriteLine(byte.MaxValue);
+        Console.WriteLine(sbyte.MinValue);
+        Console.WriteLine(uint.MaxValue);
+        Console.WriteLine(long.Parse("9000000000"));
+        try
+        {
+            int.Parse("9000000000");
+        }
+        catch (OverflowException ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+        Console.WriteLine(byte.TryParse("300", out var b) + " " + b);
+    }
+}

@@ -1,0 +1,27 @@
+12
+ADA LOVELACE
+Lovelace
+ada
+4
+Augusta Lovelace
+False
+True
+Ada|Lovelace
+padded!
+007
+A
+HÉLLO
+True
+Ada Lovelace has 12 letters, 0.333
+{braces} and Ada Lovelace|
+C:\temp\new
+tab	separated\
+7 inner long
+1,234.56 1235 FF 00042
+a12
+3a
+xTruec
+Name: Ada Lovelace
+Done
+True
+0

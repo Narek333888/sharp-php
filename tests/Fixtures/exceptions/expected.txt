@@ -1,0 +1,10 @@
+Insufficient funds: missing 30.00 (balance 70)
+Amount must be positive (Parameter 'amount')
+Caught divide by zero
+rethrowing
+inner finally
+outer caught: inner
+wrapped <- bad format
+Object reference not set to an instance of an object.
+Index was outside the bounds of the array.
+3

@@ -1,0 +1,43 @@
+using System;
+
+class Program
+{
+    static void Main()
+    {
+        string name = "Ada Lovelace";
+        Console.WriteLine(name.Length);
+        Console.WriteLine(name.ToUpper());
+        Console.WriteLine(name.Substring(4));
+        Console.WriteLine(name.Substring(0, 3).ToLower());
+        Console.WriteLine(name.IndexOf("Love"));
+        Console.WriteLine(name.Replace("Ada", "Augusta"));
+        Console.WriteLine(name.Contains("love"));
+        Console.WriteLine(name.StartsWith("Ada") && name.EndsWith("ce"));
+        Console.WriteLine(string.Join("|", name.Split(' ')));
+        Console.WriteLine("  padded  ".Trim() + "!");
+        Console.WriteLine("7".PadLeft(3, '0'));
+        Console.WriteLine(name[0]);
+        foreach (var c in "héllo")
+        {
+            if (char.IsLetter(c)) Console.Write(char.ToUpper(c));
+        }
+        Console.WriteLine();
+        Console.WriteLine(string.IsNullOrEmpty(""));
+        Console.WriteLine(string.Format("{0} has {1} letters, {2:F3}", name, name.Length, 1.0 / 3));
+        Console.WriteLine($"{{braces}} and {name}|");
+        var path = @"C:\temp\new";
+        Console.WriteLine(path);
+        Console.WriteLine("tab\tseparated\\");
+        Console.WriteLine($"{3 + 4} {"inner"} {(name.Length > 5 ? "long" : "short")}");
+        var price = 1234.56;
+        Console.WriteLine($"{price:N2} {price:F0} {255:X} {42:D5}");
+        Console.WriteLine("a" + 1 + 2);
+        Console.WriteLine(1 + 2 + "a");
+        Console.WriteLine("x" + true + null + 'c');
+        string multi = $@"Name: {name}
+Done";
+        Console.WriteLine(multi);
+        Console.WriteLine(string.Compare("a", "b") < 0);
+        Console.WriteLine("abc".CompareTo("abc"));
+    }
+}

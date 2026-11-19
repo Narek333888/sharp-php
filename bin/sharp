@@ -1,0 +1,24 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Composer 2.2+ tells proxied binaries where the autoloader is.
+$candidates = [
+    $GLOBALS['_composer_autoload_path'] ?? null,
+    __DIR__ . '/../vendor/autoload.php',       // running inside the package
+    __DIR__ . '/../../../autoload.php',        // installed as vendor/narek/sharp-php
+];
+foreach ($candidates as $autoload) {
+    if (is_string($autoload) && is_file($autoload)) {
+        require $autoload;
+        break;
+    }
+}
+
+if (!class_exists(SharpPhp\Cli\Application::class)) {
+    fwrite(STDERR, "SharpPHP: cannot find the Composer autoloader. Run 'composer install'." . PHP_EOL);
+    exit(1);
+}
+
+exit((new SharpPhp\Cli\Application())->run($argv));

@@ -1,0 +1,20 @@
+using System;
+using MyApp.Models;
+using MyApp.Services;
+
+namespace MyApp;
+
+public class Program
+{
+    public static int Main(string[] args)
+    {
+        var service = new UserService(new InMemoryUserRepository());
+        service.Register("Ann", "ann@example.com", admin: true);
+        service.Register("Bob", "bob@example.com");
+        User carol = service.Register("Carol", "carol@example.com", true);
+        Console.WriteLine(carol);
+        foreach (var admin in service.Admins()) Console.WriteLine("admin: " + admin.Name);
+        Console.WriteLine($"args: {args.Length}");
+        return args.Length;
+    }
+}
