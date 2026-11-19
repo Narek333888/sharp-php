@@ -1,0 +1,51 @@
+namespace App;
+public record Address(string City, string Country);
+public class Person { public string Name { get; set; } public int Age { get; set; } public Address? Home { get; set; } }
+public abstract class Shape { }
+public class Circle : Shape { public double R { get; init; } }
+public class Rect : Shape { public double W { get; init; } public double H { get; init; } }
+public class Program
+{
+    static string Describe(Shape s) => s switch
+    {
+        Circle { R: 0 } => "dot",
+        Circle { R: > 10 } c => $"big circle {c.R}",
+        Circle c => $"circle {c.R}",
+        Rect { W: var w, H: var h } when w == h => $"square {w}",
+        Rect { W: > 5 and < 100 } => "wide rect",
+        Rect => "rect",
+        _ => "?",
+    };
+
+    public static void Main()
+    {
+        foreach (var s in new Shape[] { new Circle { R = 0 }, new Circle { R = 20 }, new Circle { R = 3 }, new Rect { W = 4, H = 4 }, new Rect { W = 10, H = 2 }, new Rect { W = 1, H = 2 } })
+            Console.WriteLine(Describe(s));
+
+        var people = new List<Person>
+        {
+            new Person { Name = "Ann", Age = 30, Home = new Address("Yerevan", "AM") },
+            new Person { Name = "Bob", Age = 17 },
+            new Person { Name = "Cid", Age = 45, Home = new Address("Paris", "FR") },
+        };
+        foreach (var p in people)
+        {
+            if (p is { Home.Country: "AM" }) Console.WriteLine($"{p.Name} lives in Armenia");
+            if (p is { Age: >= 18, Name: var n } adult) Console.WriteLine($"{n} adult {adult.Age}");
+            if (p is { Home: null }) Console.WriteLine($"{p.Name} homeless");
+            if (p is { Home: { City: var city } }) Console.WriteLine($"{p.Name} in {city}");
+        }
+        string text = "hello";
+        Console.WriteLine(text is { Length: > 3 });
+        object o = new Circle { R = 2 };
+        Console.WriteLine(o is Circle { R: 2 });
+        Console.WriteLine(o is Rect { });
+        switch (o)
+        {
+            case Circle { R: < 1 }: Console.WriteLine("tiny"); break;
+            case Circle { R: var r }: Console.WriteLine($"r={r}"); break;
+        }
+        Person? nobody = null;
+        Console.WriteLine(nobody is { });
+    }
+}

@@ -201,6 +201,46 @@ final class Op
         return $a <=> $b;
     }
 
+    /**
+     * "record with { Name = value }": copies every stored property (bypassing the constructor,
+     * like C#'s copy constructor) and applies the changes. Readonly properties are initialized
+     * from their declaring class's scope.
+     *
+     * @template T of object
+     * @param T $source
+     * @param array<string, mixed> $changes
+     * @return T
+     */
+    public static function with(?object $source, array $changes): object
+    {
+        if ($source === null) {
+            throw new System\NullReferenceException();
+        }
+        $class = new \ReflectionClass($source);
+        $copy = $class->newInstanceWithoutConstructor();
+        for ($current = $class; $current !== false; $current = $current->getParentClass()) {
+            $values = [];
+            foreach ($current->getProperties() as $property) {
+                if ($property->isStatic() || $property->isVirtual() || $property->getDeclaringClass()->getName() !== $current->getName()) {
+                    continue;
+                }
+                $name = $property->getName();
+                if (array_key_exists($name, $changes)) {
+                    $values[$name] = $changes[$name];
+                } elseif ($property->isInitialized($source)) {
+                    $values[$name] = $property->getValue($source);
+                }
+            }
+            (\Closure::bind(static function () use ($copy, $values): void {
+                foreach ($values as $name => $value) {
+                    $copy->$name = $value;
+                }
+            }, null, $current->getName()))();
+        }
+
+        return $copy;
+    }
+
     /** "x as T" */
     public static function as(mixed $value, string $type): mixed
     {

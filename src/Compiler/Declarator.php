@@ -61,6 +61,7 @@ final class Declarator
                 $fqn = ($phpNs === '' ? '' : $phpNs . '\\') . Names::mangle($decl->name);
                 $symbol = new TypeSymbol($kind, $fqn, false);
                 $symbol->isRecord = $decl->kind === 'record';
+                $symbol->isStruct = $decl->kind === 'struct';
                 $symbol->isAbstract = in_array('abstract', $decl->modifiers, true);
                 $symbol->typeParams = $decl->typeParams;
                 if ($this->symbols->declare($symbol) !== null) {
@@ -335,6 +336,7 @@ final class Declarator
                         $property->setter = $accessor->kind === 'init' ? 'init' : self::visibility($accessor->modifiers, $property->visibility);
                     }
                 }
+                $property->isStaticAccessor = $property->isStatic && !$property->isAutoProperty;
                 $this->add($symbol, $property, $file, $member);
             } elseif ($member instanceof MethodDecl) {
                 if ($member->kind === 'static_constructor') {

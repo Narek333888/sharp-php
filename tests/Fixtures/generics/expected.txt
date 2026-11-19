@@ -9,4 +9,4 @@ Cast failed: Unable to cast object of type 'System.String' to type 'System.Int32
 The value "five" is not of type "System.Int32" and cannot be used in this generic collection. (Parameter 'value')
 3
 True
-Square { Side = 2 }
+Square { Side = 2, Name = square }

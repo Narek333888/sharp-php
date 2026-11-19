@@ -1,0 +1,17 @@
+dot
+big circle 20
+circle 3
+square 4
+wide rect
+rect
+Ann lives in Armenia
+Ann adult 30
+Ann in Yerevan
+Bob homeless
+Cid adult 45
+Cid in Paris
+True
+True
+False
+r=2
+False

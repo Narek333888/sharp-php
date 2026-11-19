@@ -1,0 +1,16 @@
+namespace App;
+public class Animal { }
+public class Dog : Animal { }
+public class Program { public static void Main() {
+  Console.WriteLine(typeof(Dog));
+  Console.WriteLine(typeof(Dog).Name + " " + typeof(Dog).FullName + " " + typeof(Dog).Namespace);
+  Animal a = new Dog();
+  Console.WriteLine(a.GetType().Name);
+  Console.WriteLine(a.GetType() == typeof(Dog));
+  Console.WriteLine(a.GetType() == typeof(Animal));
+  Console.WriteLine(typeof(int).Name + " " + typeof(string).FullName + " " + typeof(List<int>).Name);
+  Console.WriteLine(5.GetType().Name + " " + "s".GetType().Name + " " + 2.5.GetType().Name + " " + true.GetType());
+  try { throw new InvalidOperationException("x"); } catch (Exception e) { Console.WriteLine($"{e.GetType()} {e.GetType().Name}"); }
+  Type t = typeof(Dog); Console.WriteLine(t.Equals(a.GetType()));
+  Console.WriteLine(new List<int>().GetType().FullName);
+} }

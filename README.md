@@ -96,9 +96,9 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - Single inheritance plus interfaces: `class Book : Product, IComparable<Book>`
 - Constructors with `: base(...)`, expression-bodied constructors, static constructors
 - Fields, `const`, `readonly`, `static`
-- Properties: auto (`{ get; set; }`, `{ get; private set; }`, `{ get; init; }`, get-only), with initializers, expression-bodied (`=> ...`), full `get { } set { }` with `value`, abstract and interface properties
+- Properties: auto (`{ get; set; }`, `{ get; private set; }`, `{ get; init; }`, get-only), with initializers, expression-bodied (`=> ...`), full `get { } set { }` with `value`, abstract and interface properties, static properties (with accessor bodies they become `get_Name()`/`set_Name()` methods)
 - Methods: `virtual` / `override` / `abstract`, expression bodies, default and named arguments, `params`, `ref`, `out` (incl. `out var x`)
-- Records: `record Point(int X, int Y);` with value equality (`==`) and C#-style `ToString()`
+- Records: `record Point(int X, int Y);` with value equality (`==`), C#-style `ToString()` (every public property) and `with` expressions (`p with { X = 5 }`)
 - Enums: `enum Color { Red, Green = 5 }`, `(int)color`, `(Color)1`, `color.ToString()`
 
 ### Generics
@@ -117,9 +117,9 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - `try`/`catch`/`finally`, exception filters (`catch (E e) when (...)`), `throw;`, throw expressions (`x ?? throw ...`)
 - `yield return` / `yield break` with `IEnumerable<T>`
 - Lambdas `x => x * 2`, `(a, b) => { ... }`, closures with C# capture semantics, method groups (`list.ForEach(Print)`)
-- Pattern matching: `is T x`, `is null`, `is not null`, `is > 0 and < 10`, `or`, `not`, `var`, `_`
+- Pattern matching: `is T x`, `is null`, `is not null`, `is > 0 and < 10`, `or`, `not`, `var`, `_`, property patterns (`Circle { R: > 10 } c`, `{ Name: var n, Age: >= 18 }`, `{ Home.City: "Paris" }`)
 - String interpolation with format specifiers `$"{price:F2}"`, verbatim strings `@"C:\path"`, `$@"..."`
-- `?.`, `?[]`, `??`, `??=`, `is`, `as`, casts, `typeof`, `nameof`, `default`
+- `?.`, `?[]`, `??`, `??=`, `is`, `as`, casts, `typeof` / `GetType()` (a `System.Type` with `Name`, `FullName`, `Namespace`), `nameof`, `default`
 - Object and collection initializers: `new User { Name = "Ann" }`, `new Dictionary<string, int> { ["a"] = 1 }`, `new()`, `[1, 2, 3]`
 
 ### Semantics that match C#
@@ -191,12 +191,12 @@ Unhandled exception. System.InvalidOperationException: Queue empty.
 SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 
 - No method or constructor overloading (PHP has one method per name; names are case-insensitive)
-- Generics are checked by the compiler and erased at runtime (only the built-in collections check element types)
+- Generics are checked by the compiler and erased at runtime (only the built-in collections check element types); `typeof(List<int>).Name` is `List`
 - Arrays (`int[]`) are PHP arrays and are copied on assignment (value semantics)
 - Integer arithmetic is 64-bit and does not wrap: `int.MaxValue + 1` is `2147483648`, not `-2147483648`
 - `ulong` is limited to `long.MaxValue` (there is no `ulong.MaxValue`); `decimal`/`float`/`double` are PHP floats
 - `char` is a one-character string at runtime (it converts to its code where C# would use it as a number)
-- Not supported: nested types, operator overloading, indexers, extension methods, events/delegates declarations, `async`/`await`, LINQ query syntax, tuples, `with` expressions, `using` statements, `goto`, local functions, property patterns
+- Not supported: nested types, operator overloading, indexers, extension methods, events/delegates declarations, `async`/`await`, LINQ query syntax, tuples, `using` statements, `goto`, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record
 
 ## Development
 

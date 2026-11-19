@@ -40,6 +40,7 @@ use SharpPhp\Syntax\ThisExpr;
 use SharpPhp\Syntax\ThrowExpr;
 use SharpPhp\Syntax\TypeOfExpr;
 use SharpPhp\Syntax\UnaryExpr;
+use SharpPhp\Syntax\WithExpr;
 
 /**
  * @internal part of {@see \SharpPhp\CodeGen\Emitter}
@@ -86,6 +87,7 @@ trait EmitsExpressions
             $e instanceof NameOfExpr => $this->nameOf($e),
             $e instanceof DefaultExpr => $this->defaultValue($e->type !== null ? $this->resolveType($e->type) : $expected),
             $e instanceof SwitchExpr => $this->switchExpr($e, $expected),
+            $e instanceof WithExpr => $this->withExpr($e),
             $e instanceof ThrowExpr => Emitted::value('throw ' . $this->expr($e->value)->code, Type::mixed(), Prec::LOWEST),
             $e instanceof BaseExpr => throw $this->error('SP0175', "Use of keyword 'base' is not valid in this context", $e),
             $e instanceof PredefinedTypeExpr => throw $this->error('SP0119', "'{$e->keyword}' is a type, which is not valid in the given context", $e),
@@ -212,6 +214,18 @@ trait EmitsExpressions
             $target = $this->place($e->operand);
             if ($e->operand instanceof NameExpr) {
                 $this->requireAssigned($e->operand->name, $e->operand);
+            }
+            if ($target->member?->isStaticAccessor) {
+                $step = $op === '++' ? '+' : '-';
+                if ($e->postfix && $this->discarded !== $e) {
+                    // Old value: (set_X(($t = get_X()) + 1) ?? $t)
+                    $temp = $this->temp($e);
+                    $setter = substr($target->code, 0, -strlen("get_{$target->member->name}()")) . "set_{$target->member->name}";
+
+                    return Emitted::value("($setter(($temp = {$target->code}) $step 1) ?? $temp)", $target->type);
+                }
+
+                return $this->callStaticSetter($target, Emitted::value("{$target->code} $step 1", $target->type, Prec::ADD), $e);
             }
 
             if ($target->type->isChar()) {
@@ -384,6 +398,16 @@ trait EmitsExpressions
         $type = $target->type;
         $op = $e->operator;
 
+        if ($target->member?->isStaticAccessor) {
+            $value = match ($op) {
+                '=' => $this->convert($e->value, $type),
+                '??=' => Emitted::value($target->code . ' ?? ' . $this->wrap($this->convert($e->value, $type), Prec::COALESCE), $type, Prec::COALESCE),
+                default => $this->binaryOperation(substr($op, 0, -1), $target, $this->expr($e->value), $e),
+            };
+
+            return $this->callStaticSetter($target, $value, $e);
+        }
+
         if ($op !== '=' && $e->target instanceof NameExpr) {
             $this->requireAssigned($e->target->name, $e->target);
         }
@@ -435,6 +459,22 @@ trait EmitsExpressions
         return Emitted::value($target->code . ' = ' . $this->wrap($combined, Prec::ASSIGN), $type, Prec::ASSIGN);
     }
 
+    /**
+     * Assignment to a static property with accessors: Type::set_X(value). Used as a value,
+     * the assignment yields the assigned value: (Type::set_X($t = value) ?? $t).
+     */
+    private function callStaticSetter(Emitted $target, Emitted $value, Expr $at): Emitted
+    {
+        $name = (string) $target->member?->name;
+        $setter = substr($target->code, 0, -strlen("get_$name()")) . "set_$name";
+        if ($this->discarded === $at) {
+            return Emitted::value("$setter({$value->code})", Type::void());
+        }
+        $temp = $this->temp($at);
+
+        return Emitted::value("($setter($temp = {$value->code}) ?? $temp)", $target->type);
+    }
+
     /** An expression used as an assignment target (variable, property, indexer). */
     private function place(Expr $e): Emitted
     {
@@ -444,6 +484,11 @@ trait EmitsExpressions
             $e instanceof ElementAccessExpr => $this->elementAccess($e, true),
             default => null,
         };
+        if ($result?->member?->isStaticAccessor) {
+            $this->requireWritable($result->member, $e);
+
+            return $result;
+        }
         if ($result === null || preg_match('/^\$[\w\x80-\xff]+$|->[\w\x80-\xff]+$|::\$[\w\x80-\xff]+$|\]$/', $result->code) !== 1) {
             throw $this->error('SP0131', 'The left-hand side of an assignment must be a variable, property or indexer', $e);
         }
@@ -557,10 +602,45 @@ trait EmitsExpressions
     private function typeOf(TypeOfExpr $e): Emitted
     {
         $type = $this->resolveType($e->type);
+        $operand = match (true) {
+            $type->isClass() => $this->classRef((string) $type->class) . '::class',
+            $type->kind === 'typeparam' => self::phpString((string) $type->param),
+            default => self::phpString($type->withNullable(false)->runtimeSpec()),
+        };
 
-        return $type->isClass()
-            ? Emitted::value($this->classRef((string) $type->class) . '::class', Type::string())
-            : Emitted::value(self::phpString($type->describe()), Type::string());
+        return Emitted::value($this->runtime('System\\Type') . "::of($operand)", self::systemType());
+    }
+
+    private static function systemType(): Type
+    {
+        return Type::class(Names::RUNTIME_NAMESPACE . '\\System\\Type');
+    }
+
+    /** record with { Name = value }: a copy with some members changed (the constructor does not run). */
+    private function withExpr(WithExpr $e): Emitted
+    {
+        $target = $this->expr($e->target);
+        $symbol = $this->symbolForType($target->type);
+        if ($symbol === null && !$target->type->isUnknown() || $symbol !== null && !$symbol->isRecord && !$symbol->isStruct) {
+            throw $this->error('SP8858', "The receiver type '{$target->type->describe()}' is not a valid record type and is not a struct type.", $e);
+        }
+
+        $pairs = [];
+        foreach ($e->initializer->items as $item) {
+            $memberType = Type::mixed();
+            if ($symbol !== null) {
+                $member = $this->symbols->findMember($symbol, (string) $item->name);
+                if ($member === null || !$member->isValue()) {
+                    throw $this->error('SP0117', "'{$symbol->csharpName()}' does not contain a definition for '{$item->name}'", $item);
+                }
+                $this->requireAccessible($member, $item);
+                $this->requireWritable($member, $item, initializer: true);
+                $memberType = $member->type->substitute($member->owner->substitutionFor($target->type));
+            }
+            $pairs[] = self::phpString((string) $item->name) . ' => ' . $this->convert($item->values[0], $memberType)->code;
+        }
+
+        return Emitted::value($this->runtime('Op') . "::with({$target->code}, [" . implode(', ', $pairs) . '])', $target->type->withNullable(false));
     }
 
     private function nameOf(NameOfExpr $e): Emitted

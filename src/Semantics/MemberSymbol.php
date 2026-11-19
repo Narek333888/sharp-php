@@ -22,6 +22,12 @@ final class MemberSymbol
     public bool $isReadonly = false;
 
     /**
+     * Static property with accessor bodies. PHP has no static property hooks, so it is
+     * compiled to get_Name()/set_Name($value) methods (the names C# uses internally).
+     */
+    public bool $isStaticAccessor = false;
+
+    /**
      * @param list<ParameterSymbol> $params
      * @param list<string> $typeParams
      */

@@ -60,6 +60,11 @@ final class DiagnosticsTest extends TestCase
         yield 'readonly field' => ["class A { readonly int _n; void M() { _n = 1; } }\nclass P { static void Main() {} }", 'SP0191', 'A readonly field cannot be assigned to (except in a constructor or init-only setter of the type in which the field is defined or a variable initializer)', 1, 39];
         yield 'unassigned local' => [$main('int x; Console.WriteLine(x);'), 'SP0165', "Use of unassigned local variable 'x'", 6, 34];
         yield 'local assigned in one branch' => ["class P\n{\n    static int F(bool b) { int x; if (b) x = 1; return x; }\n    static void Main() {}\n}", 'SP0165', "Use of unassigned local variable 'x'", 3, 56];
+        yield 'with on a class' => ["class A { public int X { get; set; } }\nclass P { static void Main() { var a = new A(); var b = a with { X = 1 }; } }", 'SP8858', "The receiver type 'A' is not a valid record type and is not a struct type.", 2, 59];
+        yield 'with on a get-only member' => ["record R(int X) { public int Y { get; } }\nclass P { static void Main() { var r = new R(1); var s = r with { Y = 2 }; } }", 'SP0200', "Property or indexer 'R.Y' cannot be assigned to -- it is read only", 2, 67];
+        yield 'with value type' => ["record R(int X);\nclass P { static void Main() { var r = new R(1); var s = r with { X = \"a\" }; } }", 'SP0029', "Cannot implicitly convert type 'string' to 'int'", 2, 71];
+        yield 'unknown member in property pattern' => ["class A { public int X { get; set; } }\nclass P { static void Main() { object o = new A(); var b = o is A { Z: 1 }; } }", 'SP1061', "'A' does not contain a definition for 'Z'", 2, 69];
+        yield 'static property passed by ref' => ["static class C { public static int X { get => 1; set { } } }\nclass P { static void F(ref int v) {} static void Main() { F(ref C.X); } }", 'SP0206', 'A property or indexer may not be passed as an out or ref parameter', 2, 68];
         yield 'nested types' => ["class P { class Inner {} static void Main() {} }", 'SP1010', 'Nested types are not supported; declare the type at namespace level', 1, 11];
     }
 

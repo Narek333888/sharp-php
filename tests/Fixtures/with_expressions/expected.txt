@@ -1,0 +1,7 @@
+Person { Name = Ann, Age = 30, City = Paris, Greeting = Hi Ann }
+Person { Name = Ann, Age = 31, City = Paris, Greeting = Hi Ann }
+Person { Name = Bob, Age = 31, City = Rome, Greeting = Hi Bob }
+Paris Rome Hi Bob
+False
+True
+Point { X = 11, Y = 2 }

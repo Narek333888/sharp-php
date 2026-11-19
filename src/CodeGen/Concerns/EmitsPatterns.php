@@ -63,6 +63,7 @@ trait EmitsPatterns
             'discard' => 0,
             'not' => $this->patternSubjectUses($pattern->operands[0]),
             'and', 'or' => $this->patternSubjectUses($pattern->operands[0]) + $this->patternSubjectUses($pattern->operands[1]),
+            'property' => 1 + count($pattern->operands),
             default => 1,
         };
     }
@@ -108,6 +109,9 @@ trait EmitsPatterns
             case 'type':
                 return $this->typeTest($this->resolveType($p->type), $subject(), $p->designation);
 
+            case 'property':
+                return $this->propertyPatternTest($p, $subject);
+
             case 'constant':
                 if ($this->patternExprIsType($p->expr)) {
                     return $this->typeTest($this->target($p->expr)->type, $subject(), null);
@@ -122,6 +126,38 @@ trait EmitsPatterns
         }
 
         throw $this->error('SP1010', "Unsupported pattern '{$p->kind}'", $p);
+    }
+
+    /**
+     * "Laptop { RamGb: >= 16, Name: var n } l": a type (or non-null) test, then each member
+     * matched against its subpattern.
+     *
+     * @param callable(): Emitted $subject
+     */
+    private function propertyPatternTest(Pattern $p, callable $subject): Emitted
+    {
+        $first = $subject();
+        if ($p->type !== null) {
+            $type = $this->resolveType($p->type);
+            $test = $this->typeTest($type, $first, $p->designation);
+        } else {
+            $type = $first->type->withNullable(false);
+            if ($p->designation !== null && $p->designation !== '_') {
+                $this->scope->declare($p->designation, $type);
+                $test = Emitted::value("(\${$p->designation} = {$first->code}) !== null", Type::bool(), Prec::EQ);
+            } else {
+                $test = $this->infix('!==', $first, Emitted::value('null', Type::null()), Prec::EQ, Type::bool());
+            }
+        }
+
+        foreach ($p->operands as $i => $subpattern) {
+            $receiver = Emitted::value($subject()->code, $type);
+            $access = (new MemberAccessExpr(new NameExpr('_', []), $p->members[$i], false, []))->at($p->memberNodes[$i] ?? $subpattern);
+            $member = $this->valueOf($this->instanceMember($receiver, $access), $access);
+            $test = $this->infix('&&', $test, $this->patternCondition($subpattern, $member, $subpattern), Prec::AND, Type::bool());
+        }
+
+        return $test;
     }
 
     private function typeTest(Type $type, Emitted $subject, ?string $designation): Emitted

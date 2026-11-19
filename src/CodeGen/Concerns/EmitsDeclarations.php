@@ -291,11 +291,13 @@ trait EmitsDeclarations
             return;
         }
 
-        if ($static) {
-            throw $this->error('SP0201', "Static properties with accessor bodies are not supported ('$name'); use a static method instead", $property);
-        }
         if ($property->init !== null) {
             throw $this->error('SP8050', "Only auto-implemented properties can have initializers ('$name')", $property);
+        }
+        if ($static) {
+            $this->emitStaticAccessors($property, $member, $visibility, $setVisibility);
+
+            return;
         }
 
         $this->w->line("$visibility$asymmetric $phpType \$$name {");
@@ -343,6 +345,55 @@ trait EmitsDeclarations
 
         $this->w->outdent();
         $this->w->line('}');
+    }
+
+    /**
+     * static int Count => _items.Count;  =>  public static function get_Count(): int { return ...; }
+     * A setter becomes set_Count(int $value): void.
+     */
+    private function emitStaticAccessors(PropertyDecl $property, \SharpPhp\Semantics\MemberSymbol $member, string $visibility, string $setVisibility): void
+    {
+        $type = $member->type;
+        $name = $property->name;
+        $phpType = (string) $this->typeDecl($type);
+        $accessors = $property->exprBody !== null ? [(new Accessor('get', [], null, $property->exprBody))->at($property)] : $property->accessors;
+
+        foreach ($accessors as $i => $accessor) {
+            if ($accessor->body === null && $accessor->exprBody === null) {
+                throw $this->error('SP0202', "Mixing auto-implemented and custom accessors is not supported ('$name')", $accessor);
+            }
+            $isGet = $accessor->kind === 'get';
+            if ($i > 0) {
+                $this->w->blank();
+            }
+            $this->w->sourceLine = $accessor->line;
+            $this->w->line($isGet
+                ? "$visibility static function get_$name(): $phpType"
+                : "$setVisibility static function set_$name($phpType \$value): void");
+            $this->w->line('{');
+            $this->w->indent();
+            $context = new FunctionContext(true, $isGet ? $type : Type::void(), $this->class->typeParamTypes);
+            $this->inFunction($context, function () use ($accessor, $isGet, $type, $name): void {
+                $this->inScope(function () use ($accessor, $isGet, $type, $name): void {
+                    if (!$isGet) {
+                        $this->scope->declare('value', $type);
+                    }
+                    if ($accessor->exprBody !== null) {
+                        $this->w->line($isGet
+                            ? 'return ' . $this->convert($accessor->exprBody, $type)->code . ';'
+                            : $this->effect($accessor->exprBody) . ';');
+
+                        return;
+                    }
+                    if ($isGet && $this->endReachable($accessor->body)) {
+                        throw $this->error('SP0161', "'{$this->class->csharpName()}.$name.get': not all code paths return a value", $accessor);
+                    }
+                    $this->statements($accessor->body->statements);
+                });
+            });
+            $this->w->outdent();
+            $this->w->line('}');
+        }
     }
 
     private function asymmetricVisibility(string $visibility, string $setVisibility): string
@@ -614,14 +665,32 @@ trait EmitsDeclarations
     {
         $this->w->sourceLine = $decl->line;
         $op = $this->runtime('Op');
-        $code = '';
-        $text = $decl->name . ' { ';
-        foreach ($decl->recordParams as $i => $param) {
-            $text .= ($i > 0 ? ', ' : '') . $param->name . ' = ';
-            $code .= self::phpString($text) . " . $op::str(\$this->{$param->name}) . ";
-            $text = '';
+
+        // Like C#'s PrintMembers: public instance fields and properties, base record members first.
+        $chain = [];
+        for ($symbol = $this->class; $symbol !== null && !$symbol->external; $symbol = $symbol->baseClass !== null ? $this->symbols->find($symbol->baseClass) : null) {
+            array_unshift($chain, $symbol);
         }
-        $code .= self::phpString(' }');
+        $names = [];
+        foreach ($chain as $symbol) {
+            foreach ($symbol->members as $member) {
+                if ($member->isValue() && !$member->isStatic && $member->visibility === 'public' && !in_array($member->name, $names, true)) {
+                    $names[] = $member->name;
+                }
+            }
+        }
+        if ($names === []) {
+            $code = self::phpString($decl->name . ' { }');
+        } else {
+            $code = '';
+            $text = $decl->name . ' { ';
+            foreach ($names as $i => $name) {
+                $text .= ($i > 0 ? ', ' : '') . $name . ' = ';
+                $code .= self::phpString($text) . " . $op::str(\$this->$name) . ";
+                $text = '';
+            }
+            $code .= self::phpString(' }');
+        }
         $this->w->line('public function ToString(): string');
         $this->w->line('{');
         $this->w->line("    return $code;");

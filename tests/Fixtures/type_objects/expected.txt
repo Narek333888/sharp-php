@@ -1,0 +1,10 @@
+App.Dog
+Dog App.Dog App
+Dog
+True
+False
+Int32 System.String List
+Int32 String Double System.Boolean
+System.InvalidOperationException InvalidOperationException
+True
+System.Collections.Generic.List

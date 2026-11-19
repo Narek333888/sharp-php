@@ -74,6 +74,7 @@ use SharpPhp\Syntax\UnaryExpr;
 use SharpPhp\Syntax\UsingDirective;
 use SharpPhp\Syntax\VarDeclarator;
 use SharpPhp\Syntax\WhileStmt;
+use SharpPhp\Syntax\WithExpr;
 use SharpPhp\Syntax\YieldStmt;
 
 /**
@@ -1273,11 +1274,22 @@ final class Parser
     private function parseSwitchLevel(): Expr
     {
         $expr = $this->parseUnary();
-        while ($this->check('switch')) {
-            $expr = $this->parseSwitchExpression($expr);
+        while (true) {
+            if ($this->check('switch')) {
+                $expr = $this->parseSwitchExpression($expr);
+            } elseif ($this->current()->isIdentifier('with') && $this->peek(1)->is('{')) {
+                $token = $this->advance();
+                $initializer = $this->parseObjectOrCollectionInitializer();
+                foreach ($initializer->items as $item) {
+                    if ($item->kind !== 'member') {
+                        throw $this->error("Invalid 'with' member: expected 'Name = value'", $this->tokens[$this->pos - 1], 'SP0131');
+                    }
+                }
+                $expr = (new WithExpr($expr, $initializer))->at($token);
+            } else {
+                return $expr;
+            }
         }
-
-        return $expr;
     }
 
     private function parseSwitchExpression(Expr $subject): SwitchExpr
@@ -1768,6 +1780,10 @@ final class Parser
     {
         $token = $this->current();
 
+        if ($token->is('{')) {
+            return $this->parsePropertyPattern(null, $token);
+        }
+
         if ($token->is('(')) {
             $this->advance();
             $pattern = $this->parsePattern();
@@ -1798,6 +1814,9 @@ final class Parser
         if ($isKeywordType || $token->isIdentifier()) {
             $start = $this->pos;
             $type = $this->tryParseType();
+            if ($type !== null && $this->check('{')) {
+                return $this->parsePropertyPattern($type, $token);
+            }
             if ($type !== null) {
                 $next = $this->current();
                 $hasDesignation = $next->isIdentifier() && !in_array($next->value, ['and', 'or', 'when'], true);
@@ -1811,6 +1830,40 @@ final class Parser
         }
 
         return (new Pattern('constant', $this->parseBinary(7), null, null, null, []))->at($token);
+    }
+
+    /** "{ Name: pattern, Address.City: pattern } designation" after an optional type. */
+    private function parsePropertyPattern(?TypeRef $type, Token $start): Pattern
+    {
+        $this->expect('{');
+        $members = [];
+        $memberNodes = [];
+        $patterns = [];
+        while (!$this->check('}')) {
+            $nameToken = $this->expectIdentifier('property name');
+            $memberNodes[] = (new NameExpr($nameToken->value, []))->at($nameToken);
+            $path = [$nameToken->value];
+            while ($this->accept('.')) {
+                $path[] = $this->expectIdentifier('property name')->value;
+            }
+            $this->expect(':');
+            $pattern = $this->parsePattern();
+            // Extended property pattern: { A.B: p } is { A: { B: p } }
+            for ($i = count($path) - 1; $i > 0; $i--) {
+                $pattern = (new Pattern('property', null, null, null, null, [$pattern], [$path[$i]], [(new NameExpr($path[$i], []))->at($nameToken)]))->at($nameToken);
+            }
+            $members[] = $path[0];
+            $patterns[] = $pattern;
+            if (!$this->accept(',')) {
+                break;
+            }
+        }
+        $this->expect('}');
+
+        $next = $this->current();
+        $designation = $next->isIdentifier() && !in_array($next->value, ['and', 'or', 'when'], true) ? $this->advance()->value : null;
+
+        return (new Pattern('property', null, $type, $designation, null, $patterns, $members, $memberNodes))->at($start);
     }
 
     // ------------------------------------------------------------------

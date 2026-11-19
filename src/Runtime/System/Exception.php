@@ -48,8 +48,8 @@ class Exception extends \Exception
         return TypeName::ofClass(static::class) . ': ' . $this->getMessage();
     }
 
-    public function GetType(): string
+    public function GetType(): Type
     {
-        return TypeName::ofClass(static::class);
+        return Type::fromValue($this);
     }
 }

@@ -28,6 +28,8 @@ final class TypeSymbol
 
     public bool $isRecord = false;
 
+    public bool $isStruct = false;
+
     public bool $hasConstructor = false;
 
     /** @var list<ParameterSymbol>|null parameters of the declared constructor (null: none declared, or unknown) */

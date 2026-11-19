@@ -1,0 +1,18 @@
+namespace App;
+public record Person(string Name, int Age)
+{
+    public string City { get; init; } = "Yerevan";
+    public string Greeting => $"Hi {Name}";
+}
+public record Point(int X, int Y);
+public class Program { public static void Main() {
+  var p = new Person("Ann", 30) { City = "Paris" };
+  var q = p with { Age = 31 };
+  var r = q with { Name = "Bob", City = "Rome" };
+  Console.WriteLine(p); Console.WriteLine(q); Console.WriteLine(r);
+  Console.WriteLine($"{q.City} {r.City} {r.Greeting}");
+  Console.WriteLine(p == q);
+  Console.WriteLine(q with { Age = 30 } == p);
+  var pt = new Point(1, 2); var moved = pt with { X = pt.X + 10 };
+  Console.WriteLine(moved);
+} }

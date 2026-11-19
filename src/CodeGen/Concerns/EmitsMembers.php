@@ -105,6 +105,9 @@ trait EmitsMembers
         if ($member->kind === 'const' || $member->kind === 'case') {
             return Emitted::value('self::' . $member->name, $member->type);
         }
+        if ($member->isStaticAccessor) {
+            return new Emitted('self::get_' . $member->name . '()', $member->type, member: $member);
+        }
         if ($member->isStatic) {
             return new Emitted('self::$' . $member->name, $member->type, member: $member);
         }
@@ -351,7 +354,7 @@ trait EmitsMembers
         return match ($member->kind) {
             'method' => new Emitted($type->code . '::', $memberType, Prec::ATOM, 'method', member: $member),
             'const', 'case' => Emitted::value("{$type->code}::$name", $memberType),
-            default => new Emitted("{$type->code}::\$$name", $memberType, member: $member),
+            default => new Emitted($member->isStaticAccessor ? "{$type->code}::get_$name()" : "{$type->code}::\$$name", $memberType, member: $member),
         };
     }
 
@@ -607,6 +610,13 @@ trait EmitsMembers
         $recv = $this->wrap($target, Prec::ATOM);
         $arrow = $nc ? '?->' : '->';
 
+        // object.GetType(), for every value (numbers and strings too).
+        if ($name === 'GetType' && $args === [] && $t->kind !== 'closure') {
+            $typeClass = $this->runtime('System\\Type');
+
+            return $this->nullSafe($target, $nc, static fn (string $c): string => "$typeClass::fromValue($c)", Type::class(Names::RUNTIME_NAMESPACE . '\\System\\Type'));
+        }
+
         if ($t->isString()) {
             return $this->callHelper('System\\String_', $target, $callee, $args, 'string');
         }
@@ -841,6 +851,9 @@ trait EmitsMembers
                 $value = Emitted::value('$' . $arg->value->name, $declType);
             } elseif ($arg->modifier === 'ref' || $arg->modifier === 'out') {
                 $value = $this->place($arg->value);
+                if ($value->member?->isStaticAccessor) {
+                    throw $this->error('SP0206', 'A property or indexer may not be passed as an out or ref parameter', $arg->value);
+                }
                 if ($arg->modifier === 'out') {
                     $this->markAssigned($arg->value);
                 } elseif ($arg->value instanceof NameExpr) {
