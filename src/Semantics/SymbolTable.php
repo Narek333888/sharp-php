@@ -32,8 +32,11 @@ final class SymbolTable
     /** @var array<string, TypeSymbol> */
     private array $project = [];
 
-    /** @var array<string, TypeSymbol|false> */
+    /** @var array<string, TypeSymbol|false> lowercase FQN => class loaded through reflection */
     private array $external = [];
+
+    /** @var array<string, true> FQNs (exact case) that no class or autoloader answered to */
+    private array $missing = [];
 
     /** @var array<string, true> */
     private array $namespaces = [];
@@ -83,11 +86,24 @@ final class SymbolTable
         if (isset($this->project[$key])) {
             return $this->project[$key];
         }
-        if (!array_key_exists($key, $this->external)) {
-            $this->external[$key] = $this->load($fqn) ?? false;
+        if (isset($this->external[$key]) && $this->external[$key] !== false) {
+            return $this->external[$key];
         }
+        // A class PHP knows is found under any case, but an autoloader (PSR-4 on a case-sensitive file
+        // system) may load it only under its exact name: remember a miss for that spelling only, so that
+        // looking up "date" does not hide the class Date.
+        if (isset($this->missing[$fqn])) {
+            return null;
+        }
+        $symbol = $this->load($fqn);
+        if ($symbol === null) {
+            $this->missing[$fqn] = true;
 
-        return $this->external[$key] ?: null;
+            return null;
+        }
+        $this->external[$key] = $symbol;
+
+        return $symbol;
     }
 
     public function addNamespace(string $phpNamespace): void

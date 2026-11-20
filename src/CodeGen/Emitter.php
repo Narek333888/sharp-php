@@ -45,7 +45,7 @@ final class Emitter
     /** System.Threading.Tasks.Task, which async methods return. */
     private const TASK_CLASS = Names::RUNTIME_NAMESPACE . '\\System\\Threading\\Tasks\\Task';
 
-    public const VERSION = '0.4.0';
+    public const VERSION = '0.4.1';
 
     private CodeWriter $w;
     private ResolutionContext $ctx;

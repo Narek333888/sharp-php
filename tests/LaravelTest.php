@@ -133,4 +133,26 @@ final class LaravelTest extends TestCase
 
         return $app;
     }
+
+    public function testClassLookupWithACaseSensitiveAutoloader(): void
+    {
+        // PSR-4 autoloaders on Linux find a class only under its exact name: looking up "date" first
+        // must not hide the class Date.
+        $ns = 'CaseT' . bin2hex(random_bytes(4));
+        $file = $this->tempDir() . '/Date.php';
+        file_put_contents($file, "<?php namespace $ns\\Facades; class Date { public static function now(): string { return 'now'; } }");
+        $loader = static function (string $class) use ($ns, $file): void {
+            if ($class === "$ns\\Facades\\Date") {
+                require $file;
+            }
+        };
+        spl_autoload_register($loader);
+        try {
+            $code = $this->compile("using $ns.Facades;\nclass P { public static string M() => date(\"Y\") + Date.now(); }");
+        } finally {
+            spl_autoload_unregister($loader);
+        }
+
+        $this->assertStringContainsString("\\date('Y') . Date::now()", $code);
+    }
 }

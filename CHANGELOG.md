@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Class lookup on case-sensitive file systems (Linux): looking up a name such as `date` no longer hides the
+  class `Date` that a PSR-4 autoloader loads only under its exact name
+
 ## 0.4.0
 
 - `async` / `await`: async methods and lambdas, `Task` / `Task<T>` (`Run`, `Delay`, `WhenAll`, `WhenAny`,
