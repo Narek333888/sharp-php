@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Parameter info in PhpStorm (LSP4IJ), VS Code and other LSP editors: typing `(` or `,` in a call shows the
+  signature of the method or constructor, e.g. `Random(int? seed = ...)`, with the argument being typed in
+  bold, also for unfinished calls, named arguments, `params` and type arguments (`list.Add(` on a
+  `List<int>` shows `int item`). VS Code: run `vendor/bin/sharp vscode` again to update the extension
 - Writing to an array element outside the array throws `IndexOutOfRangeException`, as in C#: `arr[3] = x`
   on an array of three elements, and `arr[i] ??= x`, `arr[i] += x`, `arr[i]++`, `out arr[i]`, added the
   element instead (PHP grows arrays), so the array got longer. Reading outside an array already threw.

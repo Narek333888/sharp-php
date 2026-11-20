@@ -10,7 +10,8 @@ use SharpPhp\CodeGen\Emitter;
  * The SharpPHP language server ("sharp lsp"): Language Server Protocol over stdin/stdout, for
  * PhpStorm (LSP4IJ), VS Code and any other LSP client.
  *
- * Features: diagnostics while typing, completion (after "." and of names), hover, go to definition.
+ * Features: diagnostics while typing, completion (after "." and of names), hover, go to definition,
+ * parameter info (the signature of the call whose arguments are typed).
  */
 final class Server
 {
@@ -97,6 +98,8 @@ final class Server
                         'completionProvider' => ['triggerCharacters' => ['.'], 'resolveProvider' => false],
                         'hoverProvider' => true,
                         'definitionProvider' => true,
+                        // Shown when "(" opens the arguments and updated at each ",".
+                        'signatureHelpProvider' => ['triggerCharacters' => ['(', ','], 'retriggerCharacters' => [',']],
                     ],
                     'serverInfo' => ['name' => 'SharpPHP', 'version' => Emitter::VERSION],
                 ];
@@ -144,6 +147,10 @@ final class Server
                 [$path, $line, $character] = self::position($params);
 
                 return $this->service->definition($path, $line, $character);
+            case 'textDocument/signatureHelp':
+                [$path, $line, $character] = self::position($params);
+
+                return $this->service->signatureHelp($path, $line, $character);
             default:
                 return null; // notifications we do not use ($/cancelRequest, workspace/didChangeConfiguration, ...)
         }

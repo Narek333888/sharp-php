@@ -800,6 +800,9 @@ trait EmitsExpressions
             throw $this->violation($inaccessible, $e);
         }
         $ctorParams = $this->symbols->constructorParams($symbol);
+        if ($ctorParams !== null) {
+            $this->recordCall($e->argumentsLine, $e->argumentsColumn, $e->args, $symbol->shortName(), $ctorParams, null, $symbol->substitutionFor($type));
+        }
         if ($symbol->isStruct && $e->args === [] && $ctorParams !== null && $ctorParams !== [] && !$ctorParams[0]->optional) {
             throw $this->error('SP1010', "Structs are classes in SharpPHP, so 'new {$symbol->csharpName()}()' has no implicit parameterless constructor; pass the constructor's arguments", $e);
         }

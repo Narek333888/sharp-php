@@ -213,8 +213,8 @@ a browser shows its output as plain text.
 
 ## PhpStorm setup
 
-PhpStorm (and every other JetBrains IDE) gets highlighting, completion, errors while typing, hover and
-go to definition for `.sphp` files. Setting it up takes about two minutes and is done **once per IDE**: it
+PhpStorm (and every other JetBrains IDE) gets highlighting, completion, parameter info, errors while typing,
+hover and go to definition for `.sphp` files. Setting it up takes about two minutes and is done **once per IDE**: it
 then works in every project that requires `armdevstack/sharp-php` 0.3 or newer
 (`composer show armdevstack/sharp-php` prints the version; older projects: see [Upgrading](#upgrading)).
 
@@ -225,7 +225,7 @@ then works in every project that requires `armdevstack/sharp-php` 0.3 or newer
 
 Keywords, types, strings, numbers and comments in `.sphp` files are now colored.
 
-### 2. Completion, errors while typing, hover, go to definition
+### 2. Completion, parameter info, errors while typing, hover, go to definition
 
 These come from the SharpPHP language server (`vendor/bin/sharp lsp`) through the free
 [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) plugin by Red Hat:
@@ -245,6 +245,7 @@ What you get:
 | Members after a dot, also in unfinished code | `user.` → `Name`, `Age`, `Greet()`; `Person.` → static members; `names.` → `Add`, `Count`, `Where`, ... |
 | Names in scope | local variables, parameters, members of the class, types, keywords |
 | Namespaces | `using System.` → `Collections`, `Linq`, `Web`, ... |
+| Parameter info | `new Random(` → `Random(int? seed = ...)`, `title.PadLeft(5, ` → `string string.PadLeft(int totalWidth, string paddingChar = ...)` with the argument being typed in bold; shown at `(` and `,`, and with ⌘P / Ctrl+P |
 | Errors while typing | the same errors as `sharp build`, underlined where they are |
 | Hover | `(property) string Person.Name`, `(method) string Person.Greet(string greeting)` |
 | Go to definition | ⌘-click / Ctrl-click a name: its declaration, also in another file |
@@ -276,8 +277,8 @@ indexed: PhpStorm then completes those classes in `.php` files too. Otherwise ri
 ## VS Code setup
 
 VS Code gets the same features through the SharpPHP extension, which ships with the package: highlighting,
-completion, errors while typing (also in the **Problems** panel), hover and go to definition (F12). It is
-installed once and works in every project with SharpPHP 0.3+.
+completion, parameter info, errors while typing (also in the **Problems** panel), hover and go to definition
+(F12). It is installed once and works in every project with SharpPHP 0.3+.
 
 1. In a terminal, in the project folder: `vendor/bin/sharp vscode`. It installs the extension with VS Code's
    `code` command (without it: `vendor/bin/sharp vscode --package=sharpphp.vsix`, then

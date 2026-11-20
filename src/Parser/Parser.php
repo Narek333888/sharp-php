@@ -1774,10 +1774,11 @@ final class Parser
         }
 
         if ($this->check('(')) {
+            $open = $this->current();
             $args = $this->parseArgumentList();
             $init = $this->check('{') ? $this->parseObjectOrCollectionInitializer() : null;
 
-            return (new NewExpr(null, $args, $init))->at($token);
+            return (new NewExpr(null, $args, $init))->at($token)->argumentsAt($open);
         }
 
         $type = $this->parseType();
@@ -1794,14 +1795,16 @@ final class Parser
             return (new ArrayCreationExpr($type, $size, $elements))->at($token);
         }
 
+        $open = $this->current();
         $hasArgs = $this->check('(');
         $args = $hasArgs ? $this->parseArgumentList() : [];
         $init = $this->check('{') ? $this->parseObjectOrCollectionInitializer() : null;
         if (!$hasArgs && $init === null) {
             throw $this->error('A new expression requires (), [] or {} after the type', $this->current());
         }
+        $new = (new NewExpr($type, $args, $init))->at($token);
 
-        return (new NewExpr($type, $args, $init))->at($token);
+        return $hasArgs ? $new->argumentsAt($open) : $new;
     }
 
     /** new { Id = 1, name, user.Email }: a property name is given, or taken from a name or member access. */

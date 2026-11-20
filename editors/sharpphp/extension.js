@@ -2,7 +2,8 @@
 
 // SharpPHP for VS Code. Highlighting comes from the grammar declared in package.json; this file is a
 // small Language Server Protocol client, without dependencies, for the SharpPHP language server
-// ("php vendor/bin/sharp lsp"): completion, errors while typing, hover and go to definition.
+// ("php vendor/bin/sharp lsp"): completion, errors while typing, hover, go to definition and
+// parameter info.
 //
 // One server runs per workspace folder that contains the server (vendor/bin/sharp by default).
 
@@ -229,6 +230,7 @@ class Client {
                     completion: { completionItem: { snippetSupport: false, documentationFormat: ['markdown', 'plaintext'] }, contextSupport: true },
                     hover: { contentFormat: ['markdown', 'plaintext'] },
                     definition: { linkSupport: false },
+                    signatureHelp: { signatureInformation: { parameterInformation: { labelOffsetSupport: true }, activeParameterSupport: true } },
                     publishDiagnostics: { relatedInformation: false },
                 },
                 workspace: { workspaceFolders: true, configuration: false },
@@ -746,6 +748,32 @@ const definitionProvider = {
     },
 };
 
+// Parameter info: the signature of the call whose arguments are typed, the current parameter in bold.
+// A parameter's label is its text or its [start, end) offsets in the signature; VS Code takes both.
+const signatureHelpProvider = {
+    async provideSignatureHelp(document, position, token) {
+        const client = clientFor(document);
+        const result = client ? await client.at('textDocument/signatureHelp', document, position, token) : null;
+        if (!result || !Array.isArray(result.signatures) || result.signatures.length === 0) {
+            return undefined;
+        }
+        const help = new vscode.SignatureHelp();
+        help.signatures = result.signatures.map((signature) => {
+            const information = new vscode.SignatureInformation(signature.label);
+            information.parameters = (signature.parameters || []).map((parameter) => new vscode.ParameterInformation(parameter.label));
+            if (typeof signature.activeParameter === 'number') {
+                information.activeParameter = signature.activeParameter;
+            }
+
+            return information;
+        });
+        help.activeSignature = result.activeSignature || 0;
+        help.activeParameter = result.activeParameter || 0;
+
+        return help;
+    },
+};
+
 // ---------------------------------------------------------------------------------------------
 
 function activate(context) {
@@ -755,6 +783,7 @@ function activate(context) {
         vscode.languages.registerCompletionItemProvider(SELECTOR, completionProvider, '.'),
         vscode.languages.registerHoverProvider(SELECTOR, hoverProvider),
         vscode.languages.registerDefinitionProvider(SELECTOR, definitionProvider),
+        vscode.languages.registerSignatureHelpProvider(SELECTOR, signatureHelpProvider, { triggerCharacters: ['(', ','], retriggerCharacters: [','] }),
         vscode.commands.registerCommand('sharpphp.restartServer', () => restartAll(true)),
         vscode.workspace.onDidOpenTextDocument((document) => {
             if (!isSharpDocument(document)) {

@@ -122,6 +122,25 @@ final class LspTest extends TestCase
         $this->assertSame(10, $local['range']['start']['line'] ?? null, 'where person is declared');
     }
 
+    public function testParameterInfo(): void
+    {
+        $this->assertSame(['string Person.Greet(string greeting)', 'string greeting'], $this->signature('        person.Greet('), 'an unclosed call');
+        $this->assertSame(['string Person.Greet(string greeting)', 'string greeting'], $this->signature('        person.Greet(', ');'), 'a call the editor closed');
+        $this->assertSame(['void List.Add(string item)', 'string item'], $this->signature('        names.Add('), "the receiver's type arguments");
+        $this->assertSame(['App.Models.Person Person.Create(string name)', 'string name'], $this->signature('        Person.Create(name: '), 'a named argument');
+        $this->assertSame('Person()', $this->signature('        var p = new Person(')[0] ?? null, 'a constructor');
+
+        $padLeft = $this->signature('        title.PadLeft(5, ');
+        $this->assertStringStartsWith('string string.PadLeft(int totalWidth, ', $padLeft[0] ?? '', 'a string helper, without its receiver parameter');
+        $this->assertStringStartsWith('string paddingChar', $padLeft[1] ?? '', 'the second argument');
+        $this->assertSame('int totalWidth', $this->signature('        Console.WriteLine(title.PadLeft(')[1] ?? null, 'the innermost call');
+        $this->assertSame('params object[] args', $this->signature('        Console.WriteLine("{0} {1}", 1, ')[1] ?? null, 'arguments past params');
+
+        $this->assertNull($this->signature('        Console.WriteLine(1); '), 'after the call');
+        $this->assertNull($this->signature('        var s = "Greet('), 'in a string');
+        $this->assertNull($this->signature('        names.ForEach(n => { '), 'in a lambda body');
+    }
+
     public function testDiagnosticsFollowTheOpenDocument(): void
     {
         $this->workspace->open($this->program, str_replace('string title = "x";', 'int title = "x";', self::PROGRAM));
@@ -156,7 +175,12 @@ final class LspTest extends TestCase
         $completion = $this->request($in, $out, 2, 'textDocument/completion', ['textDocument' => ['uri' => $uri], 'position' => ['line' => 13, 'character' => 15]]);
         $this->assertContains('Greet', array_column($completion['result']['items'], 'label'));
 
-        $this->request($in, $out, 3, 'shutdown', null);
+        $this->assertSame(['(', ','], $initialize['result']['capabilities']['signatureHelpProvider']['triggerCharacters']);
+        $this->send($in, ['jsonrpc' => '2.0', 'method' => 'textDocument/didChange', 'params' => ['textDocument' => ['uri' => $uri, 'version' => 2], 'contentChanges' => [['text' => str_replace('Console.WriteLine(person.Name);', 'person.Greet(', self::PROGRAM)]]]]);
+        $signature = $this->request($in, $out, 3, 'textDocument/signatureHelp', ['textDocument' => ['uri' => $uri], 'position' => ['line' => 13, 'character' => 21]]);
+        $this->assertSame('string Person.Greet(string greeting)', $signature['result']['signatures'][0]['label']);
+
+        $this->request($in, $out, 4, 'shutdown', null);
         $this->send($in, ['jsonrpc' => '2.0', 'method' => 'exit']);
         fclose($in);
         $this->assertSame(0, proc_close($process));
@@ -170,6 +194,26 @@ final class LspTest extends TestCase
         $this->workspace->open($this->program, implode("\n", $lines));
 
         return array_column($this->service->completion($this->program, 13, strlen($line)), 'label');
+    }
+
+    /**
+     * Parameter info at the end of $line (put in place of line 14, followed by $rest).
+     *
+     * @return array{0: string, 1: ?string}|null the signature, and the part of it that is the active parameter
+     */
+    private function signature(string $line, string $rest = ''): ?array
+    {
+        $lines = explode("\n", self::PROGRAM);
+        $lines[13] = $line . $rest;
+        $this->workspace->open($this->program, implode("\n", $lines));
+        $help = $this->service->signatureHelp($this->program, 13, strlen($line));
+        if ($help === null) {
+            return null;
+        }
+        $signature = $help['signatures'][0];
+        $range = $signature['parameters'][$help['activeParameter']]['label'] ?? null;
+
+        return [$signature['label'], $range !== null ? substr($signature['label'], $range[0], $range[1] - $range[0]) : null];
     }
 
     /**

@@ -11,8 +11,8 @@ use SharpPhp\Compiler\SemanticModel;
 use SharpPhp\Semantics\ParameterSymbol;
 
 /**
- * Editor features on top of the compiler: diagnostics, hover, go to definition and completion.
- * Positions in and out are LSP positions (0-based line and character).
+ * Editor features on top of the compiler: diagnostics, hover, go to definition, completion and
+ * parameter info. Positions in and out are LSP positions (0-based line and character).
  *
  * @phpstan-import-type Reference from SemanticModel
  */
@@ -82,6 +82,12 @@ final class LanguageService
     public function completion(string $path, int $line, int $character): array
     {
         return (new Completion($this->workspace))->complete($path, $line, $character);
+    }
+
+    /** @return array<string, mixed>|null LSP SignatureHelp: the signature of the call whose arguments the cursor is in */
+    public function signatureHelp(string $path, int $line, int $character): ?array
+    {
+        return (new SignatureHelp($this->workspace))->help($path, $line, $character);
     }
 
     private function model(): SemanticModel

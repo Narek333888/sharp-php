@@ -17,8 +17,9 @@ remove `*.sphp` under **Settings → Editor → File Types → Text**.
 
 ## VS Code
 
-In VS Code this folder is a complete extension: highlighting, plus completion, errors while typing, hover
-and go to definition from the SharpPHP language server. It has no dependencies and no build step.
+In VS Code this folder is a complete extension: highlighting, plus completion, parameter info, errors while
+typing, hover and go to definition from the SharpPHP language server. It has no dependencies and no build
+step.
 
 ### Requirements
 
@@ -68,6 +69,8 @@ Changing a setting restarts the language server.
 
 Open a `.sphp` file and type `Console.` inside `Main`: `WriteLine`, `Write`, `ReadLine` are listed. Also:
 
+- typing `(` or `,` in a call shows its parameters, the current one in bold, e.g. `Random(int? seed = ...)`
+  (also with ⇧⌘Space / Ctrl+Shift+Space);
 - errors are underlined while you type and listed under **Problems** (also those of files that are not open);
 - hovering a name shows what it is, e.g. `(property) string Person.Name`;
 - **F12** or ⌘-click / Ctrl-click goes to the declaration, also in another file.

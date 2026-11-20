@@ -4,12 +4,8 @@ declare(strict_types=1);
 
 namespace SharpPhp\Lsp;
 
-use SharpPhp\Compiler\Compiler;
-use SharpPhp\Compiler\CompileError;
 use SharpPhp\Compiler\Declarator;
 use SharpPhp\Compiler\SemanticModel;
-use SharpPhp\Compiler\SourceFile;
-use SharpPhp\Parser\Parser;
 use SharpPhp\Semantics\MemberSymbol;
 use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\ParameterSymbol;
@@ -22,9 +18,9 @@ use SharpPhp\Semantics\TypeSymbol;
  * Completion: members after a dot (user. => Name, Age, Greet()), and otherwise the names visible
  * at the cursor (locals, members of the class, types, keywords).
  *
- * Code being typed does not compile ("user." has no member name yet), so a copy of the document
- * gets a placeholder name at the cursor and, if needed, the end of the statement. The compiler
- * analyzes that copy and records what the placeholder's receiver is, or what is in scope.
+ * Code being typed does not compile ("user." has no member name yet), so DraftAnalyzer analyzes a
+ * copy of the document with a placeholder name at the cursor, and the compiler records what the
+ * placeholder's receiver is, or what is in scope.
  *
  * @phpstan-type Item array{label: string, kind: int, sortText: string, detail?: string}
  * @phpstan-import-type Receiver from SemanticModel
@@ -45,9 +41,6 @@ final class Completion
     private const ENUM_MEMBER = 20;
     private const CONSTANT = 21;
     private const STRUCT = 22;
-
-    /** Endings tried after the placeholder until the copy parses: "Console.WriteLine(user." needs ");". */
-    private const ENDINGS = ['', ';', ');', '));', ')));', ';}', ';}}'];
 
     private const KEYWORDS = [
         'abstract', 'as', 'base', 'bool', 'break', 'case', 'catch', 'char', 'class', 'const', 'continue', 'default',
@@ -72,8 +65,11 @@ final class Completion
         ['GetType', 'Type GetType()'],
     ];
 
+    private readonly DraftAnalyzer $drafts;
+
     public function __construct(private readonly Workspace $workspace)
     {
+        $this->drafts = new DraftAnalyzer($workspace);
     }
 
     /**
@@ -99,7 +95,7 @@ final class Completion
         }
         $afterDot = preg_match('/\.$/', $head) === 1;
 
-        $analysis = $this->analyzeWithPlaceholder($path, $lines, $line, $head, $tail);
+        $analysis = $this->drafts->withPlaceholder($path, $lines, $line, $head, $tail);
         if ($analysis === null) {
             return $afterDot ? [] : $this->fallbackItems();
         }
@@ -113,31 +109,6 @@ final class Completion
         $scope = $model->scopeAt($realPath, $line + 1, $start + 1);
 
         return $scope === null ? $this->fallbackItems($symbols) : $this->nameItems($scope, $symbols);
-    }
-
-    /**
-     * @param list<string> $lines
-     * @return array{0: SemanticModel, 1: SymbolTable, 2: string}|null
-     */
-    private function analyzeWithPlaceholder(string $path, array $lines, int $line, string $head, string $tail): ?array
-    {
-        $realPath = Workspace::normalize($path);
-        foreach (self::ENDINGS as $ending) {
-            $copy = $lines;
-            $copy[$line] = $head . SemanticModel::PLACEHOLDER . $ending . $tail;
-            $text = implode("\n", $copy);
-            try {
-                Parser::parseFile(new SourceFile($realPath, $text));
-            } catch (CompileError) {
-                continue;
-            }
-            $model = new SemanticModel();
-            $result = (new Compiler())->analyze($this->workspace->sources([$realPath => $text]), $model);
-
-            return [$model, $result['symbols'], $realPath];
-        }
-
-        return null;
     }
 
     /**

@@ -490,7 +490,7 @@ trait EmitsMembers
             $result = $this->name($callee, 'invoke');
 
             return match ($result->kind) {
-                'method' => $this->callMember($result->code, $result->member ?? throw new \LogicException('A method group has a member'), $e->args, null, $callee->typeArgs, null, $callee),
+                'method' => $this->callMember($result->code, $result->member ?? throw new \LogicException('A method group has a member'), $e, null, $callee->typeArgs, null, $callee),
                 'function' => Emitted::value($result->code . '(' . $this->arguments($e->args, $this->symbols->functionParams($callee->name), runtime: true)[0] . ')', $result->type),
                 'value' => $this->callClosure($result, $e->args, $callee),
                 default => throw $this->error('SP1955', "Non-invocable member '{$callee->name}' cannot be used like a method", $callee),
@@ -526,7 +526,7 @@ trait EmitsMembers
                 }
                 $this->requireAccessible($member, $callee);
 
-                return $this->callMember($target->code . '::', $member, $e->args, $target->type, $callee->typeArgs, null, $callee);
+                return $this->callMember($target->code . '::', $member, $e, $target->type, $callee->typeArgs, null, $callee);
             }
             if ($target->kind === 'base') {
                 $member = $target->symbol !== null ? $this->findMethod($target->symbol, $callee->name) : null;
@@ -535,29 +535,31 @@ trait EmitsMembers
                 }
                 $this->requireAccessible($member, $callee);
 
-                return $this->callMember('parent::', $member, $e->args, null, $callee->typeArgs, null, $callee);
+                return $this->callMember('parent::', $member, $e, null, $callee->typeArgs, null, $callee);
             }
             if ($target->kind !== 'value') {
                 $target = $this->valueOf($target, $callee->target);
             }
 
-            return $this->callInstance($target, $callee, $e->args);
+            return $this->callInstance($target, $callee, $e);
         }
 
         return $this->callClosure($this->expr($callee), $e->args, $callee);
     }
 
     /**
-     * @param list<Argument> $args
+     * @param InvocationExpr $call the call: its arguments, and its position (the "(")
      * @param list<TypeRef> $typeArgs
      */
-    private function callMember(string $prefix, MemberSymbol $member, array $args, ?Type $receiver, array $typeArgs, ?Type $elementHint, Node $at): Emitted
+    private function callMember(string $prefix, MemberSymbol $member, InvocationExpr $call, ?Type $receiver, array $typeArgs, ?Type $elementHint, Node $at): Emitted
     {
+        $args = $call->args;
         $this->model?->reference($this->file, $at, $member->name, 'method', $member->type, $member);
         $runtime = $member->owner->external;
+        $subst = $receiver !== null ? $member->owner->substitutionFor($receiver) : [];
+        $this->recordCall($call->line, $call->column, $args, $member->owner->shortName() . '.' . $member->name, $member->params, $member->type, $subst);
         // The note about missing .NET overloads is for the SharpPHP runtime library, not for other PHP code.
         $this->checkArguments($args, $member->params, $member->name, $member->displayName(), $at, runtime: self::isRuntimeLibrary($member->owner));
-        $subst = $receiver !== null ? $member->owner->substitutionFor($receiver) : [];
         foreach ($member->typeParams as $i => $param) {
             if (isset($typeArgs[$i])) {
                 $subst[$param] = $this->resolveType($typeArgs[$i]);
@@ -644,9 +646,10 @@ trait EmitsMembers
         return $type;
     }
 
-    /** @param list<Argument> $args */
-    private function callInstance(Emitted $target, MemberAccessExpr $callee, array $args): Emitted
+    /** target.Method(...): $call is the whole call, $callee its "target.Method" part. */
+    private function callInstance(Emitted $target, MemberAccessExpr $callee, InvocationExpr $call): Emitted
     {
+        $args = $call->args;
         $name = $callee->name;
         $nc = $callee->nullConditional;
         $t = $target->type;
@@ -661,10 +664,10 @@ trait EmitsMembers
         }
 
         if ($t->isString()) {
-            return $this->callHelper('System\\String_', $target, $callee, $args, 'string');
+            return $this->callHelper('System\\String_', $target, $callee, $call, 'string');
         }
         if ($t->kind === 'array' || $t->kind === 'iterable') {
-            return $this->callHelper('System\\Linq\\Enumerable', $target, $callee, $args, $t->describe());
+            return $this->callHelper('System\\Linq\\Enumerable', $target, $callee, $call, $t->describe());
         }
         if ($t->isNumeric() || $t->isBool() || $t->isChar()) {
             $op = $this->runtime('Op');
@@ -704,7 +707,7 @@ trait EmitsMembers
                 }
                 $this->requireAccessible($member, $callee);
 
-                return $this->callMember($recv . $arrow, $member, $args, $t, $callee->typeArgs, $this->elementTypeOf($t), $callee);
+                return $this->callMember($recv . $arrow, $member, $call, $t, $callee->typeArgs, $this->elementTypeOf($t), $callee);
             }
             $property = $this->symbols->findMember($symbol, $name);
             if ($property !== null && $property->isValue() && $property->type->kind === 'closure') {
@@ -751,12 +754,12 @@ trait EmitsMembers
 
     /**
      * Calls a static runtime helper that takes the receiver as its first argument,
-     * e.g. text.ToUpper() => String_::ToUpper($text).
-     *
-     * @param list<Argument> $args
+     * e.g. text.ToUpper() => String_::ToUpper($text). $call is the whole call, $callee its
+     * "text.ToUpper" part; $what names the receiver's type in messages ("string").
      */
-    private function callHelper(string $class, Emitted $target, MemberAccessExpr $callee, array $args, string $what): Emitted
+    private function callHelper(string $class, Emitted $target, MemberAccessExpr $callee, InvocationExpr $call, string $what): Emitted
     {
+        $args = $call->args;
         $name = $callee->name;
         $symbol = $this->symbols->find(Names::RUNTIME_NAMESPACE . '\\' . $class);
         $member = $symbol !== null ? $this->findMethod($symbol, $name) : null;
@@ -765,14 +768,16 @@ trait EmitsMembers
         }
         $this->model?->reference($this->file, $callee, $name, 'method', $member->type, $member);
 
+        // The receiver is the helper's first parameter, so C# code passes the others.
         $params = array_slice($member->params, 1);
-        $this->checkArguments($args, $params, $name, $this->signature("$what.$name", $params), $callee, runtime: true);
-        $elementType = $this->elementTypeOf($target->type);
         // Enumerable::Where<TSource>(iterable<TSource> $source, ...): TSource comes from the receiver.
         $subst = [];
         if ($member->typeParams !== [] && isset($member->params[0])) {
             $this->inferTypeArguments($member->params[0]->type, $target->type, $member->typeParams, $subst);
         }
+        $this->recordCall($call->line, $call->column, $args, "$what.$name", $params, $member->type, $subst);
+        $this->checkArguments($args, $params, $name, $this->signature("$what.$name", $params), $callee, runtime: true);
+        $elementType = $this->elementTypeOf($target->type);
         [$code, $values] = $this->arguments($args, $params, $subst, $elementType, runtime: true);
         $ref = $this->runtime($class);
         $type = $this->resultType($member, $subst, $values);
@@ -821,6 +826,32 @@ trait EmitsMembers
         if ($violation !== null) {
             throw $this->violation($violation, $at);
         }
+    }
+
+    /**
+     * Records a call for parameter info in editors (only when analyzing for the language server).
+     * It is recorded before its arguments are checked or emitted, so that a call being typed, whose
+     * arguments are still wrong or missing, is known too.
+     *
+     * @param int $line line of the "(" that starts the arguments
+     * @param int $column column of that "("
+     * @param list<Argument> $args the arguments written so far
+     * @param string $name the callee as C# shows it ("Console.WriteLine", or "Random" for a constructor)
+     * @param list<ParameterSymbol> $params
+     * @param ?Type $returns the result type; null for a constructor
+     * @param array<string, Type> $subst type arguments known at the call (T is int for a List<int>)
+     */
+    private function recordCall(int $line, int $column, array $args, string $name, array $params, ?Type $returns, array $subst = []): void
+    {
+        if ($this->model === null) {
+            return;
+        }
+        $params = array_map(
+            static fn (ParameterSymbol $p): ParameterSymbol => new ParameterSymbol($p->name, $p->type->substitute($subst), $p->modifier, $p->optional, $p->numeric),
+            $params,
+        );
+        $arguments = array_map(static fn (Argument $a): array => ['line' => $a->line, 'column' => $a->column, 'name' => $a->name], $args);
+        $this->model->call($this->file, $line, $column, $name, $params, $returns?->substitute($subst), $arguments);
     }
 
     private static function isRuntimeLibrary(TypeSymbol $symbol): bool
