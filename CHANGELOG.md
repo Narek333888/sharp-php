@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3
+
+- README: a complete **PhpStorm setup** guide (highlighting, completion and errors through LSP4IJ, running
+  programs, the generated PHP, troubleshooting); the LSP4IJ menu item is **Import template...**
+
 ## 0.3.2
 
 - `editors/lsp4ij/sharpphp/README.md`, missing from 0.3.1 (the README links to it)

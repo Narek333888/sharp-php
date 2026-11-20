@@ -103,7 +103,8 @@ Builds are cached: sources are recompiled only when a `.sphp` file (or the compi
 /var/
 ```
 
-**4. Turn on highlighting** for `.sphp` files in your editor: see [Editor support](#editor-support).
+**4. Set up your editor** for highlighting, completion and errors while typing: see [PhpStorm setup](#phpstorm-setup)
+(two minutes, once per IDE).
 
 ## Command line
 
@@ -210,36 +211,74 @@ the `.sphp` line while PHP's `display_errors` is on (development), and a generic
 server's terminal or log, not to the page, as in ASP.NET Core; a console program (no `WebApp`) opened in
 a browser shows its output as plain text.
 
-## Editor support
+## PhpStorm setup
 
-**Syntax highlighting** for `.sphp` files in PhpStorm (and other JetBrains IDEs) and VS Code ships with the
-package: in PhpStorm, open **Settings → Editor → TextMate Bundles**, click **+** and choose
-`vendor/armdevstack/sharp-php/editors/sharpphp`. See [editors/sharpphp](editors/sharpphp/README.md).
+PhpStorm (and every other JetBrains IDE) gets highlighting, completion, errors while typing, hover and
+go to definition for `.sphp` files. Setting it up takes about two minutes and is done **once per IDE**: it
+then works in every project that requires `armdevstack/sharp-php` 0.3 or newer
+(`composer show armdevstack/sharp-php` prints the version; older projects: see [Upgrading](#upgrading)).
 
-**Completion, errors while typing, hover and go to definition** come from the SharpPHP language server,
-`vendor/bin/sharp lsp`, which speaks the Language Server Protocol:
+### 1. Syntax highlighting
 
-- members after a dot (`user.` → `Name`, `Age`, `Greet()`; `Console.` → `WriteLine`, ...; LINQ on lists),
-  locals, members of the class, types and keywords; namespaces after `using`
-- compile errors as you type, exactly as `sharp build` reports them
-- the type of what is under the mouse, and Ctrl/⌘-click to where it is declared
+1. **Settings → Editor → TextMate Bundles**, click **+**.
+2. Choose the folder `vendor/armdevstack/sharp-php/editors/sharpphp` of your project and click **OK**.
 
-It needs SharpPHP 0.3 or newer in the project (see [Upgrading](#upgrading)). In **PhpStorm** (and other
-JetBrains IDEs) it runs through the free LSP4IJ plugin
-(step by step in [editors/lsp4ij/sharpphp](editors/lsp4ij/sharpphp/README.md)):
+Keywords, types, strings, numbers and comments in `.sphp` files are now colored.
 
-1. **Settings → Plugins → Marketplace**, install **LSP4IJ** and restart the IDE.
+### 2. Completion, errors while typing, hover, go to definition
+
+These come from the SharpPHP language server (`vendor/bin/sharp lsp`) through the free
+[LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) plugin by Red Hat:
+
+1. **Settings → Plugins → Marketplace**: search **LSP4IJ**, click **Install** (restart PhpStorm if it asks).
 2. **Settings → Languages & Frameworks → Language Servers (LSP4IJ)**, click **+**.
-3. In **Template**, choose **Import from custom template...** and select the folder
-   `vendor/armdevstack/sharp-php/editors/lsp4ij/sharpphp`. Click **OK**.
+3. In the **New Language Server** dialog, open the **Template** list, choose **Import template...** and
+   select the folder `vendor/armdevstack/sharp-php/editors/lsp4ij/sharpphp`. Click **OK**.
 
-The template runs `php $PROJECT_DIR$/vendor/bin/sharp lsp` for `*.sphp` files. If the server does not
-start because the IDE cannot find `php`, put the full path in the **Command** field (`which php` prints it),
-e.g. `/opt/homebrew/bin/php $PROJECT_DIR$/vendor/bin/sharp lsp`. The server's messages are in the LSP
-console (**View → Tool Windows → Language Servers**).
+**Check it:** open a `.sphp` file, type `Console.` inside `Main`: `WriteLine`, `Write`, `ReadLine` are listed.
+**View → Tool Windows → Language Servers** shows the SharpPHP server running.
 
-Any other editor with an LSP client can run `php vendor/bin/sharp lsp` for `.sphp` files (language id
-`sharpphp`) the same way.
+What you get:
+
+| Feature | Example |
+|---|---|
+| Members after a dot, also in unfinished code | `user.` → `Name`, `Age`, `Greet()`; `Person.` → static members; `names.` → `Add`, `Count`, `Where`, ... |
+| Names in scope | local variables, parameters, members of the class, types, keywords |
+| Namespaces | `using System.` → `Collections`, `Linq`, `Web`, ... |
+| Errors while typing | the same errors as `sharp build`, underlined where they are |
+| Hover | `(property) string Person.Name`, `(method) string Person.Greet(string greeting)` |
+| Go to definition | ⌘-click / Ctrl-click a name: its declaration, also in another file |
+
+### 3. Running programs
+
+- **Console programs:** right-click `index.php` → **Run 'index.php'** (or the green ▶). PhpStorm needs a
+  PHP interpreter for this: **Settings → PHP → CLI Interpreter**. In the terminal: `vendor/bin/sharp run`.
+- **Web apps** ([Web apps](#web-apps)): run `vendor/bin/sharp serve` in the terminal (or `index.php` as above)
+  and open http://localhost:8000.
+- Errors (compile errors and exceptions) name the `.sphp` file and line.
+
+### 4. Optional: the generated PHP
+
+The compiled PHP goes to `var/sharp`. If your PHP code uses classes written in SharpPHP, keep the folder
+indexed: PhpStorm then completes those classes in `.php` files too. Otherwise right-click `var/sharp` →
+**Mark Directory as → Excluded**, so that searches show only your sources.
+
+### Troubleshooting
+
+| Problem | What to do |
+|---|---|
+| `.sphp` files are plain text | Remove `*.sphp` under **Settings → Editor → File Types → Text**, if it is there; check step 1 |
+| No completion and no error marks | Check that LSP4IJ is installed (**Settings → Plugins → Installed**) and step 2 was done. The project needs SharpPHP 0.3+: `composer require armdevstack/sharp-php:^0.3`. Restarting PhpStorm alone does not turn completion on |
+| The **Language Servers** window shows that SharpPHP cannot start | PhpStorm did not find `php` (common on macOS, where an IDE started from the Dock does not see Homebrew). In **Settings → Languages & Frameworks → Language Servers (LSP4IJ) → SharpPHP**, set **Command:** to the full path of PHP: `/opt/homebrew/bin/php $PROJECT_DIR$/vendor/bin/sharp lsp` (`which php` in a terminal prints the path) |
+| You want to see what the server does | **View → Tool Windows → Language Servers** → SharpPHP: the **Logs** tab; for every request set **Trace:** to `verbose` on the server's **Debug** tab |
+| No completion after a dot | The file has a syntax error somewhere else: fix it first (it is underlined) |
+
+### VS Code and other editors
+
+- **VS Code** highlighting: copy (or symlink) `vendor/armdevstack/sharp-php/editors/sharpphp` to
+  `~/.vscode/extensions/armdevstack.sharpphp` and restart VS Code.
+- **Completion and errors** in any editor with an LSP client (VS Code with a generic LSP extension, Neovim,
+  Sublime Text, Zed, ...): run `php vendor/bin/sharp lsp` for `*.sphp` files, language id `sharpphp`.
 
 ## Configuration
 
