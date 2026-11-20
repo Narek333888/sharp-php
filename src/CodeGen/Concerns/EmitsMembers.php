@@ -1016,6 +1016,30 @@ trait EmitsMembers
     // Indexers
     // ------------------------------------------------------------------
 
+    /**
+     * Writing an element of a local array (names[0] = x, grid[i][j]++, out counts[i]) changes the
+     * variable itself, as PHP arrays are values. A lambda that does it captures the variable by
+     * reference, like one that assigns it; otherwise it would change its own copy, while a C# array
+     * is one object that the lambda and the method share.
+     */
+    private function captureWrittenArray(ElementAccessExpr $e): void
+    {
+        $root = $e->target;
+        while ($root instanceof ElementAccessExpr) {
+            $root = $root->target;
+        }
+        if (!$root instanceof NameExpr) {
+            return; // an element of a property or of a call result: an object holds it, nothing to capture
+        }
+        $local = $this->scope->lookup($root->name);
+        if ($local === null || $local[0]->kind !== 'array') {
+            return; // collections (List<T>, Dictionary) are objects, shared by the lambda already
+        }
+        foreach ($local[1] as $lambda) {
+            $lambda->capture($root->name, true);
+        }
+    }
+
     private function elementAccess(ElementAccessExpr $e, bool $write = false): Emitted
     {
         if (count($e->indexes) !== 1) {
@@ -1023,6 +1047,9 @@ trait EmitsMembers
         }
         if ($write && $e->nullConditional) {
             throw $this->error('SP0131', 'The left-hand side of an assignment must be a variable, property or indexer', $e);
+        }
+        if ($write) {
+            $this->captureWrittenArray($e);
         }
 
         $target = $this->expr($e->target);

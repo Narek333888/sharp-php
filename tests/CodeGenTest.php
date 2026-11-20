@@ -47,6 +47,8 @@ final class CodeGenTest extends TestCase
         yield 'static member' => ['Console.WriteLine(Math.PI);', 'Console::WriteLine(Math::PI);'];
         yield 'array element write' => ['int[] a = new int[2]; a[1] = 5; a[0]++;', "\$a = \\array_fill(0, 2, 0);\n\$a[Op::index(\$a, 1)] = 5;\n\$a[Op::index(\$a, 0)]++;"];
         yield 'array element read' => ['int[] a = new int[2]; var x = a[1];', "\$a = \\array_fill(0, 2, 0);\n\$x = \$a[1];"];
+        yield 'lambda writing an array element' => ['int[] a = new int[1]; Action f = () => a[0] = 1;', "\$a = \\array_fill(0, 1, 0);\n\$f = function () use (&\$a) {\nreturn \$a[Op::index(\$a, 0)] = 1;\n};"];
+        yield 'lambda reading an array' => ['int[] a = new int[1]; Func<int> f = () => a[0];', "\$a = \\array_fill(0, 1, 0);\n\$f = fn () => \$a[0];"];
     }
 
     #[DataProvider('expressions')]

@@ -1,0 +1,41 @@
+using System;
+using System.Collections.Generic;
+
+namespace App;
+
+public class Program
+{
+    public static void Main()
+    {
+        // A lambda that writes an element of a captured array changes the array the method sees, as in C#.
+        string[] names = new string[] { "Tom", "Ann" };
+        Action rename = () => names[0] = "Bob";
+        rename();
+        Console.WriteLine(names[0]);
+
+        int[] counts = new int[2];
+        Action<int> count = i => counts[i]++;
+        count(1);
+        count(1);
+        Console.WriteLine(counts[1]);
+
+        int[][] grid = new[] { new int[2], new int[2] };
+        Action set = () => grid[1][0] = 7;
+        set();
+        Console.WriteLine(grid[1][0]);
+
+        int[] parsed = new int[1];
+        Action parse = () => int.TryParse("42", out parsed[0]);
+        parse();
+        Console.WriteLine(parsed[0]);
+
+        // Reading is unchanged, and collections are objects that lambdas share anyway.
+        Func<int> length = () => names.Length;
+        Console.WriteLine(length());
+
+        var list = new List<int> { 1 };
+        Action change = () => list[0] = 5;
+        change();
+        Console.WriteLine(list[0]);
+    }
+}

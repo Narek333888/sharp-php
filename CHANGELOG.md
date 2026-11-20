@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- A lambda that writes an element of a captured array (`() => names[0] = "Bob"`, `i => counts[i]++`)
+  changes the array the method sees, as in C#; it changed a copy (PHP arrays are values)
+
 ## 0.6.0
 
 - Extension methods: a static method of a non-generic static class whose first parameter is declared `this`

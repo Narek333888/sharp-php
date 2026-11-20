@@ -692,7 +692,7 @@ SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 - Generics are checked by the compiler and erased at runtime (only the built-in collections check element types); `typeof(List<int>).Name` is `List`, and `new T()` is not supported
 - `object` stands for any value, also as a generic argument: `IEnumerable<object> xs = new List<int>()` compiles (C# rejects it, `int` being a value type)
 - Finalizers run when the object is freed, at a known point (see [Memory](#memory)), not when a garbage collection happens to run
-- Arrays (`int[]`) are PHP arrays and are copied on assignment (value semantics)
+- Arrays (`int[]`) are PHP arrays and are copied on assignment and when passed to a method (value semantics); a lambda that writes an element of a captured array changes it, as in C#
 - Integer arithmetic is 64-bit and does not wrap: `int.MaxValue + 1` is `2147483648`, not `-2147483648`
 - `ulong` is limited to `long.MaxValue` (there is no `ulong.MaxValue`); `decimal`/`float`/`double` are PHP floats
 - `char` is a one-character string at runtime (it converts to its code where C# would use it as a number)
