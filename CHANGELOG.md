@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1
 
 - A lambda that writes an element of a captured array (`() => names[0] = "Bob"`, `i => counts[i]++`)
   changes the array the method sees, as in C#; it changed a copy (PHP arrays are values)

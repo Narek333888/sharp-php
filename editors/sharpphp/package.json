@@ -2,7 +2,7 @@
     "name": "sharpphp",
     "displayName": "SharpPHP",
     "description": "SharpPHP (.sphp), a C#-like language that compiles to PHP: highlighting, completion, parameter info, errors while typing, hover and go to definition",
-    "version": "0.6.0",
+    "version": "0.6.1",
     "publisher": "armdevstack",
     "license": "MIT",
     "repository": {
