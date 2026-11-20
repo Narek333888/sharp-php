@@ -1,0 +1,15 @@
+>> Total: 42 True
+coffee costs 3.50!
+12 o world
+Jllo|1.5|1-2-3
+Remove past the end: ArgumentOutOfRangeException
+Al Bob Ann Cid
+Ann Al Bob Cid
+1,2,3 3 1
+Ann:30 Bob:25 6
+True False True
+True True True False
+2 3 -1 3
+dog dog dog | Cat $1
+-1 1 0
+Ordinal 5

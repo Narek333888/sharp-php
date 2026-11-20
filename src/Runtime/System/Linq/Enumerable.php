@@ -310,41 +310,51 @@ final class Enumerable
     }
 
     /**
+     * Sorted by a key, ascending and stable; ThenBy() sorts ties further.
+     *
      * @template TSource
      * @param iterable<TSource> $source
-     * @return List_<TSource>
+     * @return IOrderedEnumerable<TSource>
      */
-    public static function OrderBy(iterable $source, ?\Closure $keySelector = null): List_
+    public static function OrderBy(iterable $source, ?\Closure $keySelector = null): IOrderedEnumerable
     {
-        return self::sort($source, $keySelector, 1);
+        return IOrderedEnumerable::orderedBy($source, $keySelector, 1);
     }
 
     /**
+     * Sorted by a key, descending and stable; ThenBy() sorts ties further.
+     *
      * @template TSource
      * @param iterable<TSource> $source
-     * @return List_<TSource>
+     * @return IOrderedEnumerable<TSource>
      */
-    public static function OrderByDescending(iterable $source, ?\Closure $keySelector = null): List_
+    public static function OrderByDescending(iterable $source, ?\Closure $keySelector = null): IOrderedEnumerable
     {
-        return self::sort($source, $keySelector, -1);
+        return IOrderedEnumerable::orderedBy($source, $keySelector, -1);
     }
 
     /**
-     * @template TSource
-     * @param iterable<TSource> $source
-     * @return List_<TSource>
+     * first.Zip(second, (a, b) => ...): the selector's results for the elements at the same positions,
+     * as far as the shorter sequence goes.
+     *
+     * @template TFirst
+     * @template TSecond
+     * @template TResult
+     * @param iterable<TFirst> $first
+     * @param iterable<TSecond> $second
+     * @param \Closure(TFirst, TSecond): TResult $resultSelector
+     * @return List_<TResult>
      */
-    private static function sort(iterable $source, ?\Closure $keySelector, int $direction): List_
+    public static function Zip(iterable $first, iterable $second, \Closure $resultSelector): List_
     {
-        $items = self::materialize($source);
-        $keyed = [];
-        foreach ($items as $i => $item) {
-            $keyed[] = [$keySelector === null ? $item : $keySelector($item), $i, $item];
+        $a = self::materialize($first);
+        $b = self::materialize($second);
+        $result = [];
+        for ($i = 0, $count = min(count($a), count($b)); $i < $count; $i++) {
+            $result[] = $resultSelector($a[$i], $b[$i]);
         }
-        // Stable sort, like LINQ.
-        usort($keyed, static fn (array $a, array $b): int => (Op::compare($a[0], $b[0]) * $direction) ?: ($a[1] <=> $b[1]));
 
-        return new List_(array_column($keyed, 2));
+        return new List_($result);
     }
 
     /**

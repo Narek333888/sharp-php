@@ -635,8 +635,8 @@ trait EmitsMembers
             return $element === null ? Type::class(self::TASK_CLASS) : Type::class(self::TASK_CLASS, [Type::array($element)]);
         }
 
-        // Select(x => ...) produces a list of whatever the lambda returns.
-        if ($member->name === 'Select' && $type->isClass()) {
+        // Select(x => ...) and Zip(other, (a, b) => ...) produce a list of whatever the lambda returns.
+        if (($member->name === 'Select' || $member->name === 'Zip') && $type->isClass()) {
             $selector = end($values);
             if ($selector !== false && $selector->type->kind === 'closure') {
                 return Type::class((string) $type->class, [$selector->type->closureReturn()]);

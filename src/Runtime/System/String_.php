@@ -70,18 +70,33 @@ final class String_
         return $result ?? $format;
     }
 
-    public static function Compare(?string $a, ?string $b, bool $ignoreCase = false): int
+    /**
+     * string.Compare(a, b), string.Compare(a, b, ignoreCase) and string.Compare(a, b, StringComparison):
+     * negative, zero or positive; null comes first.
+     */
+    public static function Compare(?string $a, ?string $b, bool|StringComparison $ignoreCase = false): int
     {
         if ($a === null || $b === null) {
             return ($a === null ? 0 : 1) - ($b === null ? 0 : 1);
         }
 
-        return $ignoreCase ? strcmp(mb_strtolower($a), mb_strtolower($b)) <=> 0 : Op::compareStrings($a, $b);
+        return match (true) {
+            $ignoreCase === StringComparison::Ordinal => strcmp($a, $b) <=> 0,
+            // As .NET: OrdinalIgnoreCase compares the upper-case forms.
+            $ignoreCase === StringComparison::OrdinalIgnoreCase => strcmp(mb_strtoupper($a), mb_strtoupper($b)) <=> 0,
+            $ignoreCase === true || ($ignoreCase instanceof StringComparison && $ignoreCase->ignoresCase()) => strcmp(mb_strtolower($a), mb_strtolower($b)) <=> 0,
+            default => Op::compareStrings($a, $b),
+        };
     }
 
-    public static function Equals(?string $a, ?string $b): bool
+    /** string.Equals(a, b) and a.Equals(b), optionally with a StringComparison. */
+    public static function Equals(?string $a, ?string $b, ?StringComparison $comparisonType = null): bool
     {
-        return $a === $b;
+        if ($a === null || $b === null || $comparisonType?->ignoresCase() !== true) {
+            return $a === $b;
+        }
+
+        return mb_strtolower($a) === mb_strtolower($b);
     }
 
     // ---- instance members (receiver first) ---------------------------
@@ -126,31 +141,48 @@ final class String_
         return $chars === null ? rtrim($s) : rtrim($s, $chars);
     }
 
-    public static function Contains(string $s, string $value): bool
+    public static function Contains(string $s, string $value, ?StringComparison $comparisonType = null): bool
     {
-        return str_contains($s, $value);
+        return $comparisonType?->ignoresCase() === true ? mb_stripos($s, $value) !== false : str_contains($s, $value);
     }
 
-    public static function StartsWith(string $s, string $value): bool
+    public static function StartsWith(string $s, string $value, ?StringComparison $comparisonType = null): bool
     {
+        if ($comparisonType?->ignoresCase() === true) {
+            return mb_strtolower(mb_substr($s, 0, mb_strlen($value))) === mb_strtolower($value);
+        }
+
         return str_starts_with($s, $value);
     }
 
-    public static function EndsWith(string $s, string $value): bool
+    public static function EndsWith(string $s, string $value, ?StringComparison $comparisonType = null): bool
     {
+        if ($comparisonType?->ignoresCase() === true) {
+            $length = mb_strlen($value);
+
+            return $length === 0 || mb_strtolower(mb_substr($s, -$length)) === mb_strtolower($value);
+        }
+
         return str_ends_with($s, $value);
     }
 
-    public static function IndexOf(string $s, string $value, int $startIndex = 0): int
+    /**
+     * text.IndexOf(value), (value, startIndex), (value, StringComparison) and
+     * (value, startIndex, StringComparison): the position of the first match, or -1.
+     */
+    public static function IndexOf(string $s, string $value, int|StringComparison $startIndex = 0, ?StringComparison $comparisonType = null): int
     {
-        $pos = mb_strpos($s, $value, $startIndex);
+        if ($startIndex instanceof StringComparison) {
+            [$comparisonType, $startIndex] = [$startIndex, 0];
+        }
+        $pos = $comparisonType?->ignoresCase() === true ? mb_stripos($s, $value, $startIndex) : mb_strpos($s, $value, $startIndex);
 
         return $pos === false ? -1 : $pos;
     }
 
-    public static function LastIndexOf(string $s, string $value): int
+    public static function LastIndexOf(string $s, string $value, ?StringComparison $comparisonType = null): int
     {
-        $pos = mb_strrpos($s, $value);
+        $pos = $comparisonType?->ignoresCase() === true ? mb_strripos($s, $value) : mb_strrpos($s, $value);
 
         return $pos === false ? -1 : $pos;
     }
@@ -168,10 +200,14 @@ final class String_
         return mb_substr($s, $startIndex, $length);
     }
 
-    public static function Replace(string $s, string $oldValue, ?string $newValue): string
+    public static function Replace(string $s, string $oldValue, ?string $newValue, ?StringComparison $comparisonType = null): string
     {
         if ($oldValue === '') {
             throw new ArgumentException('String cannot be of zero length.', 'oldValue');
+        }
+        if ($comparisonType?->ignoresCase() === true) {
+            // The replacement is literal text: "$1" and "\" in it mean themselves.
+            return (string) preg_replace('/' . preg_quote($oldValue, '/') . '/iu', addcslashes($newValue ?? '', '\\$'), $s);
         }
 
         return str_replace($oldValue, $newValue ?? '', $s);

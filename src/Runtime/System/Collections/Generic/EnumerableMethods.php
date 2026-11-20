@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SharpPhp\Runtime\System\Collections\Generic;
 
 use SharpPhp\Runtime\System\Linq\Enumerable;
+use SharpPhp\Runtime\System\Linq\IOrderedEnumerable;
 
 /**
  * LINQ methods available on every runtime collection (list.Where(...), set.Any(), ...).
@@ -103,16 +104,28 @@ trait EnumerableMethods
         return Enumerable::Max($this, $selector);
     }
 
-    /** @return List_<T> */
-    public function OrderBy(?\Closure $keySelector = null): List_
+    /** @return IOrderedEnumerable<T> */
+    public function OrderBy(?\Closure $keySelector = null): IOrderedEnumerable
     {
         return Enumerable::OrderBy($this, $keySelector);
     }
 
-    /** @return List_<T> */
-    public function OrderByDescending(?\Closure $keySelector = null): List_
+    /** @return IOrderedEnumerable<T> */
+    public function OrderByDescending(?\Closure $keySelector = null): IOrderedEnumerable
     {
         return Enumerable::OrderByDescending($this, $keySelector);
+    }
+
+    /**
+     * @template TSecond
+     * @template TResult
+     * @param iterable<TSecond> $second
+     * @param \Closure(T, TSecond): TResult $resultSelector
+     * @return List_<TResult>
+     */
+    public function Zip(iterable $second, \Closure $resultSelector): List_
+    {
+        return Enumerable::Zip($this, $second, $resultSelector);
     }
 
     /** @return List_<T> */

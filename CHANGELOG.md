@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `System.Text.StringBuilder`: `Append`, `AppendLine`, `AppendFormat`, `AppendJoin`, `Insert`, `Remove`,
+  `Replace`, `Clear`, `ToString`, `Length`, `Capacity` and `sb[i]`, chaining as in .NET
+- `StringComparison` for `Equals`, `Compare`, `Contains`, `StartsWith`, `EndsWith`, `IndexOf`, `LastIndexOf`
+  and `Replace` (`name.Equals("ann", StringComparison.OrdinalIgnoreCase)`)
+- LINQ: `ThenBy` and `ThenByDescending` after `OrderBy`/`OrderByDescending` (which return an
+  `IOrderedEnumerable<T>` now, as in .NET), and `Zip(second, (a, b) => ...)`
 - README: on Windows, stop the language server before upgrading (it keeps `vendor/bin/sharp` open), and
   how to complete an upgrade that stopped half-way
 - CI: `actions/checkout@v6` (v4 ran on the deprecated Node.js 20)
