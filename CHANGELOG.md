@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 - `DateTime` and `TimeSpan`, as in .NET: `DateTime.Now`, `new DateTime(2024, 12, 31)`, the date parts,
   `AddDays`, `AddMonths`, ..., the standard and custom formats (`ToString("yyyy-MM-dd")`,

@@ -75,12 +75,12 @@ composer require armdevstack/sharp-php
 ### Upgrading
 
 ```bash
-composer update armdevstack/sharp-php        # bug-fix releases: 0.6.0 → 0.6.x
-composer require armdevstack/sharp-php:^0.7  # a newer minor version, once there is one: 0.6.x → 0.7.x
+composer update armdevstack/sharp-php        # bug-fix releases: 0.7.0 → 0.7.x
+composer require armdevstack/sharp-php:^0.7  # a newer minor version: 0.6.x → 0.7.x
 ```
 
 While SharpPHP is 0.x, a plain `composer update` stays within the minor version you installed: the
-constraint Composer writes for you, e.g. `^0.6.0`, means `>=0.6.0 <0.7.0`, because `^` does not cross a 0.x
+constraint Composer writes for you, e.g. `^0.7.0`, means `>=0.7.0 <0.8.0`, because `^` does not cross a 0.x
 minor version. Require the newer version once, as above, and `composer update` follows it from then on.
 `composer show armdevstack/sharp-php` prints the installed version; [CHANGELOG.md](CHANGELOG.md) lists
 what changed. The build in `var/sharp` is redone automatically after an upgrade.
