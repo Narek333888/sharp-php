@@ -795,7 +795,7 @@ trait EmitsExpressions
         }
         if ($ctorParams !== null) {
             $name = $symbol->csharpName();
-            $this->checkArguments($e->args, $ctorParams, $name, $this->signature("$name.{$symbol->shortName()}", $ctorParams), $e, constructor: true, runtime: $symbol->external);
+            $this->checkArguments($e->args, $ctorParams, $name, $this->signature("$name.{$symbol->shortName()}", $ctorParams), $e, constructor: true, runtime: self::isRuntimeLibrary($symbol));
         }
         [$args] = $this->arguments($e->args, $ctorParams ?? [], $symbol->substitutionFor($type), runtime: $symbol->external);
         $of = $this->collectionElementSpec($type, $symbol);

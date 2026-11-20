@@ -89,6 +89,11 @@ trait EmitsMembers
         }
 
         $symbol = $this->resolver->findClass($name, $this->ctx, $e);
+        // C# names are case-sensitive: url("/") calls the function url(), not the class URL that PHP
+        // would also find under that name.
+        if ($symbol !== null && $mode === 'invoke' && function_exists($name) && $symbol->shortName() !== $name) {
+            $symbol = null;
+        }
         if ($symbol !== null) {
             $result = $this->typeResult($symbol, $e->typeArgs);
             $this->model?->reference($this->file, $e, $name, 'type', $result->type, symbol: $symbol);
@@ -502,13 +507,21 @@ trait EmitsMembers
             if ($target->kind === 'type') {
                 $symbol = $target->symbol ?? throw new \LogicException('A type result has a symbol');
                 $member = $this->findMethod($symbol, $callee->name);
+                // PHP classes with __callStatic (Laravel's facades and models: Route::get, User::where)
+                // answer static calls to any name.
+                $magic = $symbol->external && $this->symbols->findMember($symbol, '__callStatic') !== null;
+                if ($member === null && $magic) {
+                    [$code] = $this->arguments($e->args, [], runtime: true);
+
+                    return Emitted::value("{$target->code}::{$callee->name}($code)", Type::mixed());
+                }
                 if ($member === null) {
                     $other = $this->symbols->findMember($symbol, $callee->name);
                     throw $other !== null
                         ? $this->error('SP1955', "Non-invocable member '{$symbol->csharpName()}.{$callee->name}' cannot be used like a method", $callee)
                         : $this->error('SP0117', "'{$symbol->csharpName()}' does not contain a definition for '{$callee->name}'", $callee);
                 }
-                if (!$member->isStatic) {
+                if (!$member->isStatic && !$magic) {
                     throw $this->error('SP0120', "An object reference is required for the non-static field, method, or property '{$symbol->csharpName()}.{$callee->name}'", $callee);
                 }
                 $this->requireAccessible($member, $callee);
@@ -542,7 +555,8 @@ trait EmitsMembers
     {
         $this->model?->reference($this->file, $at, $member->name, 'method', $member->type, $member);
         $runtime = $member->owner->external;
-        $this->checkArguments($args, $member->params, $member->name, $member->displayName(), $at, runtime: $runtime);
+        // The note about missing .NET overloads is for the SharpPHP runtime library, not for other PHP code.
+        $this->checkArguments($args, $member->params, $member->name, $member->displayName(), $at, runtime: self::isRuntimeLibrary($member->owner));
         $subst = $receiver !== null ? $member->owner->substitutionFor($receiver) : [];
         foreach ($member->typeParams as $i => $param) {
             if (isset($typeArgs[$i])) {
@@ -796,6 +810,11 @@ trait EmitsMembers
         if ($violation !== null) {
             throw $this->violation($violation, $at);
         }
+    }
+
+    private static function isRuntimeLibrary(TypeSymbol $symbol): bool
+    {
+        return $symbol->external && str_starts_with($symbol->fqn, Names::RUNTIME_NAMESPACE . '\\');
     }
 
     /** @param list<ParameterSymbol> $params "Program.Sq(int)" */

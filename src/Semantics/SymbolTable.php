@@ -388,7 +388,71 @@ final class SymbolTable
             $symbol->members[isset($symbol->members[$method->getName()]) ? $method->getName() . '()' : $method->getName()] = $member;
         }
 
+        $this->docFile = $class->getFileName() ?: null;
+        $this->addMagicMembers($symbol, (string) $class->getDocComment(), $class);
+
         return $symbol;
+    }
+
+    /**
+     * Members a PHP class has through __call / __callStatic / __get, as its docblock declares them:
+     * "@method static Builder where(string $column, mixed $value = null)" on Laravel's facades and
+     * models, "@property string $name". Real members win over documented ones.
+     *
+     * @param \ReflectionClass<object> $class
+     */
+    private function addMagicMembers(TypeSymbol $symbol, string $doc, \ReflectionClass $class): void
+    {
+        if ($doc === '') {
+            return;
+        }
+        $location = $class->getFileName() !== false ? [$class->getFileName(), (int) $class->getStartLine(), 1] : null;
+        $pattern = '/@method\s+(?<static>static\s+)?(?:(?<type>' . self::TYPE_DOC . ')\s+)?(?<name>\w+)\s*\((?<params>[^)]*)\)/';
+        if (preg_match_all($pattern, $doc, $methods, PREG_SET_ORDER) > 0) {
+            foreach ($methods as $m) {
+                if (isset($symbol->members[$m['name']]) || isset($symbol->members[$m['name'] . '()'])) {
+                    continue;
+                }
+                $type = ($m['type'] ?? '') !== '' ? $this->docType($m['type'], $symbol) : Type::mixed();
+                $member = new MemberSymbol('method', $m['name'], ($m['static'] ?? '') !== '', $type, $symbol, $this->docParams($m['params'], $symbol));
+                $member->location = $location;
+                $symbol->members[$m['name']] = $member;
+            }
+        }
+        if (preg_match_all('/@property(?:-read|-write)?\s+(?<type>' . self::TYPE_DOC . ')\s+\$(?<name>\w+)/', $doc, $properties, PREG_SET_ORDER) > 0) {
+            foreach ($properties as $p) {
+                if (!isset($symbol->members[$p['name']])) {
+                    $member = new MemberSymbol('property', $p['name'], false, $this->docType($p['type'], $symbol), $symbol);
+                    $member->location = $location;
+                    $symbol->members[$p['name']] = $member;
+                }
+            }
+        }
+    }
+
+    /**
+     * Parameters of a documented method: "string $uri, array|callable|null $action = null, mixed ...$args".
+     *
+     * @return list<ParameterSymbol>
+     */
+    private function docParams(string $list, TypeSymbol $self): array
+    {
+        $params = [];
+        foreach (self::splitTopLevel($list, ',') as $part) {
+            if (preg_match('/^(?:(?<type>' . self::CLOSURE_DOC . '|' . self::TYPE_DOC . ')\s+)?(?<ref>&)?(?<variadic>\.\.\.)?\$(?<name>\w+)(?<default>\s*=.*)?$/s', trim($part), $m) !== 1) {
+                continue;
+            }
+            $type = ($m['type'] ?? '') !== '' ? $this->docType($m['type'], $self) : Type::mixed();
+            $modifier = ($m['ref'] ?? '') !== '' ? 'ref' : (($m['variadic'] ?? '') !== '' ? 'params' : null);
+            if ($modifier === 'params') {
+                $type = Type::array($type);
+            } elseif ($modifier === 'ref') {
+                $type = Type::mixed();
+            }
+            $params[] = new ParameterSymbol($m['name'], $type, $modifier, ($m['default'] ?? '') !== '' || $modifier === 'params');
+        }
+
+        return $params;
     }
 
     /** @return list<ParameterSymbol> */
@@ -529,6 +593,19 @@ final class SymbolTable
             $element = $this->docType(substr($s, 0, -2), $self);
 
             return ($this->isRuntime($self) ? Type::array($element) : Type::phpArray($element))->withNullable($nullable);
+        }
+
+        // PHPStan's refined scalars: int<0, max>, positive-int, non-empty-string, class-string<T>, array-key.
+        $base = strtolower((string) preg_replace('/\s*<.*$/s', '', $s));
+        $scalar = match (true) {
+            $base === 'int' && str_contains($s, '<'), str_ends_with($base, '-int'), $base === 'int-mask', $base === 'int-mask-of' => Type::int(),
+            str_ends_with($base, '-string') => Type::string(),
+            $base === 'array-key', $base === 'scalar', $base === 'mixed' && str_contains($s, '<') => Type::mixed(),
+            str_ends_with($base, '-float') => Type::float(),
+            default => null,
+        };
+        if ($scalar !== null) {
+            return $scalar->withNullable($nullable && !$scalar->isUnknown());
         }
 
         if (preg_match('/^\\\\?(?:closure|callable)\s*\((.*)\)\s*:\s*(.+)$/is', $s, $m)) {

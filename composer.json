@@ -25,6 +25,8 @@
         "ext-mbstring": "*"
     },
     "require-dev": {
+        "illuminate/console": "^12.0 || ^13.0",
+        "illuminate/support": "^12.0 || ^13.0",
         "phpstan/phpstan": "^2.1",
         "phpunit/phpunit": "^12.0"
     },
@@ -50,5 +52,15 @@
     },
     "config": {
         "sort-packages": true
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "SharpPhp\\Laravel\\SharpServiceProvider"
+            ]
+        }
+    },
+    "suggest": {
+        "laravel/framework": "Write controllers, services and models in SharpPHP inside a Laravel app (registered automatically)"
     }
 }

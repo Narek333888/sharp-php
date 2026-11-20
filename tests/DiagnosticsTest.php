@@ -80,6 +80,7 @@ final class DiagnosticsTest extends TestCase
         yield 'anonymous type duplicate property' => [$main('var a = new { X = 1, X = 2 };'), 'SP0833', 'An anonymous type cannot have multiple properties with the same name', 6, 30];
         yield 'anonymous type unnamed property' => [$main('var a = new { 1 + 2 };'), 'SP0746', 'Invalid anonymous type member declarator. Anonymous type members must be declared with a member assignment, simple name or member access.', 6, 23];
         yield 'anonymous types of different shape' => [$main('var a = new { X = 1 }; a = new { X = "s" };'), 'SP0029', "Cannot implicitly convert type '<anonymous type: string X>' to '<anonymous type: int X>'", 6, 36];
+        yield 'documented magic method arguments' => ["using Illuminate.Support.Facades;\nclass P { static void Main() { Config.set(); } }", 'SP7036', "There is no argument given that corresponds to the required parameter 'key' of 'Illuminate.Support.Facades.Config.set(object, object)'", 2, 39];
         yield 'route handler request is typed' => ["using System.Web;
 class P { static void Main() { WebApp.Create().MapGet(\"/\", req => { int m = req.Method; return m; }); } }", 'SP0029', "Cannot implicitly convert type 'string' to 'int'", 2, 81];
     }

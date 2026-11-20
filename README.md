@@ -401,6 +401,69 @@ A PHP array kept as it is (`var stock = Store.stock();`) can be indexed (`stock[
 its values and queried with LINQ. PHP turns the array key `"7"` into the integer `7`; collections of
 strings and dictionaries with string keys turn such keys back into strings.
 
+## Laravel
+
+In a Laravel app (11 or newer), controllers, services, models and jobs can be written in SharpPHP next
+to the PHP ones. `composer require armdevstack/sharp-php` registers the integration automatically
+(package discovery): `.sphp` files under `app/` are compiled, and Laravel's routes, container and PHP code
+use their classes like any other.
+
+```csharp
+// app/Http/Controllers/UserController.sphp
+using System.Collections.Generic;
+using System.Linq;
+using Illuminate.Support.Facades;
+using HttpRequest = Illuminate.Http.Request;
+
+namespace App.Http.Controllers;
+
+public record User(int Id, string Name);
+
+public class UserController : Controller
+{
+    private readonly List<User> users = new() { new(1, "Ann"), new(2, "Bob") };
+
+    public string Show(string name) => $"Hello, {name}!";
+
+    public List<User> Index(HttpRequest request)
+    {
+        Log.info("users listed");
+        return users.Take(int.Parse(request.query("limit", "10"))).ToList();   // sent as JSON
+    }
+}
+```
+
+```php
+// routes/web.php (PHP, as usual)
+use App\Http\Controllers\UserController;
+
+Route::get('/hello/{name}', [UserController::class, 'Show']);
+Route::get('/users', [UserController::class, 'Index']);
+```
+
+- **Namespaces** follow the folders, as in PHP: `app/Http/Controllers` is `namespace App.Http.Controllers;`.
+  A SharpPHP class can extend a PHP class (`Controller`, `Model`, `Job`), and PHP classes can use SharpPHP ones.
+- **Dependency injection and route parameters** work as for PHP controllers: Laravel passes `Request`,
+  services and `{name}` by parameter type and name.
+- **Facades and helpers:** `using Illuminate.Support.Facades;` then `Log.info(...)`, `Config.get(...)`,
+  `Route.has(...)`, `DB.table(...)`; helper functions as they are: `view("welcome")`, `url("/")`,
+  `response()`. The compiler knows the facades' methods from their docblocks (`@method static ...`), so
+  arguments and results are checked, and the language server completes them. Calls it knows nothing about
+  (Eloquent's `User.where(...)`, other `__callStatic`/`__call` magic) are passed through to PHP.
+- **Name clashes:** `Request` is both `Illuminate.Http.Request` and the `Request` facade; with both
+  namespaces imported the compiler reports the ambiguity, as C# does. Use an alias
+  (`using HttpRequest = Illuminate.Http.Request;`) or the full name.
+- **Responses:** return a string, a view, a Laravel response, or SharpPHP values: a `List`, a `Dictionary`, a
+  record or an anonymous object becomes a JSON response.
+- **Development:** sources are recompiled on the next request after a change. Compile errors show on
+  Laravel's error page with the `.sphp` file and line; Artisan keeps working and
+  `php artisan sharp:build` lists them.
+- **Production:** run `php artisan sharp:build` when deploying. With `APP_ENV=production` the app uses that
+  build without checking the sources on every request.
+- **Configuration:** `.sphp` files under `app/`, compiled to `storage/framework/sharp` (kept out of git by
+  its own `.gitignore`). Change it in the app's `composer.json`: `"extra": { "sharp": { "source": "app",
+  "output": "storage/framework/sharp" } }`.
+
 ## Errors
 
 Compile errors are reported in MSBuild style with a code frame:

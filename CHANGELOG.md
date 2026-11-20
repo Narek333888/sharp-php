@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Laravel: the package registers itself (package discovery); `.sphp` files under `app/` are compiled and
+  their classes used by routes, the container and PHP code; `php artisan sharp:build`; production uses
+  the existing build; compile errors show on Laravel's error page while Artisan keeps working
+- PHP classes' `@method` and `@property` docblocks (Laravel's facades, models) declare members; static calls
+  to classes with `__callStatic` pass through to PHP
+- A function wins over a class whose name differs only in case: `url("/")` with the `URL` facade imported
+- PHPStan's refined scalar types (`int<0, max>`, `non-empty-string`, `class-string<T>`) in docblocks
+- The build directory gets a `.gitignore`
 - Mixing PHP and SharpPHP: `Project::autoload()` makes compiled classes loadable from PHP in one line;
   `List`, `Dictionary` and `HashSet` become PHP arrays where PHP code takes an `array` (and PHP arrays become
   them where SharpPHP expects one); compiled methods with collection parameters accept PHP arrays;
