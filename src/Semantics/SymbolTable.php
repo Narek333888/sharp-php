@@ -53,6 +53,9 @@ final class SymbolTable
     /** @var array<string, TypeSymbol> anonymous types by name; names are case-sensitive, like their properties */
     private array $anonymous = [];
 
+    /** @var list<MemberSymbol> extension methods of the project, in declaration order */
+    private array $extensions = [];
+
     public function declare(TypeSymbol $symbol): ?TypeSymbol
     {
         $key = strtolower($symbol->fqn);
@@ -69,6 +72,23 @@ final class SymbolTable
     public function projectTypes(): array
     {
         return array_values($this->project);
+    }
+
+    /** Registers an extension method of a project class (see MemberSymbol::$isExtension). */
+    public function addExtension(MemberSymbol $method): void
+    {
+        $this->extensions[] = $method;
+    }
+
+    /**
+     * The project's extension methods; which of them a file sees, and which apply to a receiver, is
+     * for ExtensionMethods to decide.
+     *
+     * @return list<MemberSymbol>
+     */
+    public function extensions(): array
+    {
+        return $this->extensions;
     }
 
     public function isProjectType(string $fqn): bool

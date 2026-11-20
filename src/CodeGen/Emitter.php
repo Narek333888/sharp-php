@@ -18,6 +18,7 @@ use SharpPhp\Compiler\SourceFile;
 use SharpPhp\Semantics\AccessRules;
 use SharpPhp\Semantics\ArgumentMatcher;
 use SharpPhp\Semantics\Conversions;
+use SharpPhp\Semantics\ExtensionMethods;
 use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\ResolutionContext;
 use SharpPhp\Semantics\SymbolTable;
@@ -59,6 +60,7 @@ final class Emitter
     private readonly Conversions $conversions;
     private readonly AccessRules $access;
     private readonly ArgumentMatcher $argumentMatcher;
+    private readonly ExtensionMethods $extensions;
     private readonly FlowState $flow;
 
     /** Expression statement being emitted, whose value is not used (see effect()). */
@@ -84,6 +86,7 @@ final class Emitter
         $this->conversions = new Conversions($symbols);
         $this->access = new AccessRules($symbols);
         $this->argumentMatcher = new ArgumentMatcher();
+        $this->extensions = new ExtensionMethods($symbols, $this->conversions);
         $this->flow = new FlowState();
     }
 
@@ -339,6 +342,7 @@ final class Emitter
             $target->symbol ?? $this->symbolForType($target->type),
             $target->namespace,
             $this->class,
+            $this->ctx,
         );
     }
 

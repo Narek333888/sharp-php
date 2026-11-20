@@ -24,6 +24,11 @@ final class LspTest extends TestCase
             public static Person Create(string name) => new Person { Name = name };
             public int Peek() => this.secret;
         }
+
+        public static class TextExtensions
+        {
+            public static string Shout(this string text, int times = 1) => text;
+        }
         CS;
 
     private const PROGRAM = <<<'CS'
@@ -139,6 +144,19 @@ final class LspTest extends TestCase
         $this->assertNull($this->signature('        Console.WriteLine(1); '), 'after the call');
         $this->assertNull($this->signature('        var s = "Greet('), 'in a string');
         $this->assertNull($this->signature('        names.ForEach(n => { '), 'in a lambda body');
+    }
+
+    public function testExtensionMethods(): void
+    {
+        $this->assertContains('Shout', $this->complete('        title.'), 'an extension method of string');
+        $this->assertNotContains('Shout', $this->complete('        person.'), 'only where the receiver converts to its "this" parameter');
+        $this->assertSame(['string TextExtensions.Shout(int times = ...)', 'int times = ...'], $this->signature('        title.Shout('), 'without the "this" parameter');
+
+        $lines = explode("\n", self::PROGRAM);
+        $lines[13] = '        Console.WriteLine(title.Shout());';
+        $this->workspace->open($this->program, implode("\n", $lines));
+        $hover = $this->service->hover($this->program, 13, 33);
+        $this->assertSame("```csharp\n(extension) string TextExtensions.Shout(this string text, int times = ...)\n```", $hover['contents']['value'] ?? null);
     }
 
     public function testDiagnosticsFollowTheOpenDocument(): void

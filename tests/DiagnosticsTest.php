@@ -22,6 +22,13 @@ final class DiagnosticsTest extends TestCase
         yield 'missing semicolon' => [$main('var x = 1'), 'SP1002', "';' expected", 7, 5];
         yield 'unknown member' => [$main('"text".Shout();'), 'SP1061', "'string' does not contain a definition for 'Shout'", 6, 16];
         yield 'static member via type' => [$main('Console.Nope();'), 'SP0117', "'System.Console' does not contain a definition for 'Nope'", 6, 17];
+        $p = "\nclass P { static void Main() {} }";
+        yield 'extension method outside a static class' => ['class Ext { public static string Shout(this string s) => s; }' . $p, 'SP1106', 'Extension method must be defined in a non-generic static class', 1, 13];
+        yield 'extension method in a generic class' => ['static class G<T> { public static string Shout(this string s) => s; }' . $p, 'SP1106', 'Extension method must be defined in a non-generic static class', 1, 21];
+        yield 'instance extension method' => ['static class Ext { public string Shout(this string s) => s; }' . $p, 'SP1105', 'Extension method must be static', 1, 20];
+        yield "'this' on a later parameter" => ['static class Ext { public static string Join(string a, this string b) => a; }' . $p, 'SP1100', "Method 'Join' has a parameter modifier 'this' which is not on the first parameter", 1, 56];
+        yield 'extension method not in scope' => ["namespace A { public static class E { public static string Shout(this string s) => s; } }\nnamespace B { class P { static void Main() { \"x\".Shout(); } } }", 'SP1061', "'string' does not contain a definition for 'Shout'", 2, 50];
+        yield 'ambiguous extension methods' => ["static class E1 { public static string Shout(this string s) => s; }\nstatic class E2 { public static string Shout(this string s) => s; }\nclass P { static void Main() { \"x\".Shout(); } }", 'SP0121', "The call is ambiguous between the following methods or properties: 'E1.Shout(string)' and 'E2.Shout(string)'", 3, 36];
         yield 'implicit var without value' => [$main('var x;'), 'SP0818', 'Implicitly-typed variables must be initialized', 6, 13];
         yield 'duplicate local' => [$main('int a = 1; int a = 2;'), 'SP0128', "A local variable or function named 'a' is already defined in this scope", 6, 24];
         yield 'break outside loop' => [$main('break;'), 'SP0139', 'No enclosing loop out of which to break or continue', 6, 9];

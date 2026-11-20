@@ -1,0 +1,71 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using App.Extensions;
+
+namespace App;
+
+public interface IShape
+{
+    string Name { get; }
+    double Area();
+}
+
+public class Circle : IShape
+{
+    private readonly double radius;
+
+    public Circle(double radius)
+    {
+        this.radius = radius;
+    }
+
+    public string Name => "circle";
+
+    public double Area() => Math.PI * radius * radius;
+}
+
+public class Square : IShape
+{
+    public string Name => "square";
+
+    public double Area() => 4;
+
+    // An instance method wins over an extension method of the same name.
+    public string Describe() => "the square's own Describe";
+}
+
+public static class ShapeExtensions
+{
+    public static string Describe(this IShape shape) => $"{shape.Name} with area {shape.Area():F1}";
+}
+
+public class Program
+{
+    public static void Main()
+    {
+        Console.WriteLine("hi".Shout());
+        Console.WriteLine("ab".Repeat(3, "-"));
+        Console.WriteLine("ab".Repeat(2));
+        Console.WriteLine(StringExtensions.Shout("static call"));
+
+        string? nothing = null;
+        Console.WriteLine(nothing.IsBlank());
+        Console.WriteLine(nothing?.Shout() ?? "skipped by ?.");
+
+        var names = new List<string> { "Ann", "Bob", "Cid" };
+        Console.WriteLine(names.Second());
+        Console.WriteLine(names.Second().Length);
+        Console.WriteLine(new[] { 10, 20, 30 }.Second() + 1);
+        Console.WriteLine(string.Join(",", names.MapAll(n => n.Length * 2)));
+        Console.WriteLine(names.Where(n => n != "Ann").Second());
+
+        int seven = 7;
+        Console.WriteLine(seven.IsEven() + " " + seven.Squared());
+        Console.WriteLine("text".Kind() + " " + seven.Kind());
+
+        IShape circle = new Circle(1);
+        Console.WriteLine(circle.Describe());
+        Console.WriteLine(new Square().Describe());
+    }
+}

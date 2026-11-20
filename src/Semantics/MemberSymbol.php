@@ -21,6 +21,12 @@ final class MemberSymbol
     /** Project fields declared readonly. */
     public bool $isReadonly = false;
 
+    /**
+     * An extension method: a static method of a non-generic static class whose first parameter is
+     * declared "this", so that text.Shout() calls StringExtensions.Shout(text).
+     */
+    public bool $isExtension = false;
+
     /** Project constants: the initializer expression (const bool Verbose = true;). */
     public ?\SharpPhp\Syntax\Expr $constantValue = null;
 

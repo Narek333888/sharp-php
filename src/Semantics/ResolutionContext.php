@@ -31,4 +31,23 @@ final class ResolutionContext
     {
         return Names::phpNamespace($this->namespace);
     }
+
+    /**
+     * Namespaces whose members are in scope without a qualifier, dotted: the enclosing namespace and
+     * the ones around it ("App.Models", "App", and "" for the global namespace), then the imported
+     * ones. C# looks for extension methods in exactly these.
+     *
+     * @return list<string>
+     */
+    public function namespacesInScope(): array
+    {
+        $parts = $this->namespace === '' ? [] : explode('.', $this->namespace);
+        $enclosing = [];
+        for ($length = count($parts); $length > 0; $length--) {
+            $enclosing[] = implode('.', array_slice($parts, 0, $length));
+        }
+        $enclosing[] = '';
+
+        return array_values(array_unique([...$enclosing, ...$this->usings, ...self::IMPLICIT_USINGS]));
+    }
 }

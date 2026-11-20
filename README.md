@@ -333,6 +333,7 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - Fields, `const`, `readonly`, `static`
 - Properties: auto (`{ get; set; }`, `{ get; private set; }`, `{ get; init; }`, get-only), with initializers, expression-bodied (`=> ...`), full `get { } set { }` with `value`, abstract and interface properties, static properties (with accessor bodies they become `get_Name()`/`set_Name()` methods)
 - Methods: `virtual` / `override` / `abstract` (an override may return a more derived type), expression bodies, default and named arguments, `params`, `ref`, `out` (incl. `out var x` and the discard `out _`), `in`
+- Extension methods: a static method of a non-generic `static class` whose first parameter is declared `this` is called like a method of that parameter's type, see [Extension methods](#extension-methods)
 - Finalizers `~Name() { ... }`, which run when the object is freed (see [Memory](#memory))
 - Records: `record Point(int X, int Y);` with value equality (`==`), C#-style `ToString()` (every public property) and `with` expressions (`p with { X = 5 }`)
 - Enums: `enum Color { Red, Green = 5 }`, `(int)color`, `(Color)1`, `color.ToString()`
@@ -346,6 +347,36 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - The compiler tracks generic arguments, so `List<string>` elements are known to be strings (`names[0].Length`)
 - Runtime checks: `new List<int>()` rejects non-integers, like C# (`ArgumentException`)
 - Implementing a generic interface with a concrete type (`IRepository<User>`) is supported
+
+### Extension methods
+
+```csharp
+namespace App.Extensions;
+
+public static class StringExtensions
+{
+    public static string Shout(this string text) => text.ToUpper() + "!";
+}
+
+public static class SequenceExtensions
+{
+    public static T Second<T>(this IEnumerable<T> items) => items.Skip(1).First();
+}
+```
+
+```csharp
+using App.Extensions;
+
+"hi".Shout();                              // "HI!": compiled to StringExtensions::Shout('hi')
+new List<string> { "a", "b" }.Second();    // "b", a string: T comes from the receiver
+```
+
+- Found as in C#: in the file's namespace, the namespaces around it, and the imported ones (`using App.Extensions;`)
+- A method of the receiver's own type wins over an extension method of the same name. Among extension methods the most specific `this` type wins (`this string` before `this object`); two equally specific ones make the call ambiguous (SP0121)
+- Strings, numbers, arrays, collections, classes, interfaces and type parameters can be extended. A `null` receiver is passed to the method (which can check it); `text?.Shout()` skips the call
+- The static form works too: `StringExtensions.Shout("hi")`, and PHP code calls `StringExtensions::Shout('hi')`
+- Only in a non-generic `static class`, as a `static` method, with `this` on the first parameter (SP1106, SP1105, SP1100)
+- Completion after a dot lists the extension methods that apply; parameter info and hover show them as C# does
 
 ### Statements and expressions
 
@@ -616,7 +647,7 @@ SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 - The runtime library implements the common .NET APIs, not all of them (no `StringComparison`, `ThenBy`, `Zip`, `DateTime.Now`, ...)
 - A named argument for a `params` parameter (`string.Join(separator: ",", values: words)`) is not supported; pass it positionally
 - `async`/`await` runs on one thread (Fibers and an event loop): waiting overlaps, CPU work does not; there is no `CancellationToken`, `ConfigureAwait`, `ValueTask` or `IAsyncEnumerable`
-- Not supported: nested types, operator overloading, indexers, extension methods, events/delegates declarations, LINQ query syntax, tuples, `goto`, `ref` locals and `ref` returns, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters
+- Not supported: nested types, operator overloading, indexers, events/delegates declarations, LINQ query syntax, tuples, `goto`, `ref` locals and `ref` returns, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters
 
 ## Development
 

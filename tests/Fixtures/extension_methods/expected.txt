@@ -1,0 +1,15 @@
+HI!
+ab-ab-ab
+abab
+STATIC CALL!
+True
+skipped by ?.
+Bob
+3
+21
+6,6,6
+Cid
+False 49
+string object
+circle with area 3.1
+the square's own Describe

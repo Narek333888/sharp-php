@@ -1,0 +1,56 @@
+using System;
+using System.Collections.Generic;
+
+namespace App.Extensions;
+
+// Extension methods: static methods of static classes whose first parameter is declared "this".
+public static class StringExtensions
+{
+    public static string Shout(this string text) => text.ToUpper() + "!";
+
+    public static string Repeat(this string text, int times, string separator = "")
+    {
+        var parts = new List<string>();
+        for (var i = 0; i < times; i++)
+        {
+            parts.Add(text);
+        }
+        return string.Join(separator, parts);
+    }
+
+    // A null receiver is passed as it is: extension methods can handle it.
+    public static bool IsBlank(this string? text) => text == null || text.Trim() == "";
+}
+
+public static class SequenceExtensions
+{
+    public static T Second<T>(this IEnumerable<T> items) => items.Skip(1).First();
+
+    public static List<TResult> MapAll<T, TResult>(this List<T> items, Func<T, TResult> map)
+    {
+        var result = new List<TResult>();
+        foreach (var item in items)
+        {
+            result.Add(map(item));
+        }
+        return result;
+    }
+}
+
+public static class NumberExtensions
+{
+    public static bool IsEven(this int value) => value % 2 == 0;
+
+    public static int Squared(this int value) => value * value;
+}
+
+// When several extension methods apply, the most specific "this" type wins: string before object.
+public static class ObjectExtensions
+{
+    public static string Kind(this object value) => "object";
+}
+
+public static class TextKinds
+{
+    public static string Kind(this string text) => "string";
+}

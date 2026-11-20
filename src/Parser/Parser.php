@@ -618,11 +618,9 @@ final class Parser
             $this->skipAttributes();
             $start = $this->current();
             $modifier = null;
+            // "this" marks the receiver of an extension method; the Declarator checks where it may be.
             if ($this->check('ref') || $this->check('out') || $this->check('in') || $this->check('params') || $this->check('this')) {
                 $modifier = $this->advance()->text();
-                if ($modifier === 'this') {
-                    throw $this->error('Extension methods are not supported', $start, 'SP1010');
-                }
             }
             $type = $this->parseType();
             $name = $this->expectIdentifier('parameter name');

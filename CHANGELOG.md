@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Extension methods: a static method of a non-generic static class whose first parameter is declared `this`
+  (`public static string Shout(this string text)`) is called as `text.Shout()`, compiled to
+  `StringExtensions::Shout($text)`. Found in the file's namespace, the ones around it and the imported ones;
+  instance methods win, then the most specific `this` type; generic ones (`this IEnumerable<T> items`)
+  infer `T` from the receiver; `?.` and null receivers work as in C#. Errors SP1106, SP1105, SP1100 and
+  SP0121 (ambiguous call). Completion after a dot lists them; hover shows `(extension)`
 - Parameter info in PhpStorm (LSP4IJ), VS Code and other LSP editors: typing `(` or `,` in a call shows the
   signature of the method or constructor, e.g. `Random(int? seed = ...)`, with the argument being typed in
   bold, also for unfinished calls, named arguments, `params` and type arguments (`list.Add(` on a

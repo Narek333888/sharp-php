@@ -6,6 +6,8 @@ namespace SharpPhp\Lsp;
 
 use SharpPhp\Compiler\Declarator;
 use SharpPhp\Compiler\SemanticModel;
+use SharpPhp\Semantics\Conversions;
+use SharpPhp\Semantics\ExtensionMethods;
 use SharpPhp\Semantics\MemberSymbol;
 use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\ParameterSymbol;
@@ -112,17 +114,34 @@ final class Completion
     }
 
     /**
+     * What can follow "receiver.": a namespace's namespaces and types, a type's static members, or a
+     * value's members and the extension methods that apply to it.
+     *
      * @param Receiver $receiver
      * @return list<Item>
      */
     private function memberItems(array $receiver, SymbolTable $symbols): array
     {
-        $type = $receiver['type'];
-        $current = $receiver['class'];
-
         return match (true) {
             $receiver['kind'] === 'namespace' => $this->namespaceItems((string) $receiver['namespace'], $symbols),
-            $receiver['kind'] === 'type' && $receiver['symbol'] !== null => $this->typeMembers($receiver['symbol'], true, $current, $symbols),
+            $receiver['kind'] === 'type' && $receiver['symbol'] !== null => $this->typeMembers($receiver['symbol'], true, $receiver['class'], $symbols),
+            $receiver['kind'] === 'value' => [...$this->valueMembers($receiver, $symbols), ...$this->extensionItems($receiver['type'], $receiver['context'], $symbols)],
+            default => $this->valueMembers($receiver, $symbols),
+        };
+    }
+
+    /**
+     * Members of a value: a string's, an array's or a number's as the runtime library provides them,
+     * or its class's.
+     *
+     * @param Receiver $receiver
+     * @return list<Item>
+     */
+    private function valueMembers(array $receiver, SymbolTable $symbols): array
+    {
+        $type = $receiver['type'];
+
+        return match (true) {
             $type->isString() => [
                 self::item('Length', self::PROPERTY, 'int string.Length'),
                 ...$this->helperMembers(Names::RUNTIME_NAMESPACE . '\\System\\String_', 'string', $symbols),
@@ -137,9 +156,26 @@ final class Completion
                 ...self::objectItems(),
                 self::item('CompareTo', self::METHOD, 'int CompareTo(object value)'),
             ],
-            $receiver['symbol'] !== null => $this->typeMembers($receiver['symbol'], false, $current, $symbols),
+            $receiver['symbol'] !== null => $this->typeMembers($receiver['symbol'], false, $receiver['class'], $symbols),
             default => self::objectItems(),
         };
+    }
+
+    /**
+     * Extension methods in scope that apply to a value of type $type, shown as C# shows them: without
+     * their "this" parameter ("string StringExtensions.Shout()").
+     *
+     * @return list<Item>
+     */
+    private function extensionItems(Type $type, ResolutionContext $context, SymbolTable $symbols): array
+    {
+        $items = [];
+        foreach ((new ExtensionMethods($symbols, new Conversions($symbols)))->applicable($type, $context) as $method) {
+            $detail = $method->type->describe() . " {$method->owner->shortName()}.{$method->name}(" . self::describeParams(array_slice($method->params, 1)) . ')';
+            $items[] = self::item($method->name, self::METHOD, $detail);
+        }
+
+        return $items;
     }
 
     /**
@@ -252,7 +288,7 @@ final class Completion
         $items = [];
         $seen = [];
         foreach ($symbols->projectTypes() as $type) {
-            $namespace = self::namespaceOf($type);
+            $namespace = $type->csharpNamespace();
             if ($type->fqn === Declarator::TOP_LEVEL_CLASS || ($context !== null && !in_array($namespace, $namespaces, true) && $namespace !== '')) {
                 continue;
             }
@@ -282,7 +318,7 @@ final class Completion
         $all = self::runtimeNamespaces();
         if ($symbols !== null) {
             foreach ($symbols->projectTypes() as $type) {
-                $all[] = self::namespaceOf($type);
+                $all[] = $type->csharpNamespace();
             }
         } else {
             foreach ($this->workspace->sources() as $file) {
@@ -304,7 +340,7 @@ final class Completion
                 $items[] = self::item($name, self::CLASS_, $namespace . '.' . $name);
             }
             foreach ($symbols?->projectTypes() ?? [] as $type) {
-                if (self::namespaceOf($type) === $namespace) {
+                if ($type->csharpNamespace() === $namespace) {
                     $items[] = self::typeItem($type);
                 }
             }
@@ -396,15 +432,6 @@ final class Completion
 
             return $seen[$label] = true;
         }));
-    }
-
-    /** "App.Models" for App.Models.User ('' in the global namespace). */
-    private static function namespaceOf(TypeSymbol $type): string
-    {
-        $name = $type->csharpName();
-        $dot = strrpos($name, '.');
-
-        return $dot === false ? '' : substr($name, 0, $dot);
     }
 
     /** @return list<Item> */

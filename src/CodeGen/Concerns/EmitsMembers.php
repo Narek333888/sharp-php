@@ -676,6 +676,10 @@ trait EmitsMembers
 
                 return Emitted::value($code === '' ? "$op::str({$target->code})" : "$op::format({$target->code}, $code)", Type::string());
             }
+            $extension = $this->callExtension($target, $callee, $call);
+            if ($extension !== null) {
+                return $extension;
+            }
             [$code] = $this->arguments($args, []);
             $dyn = $this->runtime('Dyn');
 
@@ -685,7 +689,9 @@ trait EmitsMembers
             if ($name === 'Invoke') {
                 return $this->callClosure($target, $args, $callee);
             }
-            throw $this->error('SP1061', "'delegate' does not contain a definition for '$name'", $callee);
+
+            return $this->callExtension($target, $callee, $call)
+                ?? throw $this->error('SP1061', "'delegate' does not contain a definition for '$name'", $callee);
         }
 
         if ($t->kind === 'typeparam' && in_array($name, self::DYNAMIC_METHODS, true)) {
@@ -713,18 +719,23 @@ trait EmitsMembers
             if ($property !== null && $property->isValue() && $property->type->kind === 'closure') {
                 return $this->callClosure(Emitted::value("$recv$arrow$name", $property->type), $args, $callee);
             }
-            $fallback = $this->objectMethod($target, $name, $args);
+            $fallback = $this->objectMethod($target, $name, $args) ?? $this->callExtension($target, $callee, $call);
             if ($fallback !== null) {
                 return $fallback;
             }
             if (!$symbol->external) {
                 throw $this->error('SP1061', "'{$symbol->csharpName()}' does not contain a definition for '$name'", $callee);
             }
+            // A PHP class answers any name through __call.
             [$code] = $this->arguments($args, []);
 
             return Emitted::value("$recv$arrow$name($code)", Type::mixed());
         }
 
+        $extension = $this->callExtension($target, $callee, $call);
+        if ($extension !== null) {
+            return $extension;
+        }
         [$code] = $this->arguments($args, []);
         if (in_array($name, self::DYNAMIC_METHODS, true)) {
             $dyn = $this->runtime('Dyn');
@@ -753,39 +764,94 @@ trait EmitsMembers
     }
 
     /**
-     * Calls a static runtime helper that takes the receiver as its first argument,
-     * e.g. text.ToUpper() => String_::ToUpper($text). $call is the whole call, $callee its
+     * A method of a string, an array or a sequence, which the runtime library implements as a static
+     * helper taking the receiver first: text.ToUpper() => String_::ToUpper($text). Without such a
+     * helper, an extension method in scope is called. $call is the whole call, $callee its
      * "text.ToUpper" part; $what names the receiver's type in messages ("string").
      */
     private function callHelper(string $class, Emitted $target, MemberAccessExpr $callee, InvocationExpr $call, string $what): Emitted
     {
-        $args = $call->args;
-        $name = $callee->name;
         $symbol = $this->symbols->find(Names::RUNTIME_NAMESPACE . '\\' . $class);
-        $member = $symbol !== null ? $this->findMethod($symbol, $name) : null;
+        $member = $symbol !== null ? $this->findMethod($symbol, $callee->name) : null;
         if ($member === null || !$member->isStatic) {
-            throw $this->error('SP1061', "'$what' does not contain a definition for '$name'", $callee);
+            return $this->callExtension($target, $callee, $call)
+                ?? throw $this->error('SP1061', "'$what' does not contain a definition for '{$callee->name}'", $callee);
         }
-        $this->model?->reference($this->file, $callee, $name, 'method', $member->type, $member);
 
-        // The receiver is the helper's first parameter, so C# code passes the others.
+        return $this->callWithReceiver($this->runtime($class), $member, $target, $callee, $call, $what, runtime: true);
+    }
+
+    /**
+     * receiver.Method(...) as an extension method in scope (see ExtensionMethods):
+     * StringExtensions::Shout($text). Null when none of that name applies to the receiver, so that the
+     * caller reports the missing member as C# does. Callers try it only after the receiver's own
+     * methods, which win.
+     */
+    private function callExtension(Emitted $target, MemberAccessExpr $callee, InvocationExpr $call): ?Emitted
+    {
+        $found = $this->extensions->best($target->type, $this->ctx, $callee->name);
+        if ($found === []) {
+            return null;
+        }
+        if (count($found) > 1) {
+            throw $this->error('SP0121', "The call is ambiguous between the following methods or properties: '{$found[0]->displayName()}' and '{$found[1]->displayName()}'", $callee);
+        }
+        $member = $found[0];
+        $this->requireAccessible($member, $callee);
+
+        return $this->callWithReceiver($this->classRef($member->owner->fqn), $member, $target, $callee, $call, $member->owner->shortName(), runtime: false);
+    }
+
+    /**
+     * Calls a static method that takes the receiver as its first parameter, as runtime helpers and
+     * extension methods do: Class::Method($receiver, ...$arguments). A null receiver of ?. gives null.
+     *
+     * Type parameters bound by the receiver (Enumerable::Where<TSource>(iterable<TSource> $source, ...))
+     * come from it. Runtime helpers keep to that (resultType() knows their special cases); extension
+     * methods, being project code, also take explicit type arguments and infer from the other
+     * arguments, as callMember() does.
+     *
+     * @param string $classRef the class as the generated code names it
+     * @param string $what what C# shows before the method's name: the receiver's type for a helper
+     *                     ("string"), the class for an extension method ("StringExtensions")
+     * @param bool $runtime whether the method belongs to the SharpPHP runtime library
+     */
+    private function callWithReceiver(string $classRef, MemberSymbol $member, Emitted $target, MemberAccessExpr $callee, InvocationExpr $call, string $what, bool $runtime): Emitted
+    {
+        $args = $call->args;
+        $name = $member->name;
+        $this->model?->reference($this->file, $callee, $callee->name, 'method', $member->type, $member);
+
+        // The receiver is the first parameter, so C# code passes the others.
         $params = array_slice($member->params, 1);
-        // Enumerable::Where<TSource>(iterable<TSource> $source, ...): TSource comes from the receiver.
         $subst = [];
         if ($member->typeParams !== [] && isset($member->params[0])) {
             $this->inferTypeArguments($member->params[0]->type, $target->type, $member->typeParams, $subst);
         }
+        if (!$runtime) {
+            foreach ($member->typeParams as $i => $param) {
+                if (isset($callee->typeArgs[$i])) {
+                    $subst[$param] = $this->resolveType($callee->typeArgs[$i]);
+                }
+            }
+        }
         $this->recordCall($call->line, $call->column, $args, "$what.$name", $params, $member->type, $subst);
-        $this->checkArguments($args, $params, $name, $this->signature("$what.$name", $params), $callee, runtime: true);
+        $this->checkArguments($args, $params, $name, $this->signature("$what.$name", $params), $callee, runtime: $runtime);
         $elementType = $this->elementTypeOf($target->type);
-        [$code, $values] = $this->arguments($args, $params, $subst, $elementType, runtime: true);
-        $ref = $this->runtime($class);
+        [$code, $values] = $this->arguments($args, $params, $subst, $elementType, runtime: $runtime);
+        if (!$runtime) {
+            foreach ($params as $i => $param) {
+                if (isset($values[$i])) {
+                    $this->inferTypeArguments($param->type, $values[$i]->type, $member->typeParams, $subst);
+                }
+            }
+        }
         $type = $this->resultType($member, $subst, $values);
 
         return $this->valueTypeDefault($name, $this->nullSafe(
             $target,
             $callee->nullConditional,
-            static fn (string $c): string => "$ref::$name($c" . ($code !== '' ? ", $code" : '') . ')',
+            static fn (string $c): string => "$classRef::$name($c" . ($code !== '' ? ", $code" : '') . ')',
             $type,
         ), $callee->nullConditional ? null : $elementType);
     }

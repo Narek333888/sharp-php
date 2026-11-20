@@ -20,7 +20,7 @@ use SharpPhp\Syntax\Node;
  *
  * @phpstan-type Location array{0: string, 1: int, 2: int}
  * @phpstan-type Reference array{line: int, column: int, length: int, kind: string, name: string, type: Type, member: ?MemberSymbol, symbol: ?TypeSymbol, declaration: Location|null}
- * @phpstan-type Receiver array{line: int, column: int, kind: string, type: Type, symbol: ?TypeSymbol, namespace: ?string, class: ?TypeSymbol}
+ * @phpstan-type Receiver array{line: int, column: int, kind: string, type: Type, symbol: ?TypeSymbol, namespace: ?string, class: ?TypeSymbol, context: ResolutionContext}
  * @phpstan-type ScopeAt array{line: int, column: int, locals: array<string, Type>, class: ?TypeSymbol, static: bool, context: ResolutionContext}
  * @phpstan-type CallArgument array{line: int, column: int, name: ?string}
  * @phpstan-type Call array{line: int, column: int, name: string, params: list<ParameterSymbol>, returns: ?Type, arguments: list<CallArgument>}
@@ -95,11 +95,15 @@ final class SemanticModel
         ];
     }
 
-    public function receiver(SourceFile $file, Node $at, string $kind, Type $type, ?TypeSymbol $symbol, ?string $namespace, ?TypeSymbol $class): void
+    /**
+     * @param ?TypeSymbol $class the class the access is written in (for private members)
+     * @param ResolutionContext $context the namespaces in scope there (for extension methods)
+     */
+    public function receiver(SourceFile $file, Node $at, string $kind, Type $type, ?TypeSymbol $symbol, ?string $namespace, ?TypeSymbol $class, ResolutionContext $context): void
     {
         $this->receivers[$file->path][] = [
             'line' => $at->line, 'column' => $at->column, 'kind' => $kind, 'type' => $type,
-            'symbol' => $symbol, 'namespace' => $namespace, 'class' => $class,
+            'symbol' => $symbol, 'namespace' => $namespace, 'class' => $class, 'context' => $context,
         ];
     }
 

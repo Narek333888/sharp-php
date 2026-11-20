@@ -85,6 +85,15 @@ final class TypeSymbol
         return substr((string) strrchr('.' . $this->csharpName(), '.'), 1);
     }
 
+    /** "App.Models" for App.Models.Person; "" in the global namespace. */
+    public function csharpNamespace(): string
+    {
+        $name = $this->csharpName();
+        $dot = strrpos($name, '.');
+
+        return $dot === false ? '' : substr($name, 0, $dot);
+    }
+
     public function addMember(MemberSymbol $member): void
     {
         $this->members[$member->name] = $member;

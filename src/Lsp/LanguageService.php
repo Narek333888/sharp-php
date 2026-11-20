@@ -111,7 +111,7 @@ final class LanguageService
             $owner = $member->owner->shortName();
 
             return match ($member->kind) {
-                'method' => '(method) ' . $member->type->describe() . " $owner.{$member->name}(" . implode(', ', array_map(
+                'method' => ($member->isExtension ? '(extension) ' : '(method) ') . $member->type->describe() . " $owner.{$member->name}(" . implode(', ', array_map(
                     static fn (ParameterSymbol $p): string => ($p->modifier !== null ? $p->modifier . ' ' : '') . $p->type->describe() . ' ' . $p->name . ($p->optional ? ' = ...' : ''),
                     $member->params,
                 )) . ')',

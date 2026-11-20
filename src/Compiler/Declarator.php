@@ -386,12 +386,37 @@ final class Declarator
                     self::visibility($member->modifiers, $defaultVisibility),
                 );
                 $method->isAbstract = in_array('abstract', $member->modifiers, true);
+                $this->declareExtension($decl, $member, $method, $file);
                 $this->add($symbol, $method, $file, $member);
 
                 if ($member->name === 'Main' && $isStatic) {
                     $this->entryPoints[] = ['type' => $symbol, 'file' => $file, 'node' => $member];
                 }
             }
+        }
+    }
+
+    /**
+     * A method whose first parameter is declared "this" is an extension method (see ExtensionMethods),
+     * which C# allows only as a static method of a non-generic static class.
+     */
+    private function declareExtension(TypeDecl $decl, MethodDecl $method, MemberSymbol $symbol, SourceFile $file): void
+    {
+        foreach ($method->params as $i => $param) {
+            if ($param->modifier !== 'this') {
+                continue;
+            }
+            if ($i > 0) {
+                throw $this->error('SP1100', "Method '{$method->name}' has a parameter modifier 'this' which is not on the first parameter", $file, $param);
+            }
+            if ($decl->kind !== 'class' || !in_array('static', $decl->modifiers, true) || $decl->typeParams !== []) {
+                throw $this->error('SP1106', 'Extension method must be defined in a non-generic static class', $file, $method);
+            }
+            if (!$symbol->isStatic) {
+                throw $this->error('SP1105', 'Extension method must be static', $file, $method);
+            }
+            $symbol->isExtension = true;
+            $this->symbols->addExtension($symbol);
         }
     }
 
