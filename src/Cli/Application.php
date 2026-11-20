@@ -24,6 +24,7 @@ Usage:
   sharp serve [--project=DIR] [--port=N] [--host=NAME]
                                            Serve a web app (WebApp) at http://localhost:8000
   sharp lsp                                Language server for editors (stdin/stdout)
+  sharp vscode [--package=FILE]            Install the VS Code extension (or only write the .vsix)
   sharp build [--project=DIR] [--force]    Compile all .sphp files to PHP
   sharp check [--project=DIR]              Compile without writing anything (for CI)
   sharp compile <file.sphp>                Print the PHP generated for a single file
@@ -47,6 +48,7 @@ TXT;
                 'run' => $this->runCommand($rest),
                 'serve' => $this->serveCommand($rest),
                 'lsp' => (new \SharpPhp\Lsp\Server(STDIN, STDOUT))->run(),
+                'vscode' => $this->vscodeCommand($rest),
                 'build' => $this->buildCommand($rest),
                 'check' => $this->checkCommand($rest),
                 'compile' => $this->compileCommand($rest),
@@ -100,6 +102,24 @@ TXT;
         $host = str_contains($host, ':') ? "[$host]" : $host; // IPv6
 
         return DevServer::serve($project->root, "http://$host:$port");
+    }
+
+    /** @param list<string> $args */
+    private function vscodeCommand(array $args): int
+    {
+        foreach ($args as $arg) {
+            if (str_starts_with($arg, '--package=')) {
+                return $this->out('Wrote ' . VsCodeExtension::package(substr($arg, 10)));
+            }
+        }
+        $vsix = VsCodeExtension::package(sys_get_temp_dir() . '/sharpphp-' . Emitter::VERSION . '.vsix');
+        $process = @proc_open(['code', '--install-extension', $vsix, '--force'], [1 => STDOUT, 2 => STDERR], $pipes);
+        $exit = is_resource($process) ? proc_close($process) : 127;
+        if ($exit !== 0) {
+            return $this->fail("VS Code's 'code' command was not found or failed. Install it (VS Code: Command Palette → \"Shell Command: Install 'code' command in PATH\"), or install $vsix with Extensions → ... → Install from VSIX.");
+        }
+
+        return $this->out('SharpPHP is installed in VS Code. Reload VS Code (Command Palette → "Developer: Reload Window") and open a .sphp file.');
     }
 
     /** @param list<string> $args */

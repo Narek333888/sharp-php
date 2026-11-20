@@ -104,7 +104,7 @@ Builds are cached: sources are recompiled only when a `.sphp` file (or the compi
 ```
 
 **4. Set up your editor** for highlighting, completion and errors while typing: see [PhpStorm setup](#phpstorm-setup)
-(two minutes, once per IDE).
+or [VS Code setup](#vs-code-setup) (two minutes, once per editor).
 
 ## Command line
 
@@ -273,12 +273,35 @@ indexed: PhpStorm then completes those classes in `.php` files too. Otherwise ri
 | You want to see what the server does | **View → Tool Windows → Language Servers** → SharpPHP: the **Logs** tab; for every request set **Trace:** to `verbose` on the server's **Debug** tab |
 | No completion after a dot | The file has a syntax error somewhere else: fix it first (it is underlined) |
 
-### VS Code and other editors
+## VS Code setup
 
-- **VS Code** highlighting: copy (or symlink) `vendor/armdevstack/sharp-php/editors/sharpphp` to
-  `~/.vscode/extensions/armdevstack.sharpphp` and restart VS Code.
-- **Completion and errors** in any editor with an LSP client (VS Code with a generic LSP extension, Neovim,
-  Sublime Text, Zed, ...): run `php vendor/bin/sharp lsp` for `*.sphp` files, language id `sharpphp`.
+VS Code gets the same features through the SharpPHP extension, which ships with the package: highlighting,
+completion, errors while typing (also in the **Problems** panel), hover and go to definition (F12). It is
+installed once and works in every project with SharpPHP 0.3+.
+
+1. In a terminal, in the project folder: `vendor/bin/sharp vscode`. It installs the extension with VS Code's
+   `code` command (without it: `vendor/bin/sharp vscode --package=sharpphp.vsix`, then
+   **Extensions → ⋯ → Install from VSIX...**).
+2. Reload VS Code: Command Palette (⇧⌘P / Ctrl+Shift+P) → **Developer: Reload Window**.
+3. Open the project folder (the one with `vendor/`) and trust it when VS Code asks: in Restricted Mode only
+   highlighting works, because the language server runs the project's PHP.
+
+**Check it:** open a `.sphp` file, type `Console.` inside `Main`: `WriteLine`, `Write`, `ReadLine` are listed.
+**View → Output → SharpPHP** shows `Language server running`.
+
+| Problem | What to do |
+|---|---|
+| "PHP was not found" | Set **Settings → Extensions → SharpPHP → Php: Path** (`sharpphp.php.path`) to the full path of PHP 8.4+, e.g. `/opt/homebrew/bin/php` (`which php` prints it) |
+| No completion and no error marks | **View → Output → SharpPHP** says why: no `vendor/bin/sharp` (`composer require armdevstack/sharp-php:^0.3`), an untrusted workspace, or an older SharpPHP |
+| Anything else | Command Palette → **SharpPHP: Restart Language Server**; details in [editors/sharpphp](editors/sharpphp/README.md#troubleshooting) |
+
+After upgrading SharpPHP, run `vendor/bin/sharp vscode` again to update the extension.
+
+### Other editors
+
+Any editor with an LSP client (Neovim, Sublime Text, Zed, Helix, ...) can run `php vendor/bin/sharp lsp`
+for `*.sphp` files, language id `sharpphp`. The TextMate grammar for highlighting is
+`editors/sharpphp/syntaxes/sharpphp.tmLanguage.json`.
 
 ## Configuration
 

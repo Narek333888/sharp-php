@@ -1,7 +1,7 @@
 {
     "name": "sharpphp",
     "displayName": "SharpPHP",
-    "description": "Syntax highlighting for SharpPHP (.sphp), a C#-like language that compiles to PHP",
+    "description": "SharpPHP (.sphp), a C#-like language that compiles to PHP: highlighting, completion, errors while typing, hover and go to definition",
     "version": "0.3.3",
     "publisher": "armdevstack",
     "license": "MIT",
@@ -15,6 +15,21 @@
     "categories": [
         "Programming Languages"
     ],
+    "main": "./extension.js",
+    "activationEvents": [
+        "onLanguage:sharpphp",
+        "workspaceContains:**/*.sphp"
+    ],
+    "capabilities": {
+        "untrustedWorkspaces": {
+            "supported": "limited",
+            "description": "In Restricted Mode only highlighting works: the language server runs PHP code of the project (vendor/bin/sharp).",
+            "restrictedConfigurations": [
+                "sharpphp.php.path",
+                "sharpphp.server.path"
+            ]
+        }
+    },
     "contributes": {
         "languages": [
             {
@@ -35,6 +50,30 @@
                 "scopeName": "source.sharpphp",
                 "path": "./syntaxes/sharpphp.tmLanguage.json"
             }
-        ]
+        ],
+        "commands": [
+            {
+                "command": "sharpphp.restartServer",
+                "title": "Restart Language Server",
+                "category": "SharpPHP"
+            }
+        ],
+        "configuration": {
+            "title": "SharpPHP",
+            "properties": {
+                "sharpphp.php.path": {
+                    "type": "string",
+                    "default": "php",
+                    "scope": "machine-overridable",
+                    "markdownDescription": "PHP executable (8.4 or newer) that runs the SharpPHP language server. Use the full path, e.g. `/opt/homebrew/bin/php` (`which php` in a terminal prints it), when VS Code does not find PHP."
+                },
+                "sharpphp.server.path": {
+                    "type": "string",
+                    "default": "",
+                    "scope": "resource",
+                    "markdownDescription": "The `sharp` command of SharpPHP, started as `php <path> lsp`. Empty: `${workspaceFolder}/vendor/bin/sharp`. A relative path is relative to the workspace folder; `${workspaceFolder}` may be used."
+                }
+            }
+        }
     }
 }

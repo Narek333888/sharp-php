@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- VS Code: the extension in `editors/sharpphp` now starts the language server (completion, errors while
+  typing, hover, go to definition), with settings `sharpphp.php.path` / `sharpphp.server.path` and the command
+  **SharpPHP: Restart Language Server**; `sharp vscode` installs it (or writes the `.vsix`)
 - Laravel: the package registers itself (package discovery); `.sphp` files under `app/` are compiled and
   their classes used by routes, the container and PHP code; `php artisan sharp:build`; production uses
   the existing build; compile errors show on Laravel's error page while Artisan keeps working
