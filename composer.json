@@ -7,7 +7,11 @@
         "transpiler",
         "compiler",
         "csharp",
-        "language"
+        "language",
+        "dotnet",
+        "linq",
+        "laravel",
+        "language-server"
     ],
     "homepage": "https://github.com/Narek333888/sharp-php",
     "authors": [
@@ -18,10 +22,12 @@
     ],
     "support": {
         "issues": "https://github.com/Narek333888/sharp-php/issues",
-        "source": "https://github.com/Narek333888/sharp-php"
+        "source": "https://github.com/Narek333888/sharp-php",
+        "docs": "https://github.com/Narek333888/sharp-php#readme"
     },
     "require": {
         "php": "^8.4",
+        "ext-ctype": "*",
         "ext-mbstring": "*"
     },
     "require-dev": {
@@ -61,6 +67,7 @@
         }
     },
     "suggest": {
+        "ext-curl": "Needed by HttpClient (System.Net.Http) to send HTTP requests",
         "laravel/framework": "Write controllers, services and models in SharpPHP inside a Laravel app (registered automatically)"
     }
 }

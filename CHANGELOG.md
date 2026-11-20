@@ -6,6 +6,8 @@
   on an array of three elements, and `arr[i] ??= x`, `arr[i] += x`, `arr[i]++`, `out arr[i]`, added the
   element instead (PHP grows arrays), so the array got longer. Reading outside an array already threw.
   PHP arrays (from PHP code) still take new keys
+- Composer: `ext-ctype` is required (the compiler's lexer uses it), `ext-curl` is suggested for `HttpClient`;
+  a link to the documentation and more keywords for Packagist
 
 ## 0.5.0
 
