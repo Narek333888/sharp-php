@@ -9,6 +9,7 @@ use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SharpPhp\CodeGen\Emitter;
 use SharpPhp\Parser\Parser;
+use SharpPhp\Paths;
 use SharpPhp\Semantics\SymbolTable;
 use SharpPhp\Semantics\TypeResolver;
 use SharpPhp\Syntax\CompilationUnit;
@@ -150,7 +151,7 @@ final class Compiler
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS));
         foreach ($iterator as $file) {
             if ($file instanceof \SplFileInfo && $file->isFile() && strtolower($file->getExtension()) === self::EXTENSION) {
-                $paths[] = $file->getPathname();
+                $paths[] = Paths::normalize($file->getPathname());
             }
         }
         sort($paths, SORT_STRING);

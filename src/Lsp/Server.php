@@ -233,8 +233,22 @@ final class Server
         fflush($this->output);
     }
 
+    /**
+     * Whether another message is already there, so that diagnostics can wait for the editor to pause.
+     *
+     * Messages that arrived along with the last one wait in the stream's read buffer. Otherwise the
+     * pipe is watched for 150 ms; but not on Windows, where stream_select() reports a pipe as readable
+     * even when it is empty, which would hold diagnostics back for good. There a message that is still
+     * on its way is not seen, and diagnostics follow every change.
+     */
     private function inputWaiting(): bool
     {
+        if (stream_get_meta_data($this->input)['unread_bytes'] > 0) {
+            return true;
+        }
+        if (PHP_OS_FAMILY === 'Windows') {
+            return false;
+        }
         $read = [$this->input];
         $write = $except = null;
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SharpPhp\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use SharpPhp\Paths;
 
 /**
  * End-to-end tests: every directory in tests/Fixtures is a small program.
@@ -42,7 +43,8 @@ final class FixtureTest extends TestCase
         $this->assertSame($expectedExit, $result['exit'], "stderr:\n" . $result['stderr']);
 
         if (is_file("$fixture/expected_stderr.txt")) {
-            $expected = str_replace('{src}', realpath($result['dir']) . '/src', (string) file_get_contents("$fixture/expected_stderr.txt"));
+            // Stack traces show the sources as SharpPHP spells paths: with "/" (see Paths).
+            $expected = str_replace('{src}', Paths::normalize((string) realpath($result['dir'])) . '/src', (string) file_get_contents("$fixture/expected_stderr.txt"));
             $this->assertSame($expected, $result['stderr']);
         } elseif ($expectedExit === 0) {
             $this->assertSame('', $result['stderr']);

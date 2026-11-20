@@ -69,6 +69,10 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
+     * Runs the sharp command. Its output comes back with "\n" line ends: programs end lines with
+     * PHP_EOL, as .NET's Console does with Environment.NewLine ("\r\n" on Windows), and the expected
+     * outputs are written with "\n".
+     *
      * @param list<string> $arguments
      * @return array{stdout: string, stderr: string, exit: int, dir: string}
      */
@@ -83,7 +87,19 @@ abstract class TestCase extends BaseTestCase
         fclose($pipes[2]);
         $exit = proc_close($process);
 
-        return ['stdout' => (string) $stdout, 'stderr' => (string) $stderr, 'exit' => $exit, 'dir' => $cwd];
+        return ['stdout' => self::lf((string) $stdout), 'stderr' => self::lf((string) $stderr), 'exit' => $exit, 'dir' => $cwd];
+    }
+
+    /** The text with "\n" line ends. */
+    protected static function lf(string $text): string
+    {
+        return str_replace("\r\n", "\n", $text);
+    }
+
+    /** Where a child process's unwanted output goes: /dev/null, or NUL on Windows. */
+    protected static function nullDevice(): string
+    {
+        return PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null';
     }
 
     protected static function removeDirectory(string $dir): void

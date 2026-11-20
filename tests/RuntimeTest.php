@@ -101,7 +101,8 @@ final class RuntimeTest extends TestCase
 
     public function testConsoleCompositeFormat(): void
     {
-        $this->expectOutputString("1 + 2 = 3\nTrue\n");
+        // Lines end with PHP_EOL, as .NET's Console ends them with Environment.NewLine.
+        $this->expectOutputString('1 + 2 = 3' . PHP_EOL . 'True' . PHP_EOL);
         Console::WriteLine('{0} + {1} = {2}', 1, 2, 3);
         Console::WriteLine(true);
     }

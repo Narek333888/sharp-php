@@ -8,6 +8,7 @@ use SharpPhp\CodeGen\Emitter;
 use SharpPhp\Compiler\CompilationFailed;
 use SharpPhp\Compiler\Compiler;
 use SharpPhp\Compiler\SourceFile;
+use SharpPhp\Paths;
 use SharpPhp\Project;
 use Throwable;
 
@@ -178,11 +179,10 @@ TXT;
         return Project::fromDirectory($dir);
     }
 
+    /** $path relative to the current directory when it is inside it. */
     private function relative(string $path): string
     {
-        $cwd = rtrim(getcwd() ?: '', '/') . '/';
-
-        return str_starts_with($path, $cwd) ? substr($path, strlen($cwd)) : $path;
+        return Paths::relative($path, getcwd() ?: '') ?? $path;
     }
 
     private function out(string $text): int

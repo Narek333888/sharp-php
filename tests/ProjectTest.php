@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SharpPhp\Tests;
 
 use SharpPhp\Compiler\CompilationFailed;
+use SharpPhp\Paths;
 use SharpPhp\Project;
 
 final class ProjectTest extends TestCase
@@ -39,8 +40,9 @@ final class ProjectTest extends TestCase
         file_put_contents("$dir/composer.json", json_encode(['extra' => ['sharp' => ['source' => 'app', 'output' => 'build/php']]]));
         $project = Project::fromDirectory($dir);
 
-        $this->assertSame(realpath($dir) . '/app', $project->sourceDir);
-        $this->assertSame(realpath($dir) . '/build/php', $project->buildDir);
+        $root = Paths::normalize((string) realpath($dir));
+        $this->assertSame($root . '/app', $project->sourceDir);
+        $this->assertSame($root . '/build/php', $project->buildDir);
     }
 
     public function testFailedBuildReportsDiagnostics(): void

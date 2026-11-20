@@ -4,6 +4,17 @@
 
 - A lambda that writes an element of a captured array (`() => names[0] = "Bob"`, `i => counts[i]++`)
   changes the array the method sees, as in C#; it changed a copy (PHP arrays are values)
+- Windows:
+  - unhandled exceptions show the `.sphp` lines again (`at App.Program.Main() in .../Program.sphp:line 9`)
+  - sources with the same name in different folders (`src/A/Helper.sphp`, `src/B/Helper.sphp`) no longer
+    overwrite each other in the build, which made one of the classes missing
+  - compile errors name `src/Program.sphp` instead of the full path
+  - the language server reports errors while typing: it waited for a pause in the editor's messages that
+    it could not see, as `stream_select()` reports pipes as always readable on Windows
+  - completion after `using System.` lists `Collections`, `Linq`, ...
+- Development: the tests pass on Windows too (LF line ends in every checkout, `NUL` for `/dev/null`); the
+  test of parallel `HttpClient` requests is skipped there, as PHP's built-in web server answers one request
+  at a time on Windows
 
 ## 0.6.0
 

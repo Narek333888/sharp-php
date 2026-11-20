@@ -77,7 +77,7 @@ final class WebServerTest extends TestCase
         $url = $this->serve(['src/Program.sphp' => "using System;\nclass P { static void Main() { Console.WriteLine(\"one\"); Console.WriteLine(Console.ReadLine() ?? \"no input\"); } }"]);
 
         $page = $this->request("$url/");
-        $this->assertSame("one\nno input\n", $page['body']);
+        $this->assertSame("one\nno input\n", self::lf($page['body']));
         $this->assertStringContainsString('Content-Type: text/plain; charset=utf-8', $page['headers']);
 
         file_put_contents($this->root . '/src/Program.sphp', "class P { static void Main() { int x = \"text\"; } }");
@@ -115,7 +115,7 @@ final class WebServerTest extends TestCase
         fclose($socket);
 
         [$command, $env] = DevServer::command($this->root, '127.0.0.1', $port, $showErrors);
-        $server = proc_open($command, [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, $this->root, $env);
+        $server = proc_open($command, [1 => ['file', self::nullDevice(), 'w'], 2 => ['file', self::nullDevice(), 'w']], $pipes, $this->root, $env);
         self::assertIsResource($server);
         $this->servers[] = $server;
 

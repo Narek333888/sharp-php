@@ -176,7 +176,7 @@ final class LspTest extends TestCase
     public function testProtocol(): void
     {
         $root = dirname($this->program, 2);
-        $process = proc_open([PHP_BINARY, dirname(__DIR__) . '/bin/sharp', 'lsp'], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, $root);
+        $process = proc_open([PHP_BINARY, dirname(__DIR__) . '/bin/sharp', 'lsp'], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['file', self::nullDevice(), 'w']], $pipes, $root);
         self::assertIsResource($process);
         [$in, $out] = [$pipes[0], $pipes[1]];
         $uri = Workspace::pathToUri(Workspace::normalize($this->program));

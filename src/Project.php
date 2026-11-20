@@ -50,7 +50,7 @@ final class Project
         $isLaravel = is_file(rtrim($root, '/\\') . '/artisan') && is_dir(rtrim($root, '/\\') . '/app');
         $defaultSource ??= $isLaravel ? self::LARAVEL_SOURCE : self::DEFAULT_SOURCE;
         $defaultOutput ??= $isLaravel ? self::LARAVEL_OUTPUT : self::DEFAULT_OUTPUT;
-        $root = rtrim(realpath($root) ?: $root, '/\\');
+        $root = Paths::normalize(rtrim(realpath($root) ?: $root, '/\\'));
         $config = [];
         $composer = $root . '/composer.json';
         if (is_file($composer)) {
@@ -200,11 +200,10 @@ final class Project
         return $stamp;
     }
 
+    /** "Models/User.sphp" for a source in src/Models; just the file name for one outside $base. */
     private static function relativePath(string $path, string $base): string
     {
-        $base = rtrim($base, '/\\') . '/';
-
-        return str_starts_with($path, $base) ? substr($path, strlen($base)) : basename($path);
+        return Paths::relative($path, $base) ?? basename($path);
     }
 
     private static function write(string $path, string $contents): void

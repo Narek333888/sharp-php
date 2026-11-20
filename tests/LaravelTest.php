@@ -7,6 +7,7 @@ namespace SharpPhp\Tests;
 use Illuminate\Container\Container;
 use SharpPhp\Laravel\BuildCommand;
 use SharpPhp\Laravel\SharpServiceProvider;
+use SharpPhp\Paths;
 use SharpPhp\Project;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -35,7 +36,7 @@ final class LaravelTest extends TestCase
         $class = "{$this->ns}\\Services\\Greeter";
         $this->assertSame('Hello, Ann!', (new $class())->Greet('Ann'));
         $this->assertFileExists("$this->root/storage/framework/sharp/manifest.php", 'built into storage/framework/sharp by default');
-        $this->assertSame(realpath($this->root) . "/app", $app->make(Project::class)->sourceDir);
+        $this->assertSame(Paths::normalize((string) realpath($this->root)) . '/app', $app->make(Project::class)->sourceDir);
     }
 
     public function testProductionUsesTheBuildWithoutCheckingSources(): void

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SharpPhp\Compiler;
 
+use SharpPhp\Paths;
+
 /**
  * A compiler error with its location, printed in MSBuild style:
  *   src/Program.sphp(12,5): error SP0103: The name 'x' does not exist in the current context
@@ -19,16 +21,14 @@ final class Diagnostic
     ) {
     }
 
+    /** @param ?string $baseDir files inside it are shown relative to it ("src/Program.sphp") */
     public function format(?string $baseDir = null): string
     {
         $location = '';
         if ($this->file !== null) {
             $path = $this->file->path;
             if ($baseDir !== null) {
-                $base = rtrim($baseDir, '/\\') . DIRECTORY_SEPARATOR;
-                if (str_starts_with($path, $base)) {
-                    $path = substr($path, strlen($base));
-                }
+                $path = Paths::relative($path, $baseDir) ?? $path;
             }
             $location = $this->line > 0 ? "$path({$this->line},{$this->column}): " : "$path: ";
         }

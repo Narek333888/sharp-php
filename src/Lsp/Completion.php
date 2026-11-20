@@ -6,6 +6,7 @@ namespace SharpPhp\Lsp;
 
 use SharpPhp\Compiler\Declarator;
 use SharpPhp\Compiler\SemanticModel;
+use SharpPhp\Paths;
 use SharpPhp\Semantics\Conversions;
 use SharpPhp\Semantics\ExtensionMethods;
 use SharpPhp\Semantics\MemberSymbol;
@@ -523,7 +524,8 @@ final class Completion
         $result[] = 'System';
         foreach ($iterator as $file) {
             if ($file instanceof \SplFileInfo && $file->isDir()) {
-                $result[] = str_replace('/', '.', substr($file->getPathname(), strlen($base) + 1));
+                // "System/Collections/Generic" ("System\Collections\Generic" on Windows) => System.Collections.Generic
+                $result[] = str_replace('/', '.', (string) Paths::relative($file->getPathname(), $base));
             }
         }
 

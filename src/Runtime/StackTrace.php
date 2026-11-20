@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SharpPhp\Runtime;
 
+use SharpPhp\Paths;
+
 /**
  * Renders uncaught exceptions like .NET, with locations mapped back to .sphp sources:
  *
@@ -12,11 +14,21 @@ namespace SharpPhp\Runtime;
  */
 final class StackTrace
 {
+    /** @var array<string, array{source: string, lines: array<int, int>}> generated PHP file (with "/" separators) => map */
+    private readonly array $sourceMap;
+
     /**
      * @param array<string, array{source: string, lines: array<int, int>}> $sourceMap absolute PHP file => map
      */
-    public function __construct(private readonly array $sourceMap = [])
+    public function __construct(array $sourceMap = [])
     {
+        // PHP reports files the way the system spells them ("C:\app\var\sharp\classes\Program.php" on
+        // Windows), which need not be how the map was built: both sides are compared with "/".
+        $normalized = [];
+        foreach ($sourceMap as $file => $map) {
+            $normalized[Paths::normalize($file)] = $map;
+        }
+        $this->sourceMap = $normalized;
     }
 
     public function render(\Throwable $e): string
@@ -66,7 +78,7 @@ final class StackTrace
     /** @return array{0: string, 1: int}|null */
     public function map(string $file, int $line): ?array
     {
-        $entry = $this->sourceMap[$file] ?? null;
+        $entry = $this->sourceMap[Paths::normalize($file)] ?? null;
         if ($entry === null) {
             return null;
         }

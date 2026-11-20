@@ -1,3 +1,7 @@
+# Text files end lines with LF on every system, also in Windows checkouts (whatever core.autocrlf
+# says): tests compare generated code and program output with expected text written that way.
+* text=auto eol=lf
+
 # Keep development files out of the package archive that Composer installs.
 /.github           export-ignore
 /tests             export-ignore

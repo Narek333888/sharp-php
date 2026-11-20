@@ -33,7 +33,7 @@ final class Host
 
         $sourceMap = [];
         foreach ($manifest['sourcemap'] as $file => $map) {
-            $sourceMap[$buildDir . DIRECTORY_SEPARATOR . $file] = $map;
+            $sourceMap[$buildDir . '/' . $file] = $map;
         }
 
         if (self::isWebRequest() && !headers_sent()) {

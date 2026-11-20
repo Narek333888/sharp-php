@@ -16,9 +16,10 @@ final class HttpClientTest extends TestCase
     protected function tearDown(): void
     {
         if ($this->server !== null) {
-            // The workers of "php -S" outlive their master's SIGTERM: stop them first.
+            // The workers of "php -S" outlive their master's SIGTERM: stop them first (Windows has
+            // no workers, see testRequestsRunAtTheSameTime()).
             $status = proc_get_status($this->server);
-            if ($status['running']) {
+            if ($status['running'] && PHP_OS_FAMILY !== 'Windows') {
                 exec('pkill -TERM -P ' . (int) $status['pid']);
             }
             proc_terminate($this->server);
@@ -32,6 +33,11 @@ final class HttpClientTest extends TestCase
     {
         if (!function_exists('curl_init')) {
             self::markTestSkipped('HttpClient needs ext-curl');
+        }
+        if (PHP_OS_FAMILY === 'Windows') {
+            // The test server answers requests in parallel only with PHP_CLI_SERVER_WORKERS, which PHP's
+            // built-in server does not support on Windows, so the requests could not overlap there.
+            self::markTestSkipped("PHP's built-in web server answers one request at a time on Windows");
         }
         $url = $this->startServer();
 
@@ -98,7 +104,7 @@ final class HttpClientTest extends TestCase
 
         $env = getenv();
         $env['PHP_CLI_SERVER_WORKERS'] = '8'; // answer requests in parallel
-        $server = proc_open([PHP_BINARY, '-S', "127.0.0.1:$port", "$root/router.php"], [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, $root, $env);
+        $server = proc_open([PHP_BINARY, '-S', "127.0.0.1:$port", "$root/router.php"], [1 => ['file', self::nullDevice(), 'w'], 2 => ['file', self::nullDevice(), 'w']], $pipes, $root, $env);
         self::assertIsResource($server);
         $this->server = $server;
         for ($i = 0; $i < 100; $i++) {

@@ -172,7 +172,7 @@ class P { static void Main() {} }', 'SP0711', 'Static classes cannot contain des
                 . "      |                          ^\n"
                 . "\n"
                 . 'Build FAILED. 1 error(s).',
-                $e->render('/project'),
+                self::lf($e->render('/project')),
             );
         }
     }
