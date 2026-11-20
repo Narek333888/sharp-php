@@ -1,0 +1,16 @@
+names[3] = x: Index was outside the bounds of the array.
+names[-1] = x: Index was outside the bounds of the array.
+names[3] ??= x: Index was outside the bounds of the array.
+names[3] += x: Index was outside the bounds of the array.
+3: Tom, Bob, Mike
+nums[2]++: Index was outside the bounds of the array.
+nums[i + 1] = 1: Index was outside the bounds of the array.
+out nums[5]: Index was outside the bounds of the array.
+2: 7, 15
+grid[0][2] = 1: Index was outside the bounds of the array.
+grid[5][0] = 1: Index was outside the bounds of the array.
+9
+holder.Items[2] = 1: Index was outside the bounds of the array.
+Holder.Shared[1] = x: Index was outside the bounds of the array.
+2: 4, 1: ok
+a, b

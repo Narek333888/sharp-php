@@ -332,6 +332,27 @@ final class Op
     }
 
     /**
+     * The index of an array element that is written, checked: arr[i] = x compiles to
+     * $arr[Op::index($arr, $i)] = $x. A C# array has a fixed length, so an index outside it throws
+     * IndexOutOfRangeException, while PHP would add the element and make the array longer.
+     *
+     * The index is returned unchanged, so that the check sits inside the write and also covers
+     * arr[i] += x, arr[i]++, arr[i] ??= x and out arr[i]. An element counts as present exactly when a
+     * read finds it (a read of a missing one throws through ErrorHandler). The array is passed by
+     * value, which PHP does without copying it.
+     *
+     * @param array<mixed> $array
+     */
+    public static function index(array $array, int|string $index): int|string
+    {
+        if (!\array_key_exists($index, $array)) {
+            throw new System\IndexOutOfRangeException();
+        }
+
+        return $index;
+    }
+
+    /**
      * Collection initializer: new List<int> { 1, 2 } (calls Add for each element).
      *
      * @template T of object

@@ -1,0 +1,68 @@
+using System;
+
+namespace App;
+
+public class Holder
+{
+    public int[] Items = new int[2];
+    public static string[] Shared = new string[1];
+}
+
+public class Program
+{
+    static void Try(string label, Action write)
+    {
+        try
+        {
+            write();
+            Console.WriteLine($"{label}: no error");
+        }
+        catch (IndexOutOfRangeException e)
+        {
+            Console.WriteLine($"{label}: {e.Message}");
+        }
+    }
+
+    public static void Main()
+    {
+        // Writing outside a C# array throws, as reading does; PHP would add the element.
+        string[] names = new string[3];
+        names[0] = "Tom";
+        names[1] = "Bob";
+        names[2] = "Mike";
+        Try("names[3] = x", () => names[3] = "Bella");
+        Try("names[-1] = x", () => names[-1] = "x");
+        Try("names[3] ??= x", () => names[3] ??= "x");
+        Try("names[3] += x", () => names[3] += "x");
+        Console.WriteLine($"{names.Length}: {string.Join(", ", names)}");
+
+        int[] nums = new int[2];
+        int i = 1;
+        nums[i] = 5;
+        nums[0]++;
+        nums[i] += 10;
+        int.TryParse("7", out nums[0]);
+        Try("nums[2]++", () => nums[2]++);
+        Try("nums[i + 1] = 1", () => nums[i + 1] = 1);
+        Try("out nums[5]", () => int.TryParse("7", out nums[5]));
+        Console.WriteLine($"{nums.Length}: {nums[0]}, {nums[1]}");
+
+        int[][] grid = new[] { new int[2], new int[1] };
+        grid[0][1] = 9;
+        Try("grid[0][2] = 1", () => grid[0][2] = 1);
+        Try("grid[5][0] = 1", () => grid[5][0] = 1);
+        Console.WriteLine($"{grid[0][1]}");
+
+        var holder = new Holder();
+        holder.Items[1] = 4;
+        Holder.Shared[0] = "ok";
+        Try("holder.Items[2] = 1", () => holder.Items[2] = 1);
+        Try("Holder.Shared[1] = x", () => Holder.Shared[1] = "x");
+        Console.WriteLine($"{holder.Items.Length}: {holder.Items[1]}, {Holder.Shared.Length}: {Holder.Shared[0]}");
+
+        // A PHP array is not a C# array: new keys can still be added.
+        var map = array_flip(new[] { "a" });
+        map["b"] = 2;
+        Console.WriteLine(string.Join(", ", array_keys(map)));
+    }
+}

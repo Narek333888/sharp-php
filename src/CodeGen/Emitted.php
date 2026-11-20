@@ -21,6 +21,18 @@ use SharpPhp\Semantics\TypeSymbol;
  */
 final class Emitted
 {
+    /**
+     * A storage location whose code can be evaluated again: a variable or a static property, then any
+     * property and element accesses, with indexes made of names, numbers and arithmetic. No ++ or --
+     * anywhere, as those change a variable each time the code runs.
+     */
+    private const string REPEATABLE_PATH = '/^(?!.*(?:\+\+|--))
+        (?: \$[A-Za-z_\x80-\xff][\w\x80-\xff]*                # $local, $this
+          | [\w\\\\]+::\$[A-Za-z_\x80-\xff][\w\x80-\xff]* )   # self::$field, \App\Config::$field
+        (?: ->[A-Za-z_\x80-\xff][\w\x80-\xff]*                # ->property
+          | \[[\w\x80-\xff$ +*\/%-]+\] )*                     # [$i], [0], [$i + 1]
+    $/x';
+
     public function __construct(
         public readonly string $code,
         public readonly Type $type,
@@ -53,5 +65,18 @@ final class Emitted
     {
         return $this->kind === 'value'
             && preg_match('/^\$[A-Za-z_\x80-\xff][\w\x80-\xff]*(->[A-Za-z_\x80-\xff][\w\x80-\xff]*)?$/', $this->code) === 1;
+    }
+
+    /**
+     * True when the code is a storage location that can be evaluated again without side effects
+     * ($a, self::$a, $this->a->b, $grid[$i + 1]), so that it can be repeated where it must be the same
+     * place: $a[Op::index($a, $i)] = ... checks the bounds of the very array that is written to.
+     *
+     * Wider than isSimple(), which decides where repeating the code is cheaper than a temporary
+     * variable; a write cannot go through a temporary, as it would change a copy of the array.
+     */
+    public function isRepeatablePath(): bool
+    {
+        return $this->kind === 'value' && preg_match(self::REPEATABLE_PATH, $this->code) === 1;
     }
 }

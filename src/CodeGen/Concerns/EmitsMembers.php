@@ -954,6 +954,14 @@ trait EmitsMembers
             default => Type::mixed(),
         };
 
+        if ($write && $t->kind === 'array' && !$t->isPhpArray() && $target->isRepeatablePath()) {
+            // A C# array has a fixed length, so writing outside it throws IndexOutOfRangeException, while
+            // PHP would add the element (a read outside it already throws, through the error handler).
+            // The index is checked against the array itself: $a[Op::index($a, $i)] = ... PHP arrays (from
+            // PHP code) are maps that take new keys, and are written as they are.
+            $index = Emitted::value($this->runtime('Op') . "::index({$target->code}, {$index->code})", $index->type);
+        }
+
         return $this->nullSafe(
             $target,
             $e->nullConditional,

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace SharpPhp\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use SharpPhp\CodeGen\Emitted;
+use SharpPhp\Semantics\Type;
 
 /**
  * Checks the PHP produced for individual constructs.
@@ -43,12 +45,37 @@ final class CodeGenTest extends TestCase
         yield 'float truncation' => ['int i = (int)3.9;', "\$i = (int) 3.9;"];
         yield 'escaped string' => ['var s = "a\nb$c";', "\$s = \"a\\nb\\\$c\";"];
         yield 'static member' => ['Console.WriteLine(Math.PI);', 'Console::WriteLine(Math::PI);'];
+        yield 'array element write' => ['int[] a = new int[2]; a[1] = 5; a[0]++;', "\$a = \\array_fill(0, 2, 0);\n\$a[Op::index(\$a, 1)] = 5;\n\$a[Op::index(\$a, 0)]++;"];
+        yield 'array element read' => ['int[] a = new int[2]; var x = a[1];', "\$a = \\array_fill(0, 2, 0);\n\$x = \$a[1];"];
     }
 
     #[DataProvider('expressions')]
     public function testExpression(string $source, string $expected): void
     {
         $this->assertSame($expected, $this->body($source));
+    }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function repeatablePaths(): iterable
+    {
+        yield 'local' => ['$a', true];
+        yield 'property chain' => ['$this->a->b', true];
+        yield 'static property' => ['self::$a', true];
+        yield 'qualified static property' => ['\App\Config::$a', true];
+        yield 'element' => ['$grid[0]', true];
+        yield 'element with arithmetic' => ['$this->grid[$i + 1][$j]', true];
+        yield 'increment in an index' => ['$grid[$i++]', false];
+        yield 'decrement in an index' => ['$grid[--$i]', false];
+        yield 'call in an index' => ['$grid[\count($a)]', false];
+        yield 'method call' => ['$this->Items()', false];
+        yield 'assignment' => ['$a = $b', false];
+    }
+
+    /** Code repeated by the array bounds check ($a[Op::index($a, $i)]) must have no side effects. */
+    #[DataProvider('repeatablePaths')]
+    public function testRepeatablePath(string $code, bool $repeatable): void
+    {
+        $this->assertSame($repeatable, Emitted::value($code, Type::mixed())->isRepeatablePath());
     }
 
     public function testClassShape(): void

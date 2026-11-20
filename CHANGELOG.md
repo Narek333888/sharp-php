@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Writing to an array element outside the array throws `IndexOutOfRangeException`, as in C#: `arr[3] = x`
+  on an array of three elements, and `arr[i] ??= x`, `arr[i] += x`, `arr[i]++`, `out arr[i]`, added the
+  element instead (PHP grows arrays), so the array got longer. Reading outside an array already threw.
+  PHP arrays (from PHP code) still take new keys
+
 ## 0.5.0
 
 - Generic variance as in C#: the compiler compares generic arguments in conversions. `List<Dog>` is no

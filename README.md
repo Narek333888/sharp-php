@@ -371,7 +371,7 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 | `(int)obj` | checked unboxing (`InvalidCastException`) |
 | `(Laptop)product` | checked cast |
 | `catch (Exception e)` | catches every PHP `\Throwable` |
-| `arr[10]` (out of range) | `IndexOutOfRangeException` |
+| `arr[10]`, `arr[10] = x` (out of range) | `IndexOutOfRangeException` (PHP would add the element) |
 | `Math.Round(2.5)` | 2 (banker's rounding) |
 | `(int)'A'`, `'a' + 1`, `c - '0'` | `65`, `97 + 1`, `\mb_ord($c) - 48` (char is an integral type) |
 | `(char)66`, `c++` | `\mb_chr(66)`, `$c = \mb_chr(\mb_ord($c) + 1)` |
