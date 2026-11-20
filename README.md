@@ -321,7 +321,7 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 
 - `namespace App;` (file-scoped) or `namespace App { ... }`
 - `using System;`, `using MyApp.Models;`, aliases `using Col = System.Collections.Generic;`
-- `System`, `System.Collections.Generic` and `System.Linq` are imported implicitly
+- `System`, `System.Collections.Generic`, `System.Linq`, `System.Threading.Tasks` and `System.Net.Http` are imported implicitly (as in .NET)
 - Entry point: a `static void Main()` / `static int Main(string[] args)` method, or top-level statements (the returned `int` becomes the exit code)
 
 ### Types
@@ -385,8 +385,64 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - `System.Collections.Generic`: `List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `Queue<T>`, `Stack<T>`, `KeyValuePair`
 - `System.Linq`: `Where`, `Select`, `SelectMany`, `OrderBy(Descending)`, `GroupBy`, `First(OrDefault)`, `Any`, `All`, `Count`, `Sum`, `Min`, `Max`, `Average`, `Distinct`, `Take`, `Skip`, `Aggregate`, `ToList`, `ToArray`, `ToDictionary`, `Enumerable.Range`, ... (on arrays and all collections)
 - `System.Web`: `WebApp`, `HttpRequest`, `HttpResponse`, `Results`, `IResult` (see [Web apps](#web-apps)); `System.Net.WebUtility` (`HtmlEncode`, `UrlEncode`, ...)
+- `System.Threading.Tasks`: `Task`, `Task<T>` (see [Async and await](#async-and-await)); `System.Net.Http`: `HttpClient`, `HttpResponseMessage`, `StringContent`
 - `System.Text.Json`: `JsonSerializer.Serialize(value, options)` with `JsonSerializerOptions` (`WriteIndented`, `PropertyNamingPolicy = JsonNamingPolicy.CamelCase`)
 - Exceptions: `Exception`, `ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`, `InvalidOperationException`, `NotImplementedException`, `NotSupportedException`, `FormatException`, `IndexOutOfRangeException`, `DivideByZeroException`, `InvalidCastException`, `NullReferenceException`, `KeyNotFoundException`, ...
+
+## Async and await
+
+`async` methods and lambdas, `await`, `Task` and `Task<T>` work as in C#, and `HttpClient` sends requests in
+the background, so a program can wait for many things at once:
+
+```csharp
+using System;
+using System.Linq;
+
+public class Program
+{
+    public static async Task Main()
+    {
+        var http = new HttpClient();
+        var urls = new[] { "https://example.com", "https://example.org", "https://example.net" };
+
+        // The three downloads run at the same time: this takes as long as the slowest one.
+        string[] pages = await Task.WhenAll(urls.Select(u => http.GetStringAsync(u)));
+        Console.WriteLine(pages.Sum(p => p.Length));
+
+        int seconds = await CountdownAsync(3);
+        Console.WriteLine($"{seconds} seconds later");
+    }
+
+    static async Task<int> CountdownAsync(int seconds)
+    {
+        for (var i = seconds; i > 0; i--)
+        {
+            Console.WriteLine(i);
+            await Task.Delay(1000);
+        }
+        return seconds;
+    }
+}
+```
+
+- **Methods:** `async Task` / `async Task<T>` (and `async void`); inside, `return value;` returns the `T`.
+  `static async Task Main()` (or `Task<int>`) and `await` in top-level statements work: the program ends when
+  its task does. An async method runs right away until its first `await`, as in C#.
+- **Lambdas:** `async () => await LoadAsync()`, `async x => { ...; return x; }` for `Func<Task>`, `Func<int, Task<string>>`, ...
+- **Task:** `Task.Run(() => ...)`, `Task.Delay(ms)`, `Task.WhenAll(tasks)` (a `T[]` of the results, in order;
+  also for a collection of tasks), `Task.WhenAny(tasks)`, `Task.FromResult(x)`, `Task.CompletedTask`; on a task:
+  `.Result` and `.Wait()` (blocking), `IsCompleted`, `IsFaulted`, `Exception`. An exception thrown in a task
+  comes out of the `await`.
+- **HttpClient** (`System.Net.Http`, needs PHP's curl extension): `GetStringAsync`, `GetAsync`, `PostAsync`,
+  `PutAsync`, `DeleteAsync` with `new StringContent(text, null, "application/json")`; `BaseAddress`, `Timeout`
+  (seconds), `AddDefaultHeader(name, value)`. The response has `StatusCode`, `IsSuccessStatusCode`,
+  `ReasonPhrase`, `Headers`, `Content.ReadAsStringAsync()` and `EnsureSuccessStatusCode()`; failures throw
+  `HttpRequestException`.
+
+**How it works:** each async method runs in a PHP Fiber on SharpPHP's event loop; `await` suspends the fiber
+until the task completes. It is one thread, like JavaScript: timers and network requests overlap, CPU work
+does not, and PHP calls that block (`sleep()`, `file_get_contents()` of a URL, PDO queries) block everything
+while they run. Use `Task.Delay` and `HttpClient` to wait without blocking.
 
 ## Mixing PHP and SharpPHP
 
@@ -535,7 +591,8 @@ SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 - Values only know their PHP type at runtime: `5L.GetType()` is `System.Int32`, while `typeof(long)` is `System.Int64`
 - The runtime library implements the common .NET APIs, not all of them (no `StringComparison`, `ThenBy`, `Zip`, `DateTime.Now`, ...)
 - A named argument for a `params` parameter (`string.Join(separator: ",", values: words)`) is not supported; pass it positionally
-- Not supported: nested types, operator overloading, indexers, extension methods, events/delegates declarations, `async`/`await`, LINQ query syntax, tuples, `using` statements, `goto`, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters
+- `async`/`await` runs on one thread (Fibers and an event loop): waiting overlaps, CPU work does not; there is no `CancellationToken`, `ConfigureAwait`, `ValueTask` or `IAsyncEnumerable`
+- Not supported: nested types, operator overloading, indexers, extension methods, events/delegates declarations, LINQ query syntax, tuples, `using` statements, `goto`, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters
 
 ## Development
 

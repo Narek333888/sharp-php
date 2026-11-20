@@ -45,6 +45,10 @@ final class Host
         try {
             $main = new \ReflectionMethod($entry, 'Main');
             $result = $main->getNumberOfParameters() > 0 ? $main->invoke(null, $args) : $main->invoke(null);
+            // static async Task Main(): run the event loop until the program's task has completed.
+            if ($result instanceof System\Threading\Tasks\Task) {
+                $result = System\Threading\Tasks\Task::await($result);
+            }
 
             return is_int($result) ? $result : 0;
         } catch (\Throwable $e) {

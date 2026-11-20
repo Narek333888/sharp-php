@@ -12,6 +12,7 @@ use SharpPhp\CodeGen\Prec;
 use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\Type;
 use SharpPhp\Syntax\AnonymousObjectExpr;
+use SharpPhp\Syntax\AwaitExpr;
 use SharpPhp\Syntax\ArrayCreationExpr;
 use SharpPhp\Syntax\AsExpr;
 use SharpPhp\Syntax\AssignExpr;
@@ -83,6 +84,7 @@ trait EmitsExpressions
             $e instanceof CastExpr => $this->cast($e),
             $e instanceof NewExpr => $this->newExpr($e, $expected),
             $e instanceof AnonymousObjectExpr => $this->anonymousObject($e),
+            $e instanceof AwaitExpr => $this->awaitExpr($e),
             $e instanceof ArrayCreationExpr => $this->arrayCreation($e, $expected),
             $e instanceof CollectionExpr => $this->collectionExpr($e, $expected),
             $e instanceof LambdaExpr => $this->lambda($e, $expected),
@@ -917,6 +919,24 @@ trait EmitsExpressions
         return Emitted::value($array, Type::array($elementType ?? Type::mixed()));
     }
 
+    /** await task => Task::await($task): the T of Task<T> (void for Task). */
+    private function awaitExpr(AwaitExpr $e): Emitted
+    {
+        if ($this->fn === null || !$this->fn->isAsync) {
+            throw $this->error('SP4034', "The 'await' operator can only be used within an async lambda expression. Consider marking this lambda expression with the 'async' modifier.", $e);
+        }
+        $task = $this->expr($e->operand);
+        $type = $task->type;
+        $result = match (true) {
+            $type->isUnknown() => Type::mixed(),
+            $type->kind === 'class' && strcasecmp((string) $type->class, self::TASK_CLASS) === 0 => $type->args[0] ?? Type::void(),
+            $type->kind === 'void' => throw $this->error('SP4008', "Cannot await 'void'", $e),
+            default => throw $this->error('SP1061', "'{$type->describe()}' does not contain a definition for 'GetAwaiter' (only tasks can be awaited)", $e),
+        };
+
+        return Emitted::value($this->classRef(self::TASK_CLASS) . '::await(' . $task->code . ')', $result);
+    }
+
     /** new { Id = 1, name }: a runtime AnonymousObject; its static type knows the properties and their types. */
     private function anonymousObject(AnonymousObjectExpr $e): Emitted
     {
@@ -951,6 +971,11 @@ trait EmitsExpressions
         $context = new LambdaContext();
         $expectedParams = $expected !== null && $expected->kind === 'closure' ? array_slice($expected->args, 0, -1) : [];
         $expectedReturn = $expected !== null && $expected->kind === 'closure' && $expected->args !== [] ? $expected->closureReturn() : null;
+        // async () => ...: the body returns the T of the Task<T> the delegate returns.
+        if ($e->isAsync && $expectedReturn !== null) {
+            $expectedReturn = $expectedReturn->isUnknown() ? null : ($this->asyncResultType($expectedReturn)
+                ?? throw $this->error('SP4010', "Cannot convert async lambda expression to delegate type returning '{$expectedReturn->describe()}'", $e));
+        }
 
         $outer = $this->flow->save();
         $this->flow->restore($outer ?? []); // a lambda in unreachable code is still checked
@@ -982,12 +1007,17 @@ trait EmitsExpressions
             $outerFn = $this->fn;
             $static = $e->isStatic || $this->class === null || $outerFn === null || $outerFn->isStatic;
             $function = new FunctionContext($static, $expectedReturn ?? Type::mixed(), $outerFn->typeParams ?? [], $outerFn);
+            $function->isAsync = $e->isAsync;
+            $task = $this->classRef(self::TASK_CLASS);
 
             if ($e->body instanceof Block) {
                 $outerWriter = $this->w;
                 $this->w = new CodeWriter();
                 $this->w->sourceLine = $outerWriter->sourceLine;
                 $this->w->indent();
+                if ($e->isAsync) {
+                    $this->w->indent(); // the body goes inside Task::async(function () { ... })
+                }
                 try {
                     $this->inFunction($function, function () use ($e): void {
                         $this->statements($e->body->statements);
@@ -1000,32 +1030,42 @@ trait EmitsExpressions
                 } finally {
                     $this->w = $outerWriter;
                 }
+                if ($e->isAsync) {
+                    // The task runs the body: function (x) use (...) { return Task::async(function () use (x, ...) { body }); }
+                    $use = $this->useClause($context, array_map(static fn ($p): string => $p->name, $e->params));
+                    $body = '    return ' . $task . '::async(' . ($static ? 'static ' : '') . 'function ()' . $use . " {\n" . $body . "\n    });";
+                }
                 $code = 'function (' . $paramCode . ')' . $this->useClause($context) . " {\n" . $body . "\n}";
                 $returnType = $expectedReturn ?? Type::mixed();
             } else {
                 $value = $this->inFunction($function, fn (): Emitted => $this->expr($e->body, $expectedReturn));
                 $returnType = $expectedReturn !== null && !$expectedReturn->isUnknown() ? $expectedReturn : $value->type;
                 $byReference = in_array(true, $context->captures, true);
+                $valueCode = $e->isAsync ? $task . '::async(' . ($static ? 'static ' : '') . 'fn () => ' . $value->code . ')' : $value->code;
                 $code = $byReference
-                    ? 'function (' . $paramCode . ')' . $this->useClause($context) . " {\n    return " . $value->code . ";\n}"
-                    : 'fn (' . $paramCode . ') => ' . $value->code;
+                    ? 'function (' . $paramCode . ')' . $this->useClause($context) . " {\n    return " . $valueCode . ";\n}"
+                    : 'fn (' . $paramCode . ') => ' . $valueCode;
             }
             if ($e->isStatic) {
                 $code = 'static ' . $code;
+            }
+            if ($e->isAsync) {
+                $returnType = Type::class(self::TASK_CLASS, $returnType->kind === 'void' ? [] : [$returnType]);
             }
 
             return Emitted::value($code, Type::closure([...$paramTypes, $returnType]), Prec::LOWEST);
         }, $context);
     }
 
-    private function useClause(LambdaContext $context): string
+    /** @param list<string> $alsoByValue more variables to capture (an async lambda's parameters) */
+    private function useClause(LambdaContext $context, array $alsoByValue = []): string
     {
-        if ($context->captures === []) {
-            return '';
-        }
-        $vars = [];
+        $vars = array_map(static fn (string $name): string => '$' . $name, $alsoByValue);
         foreach ($context->captures as $name => $byRef) {
             $vars[] = ($byRef ? '&$' : '$') . $name;
+        }
+        if ($vars === []) {
+            return '';
         }
 
         return ' use (' . implode(', ', $vars) . ')';

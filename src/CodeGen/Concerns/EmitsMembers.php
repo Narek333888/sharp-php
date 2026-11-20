@@ -622,6 +622,17 @@ trait EmitsMembers
     {
         $type = $member->type->substitute($subst);
 
+        // Task.WhenAll(tasks) of Task<T>s (or of a collection of them) has the result T[].
+        if ($member->name === 'WhenAll' && strcasecmp($member->owner->fqn, self::TASK_CLASS) === 0) {
+            $first = reset($values);
+            $task = $first === false ? null : ($first->type->kind === 'class' && strcasecmp((string) $first->type->class, self::TASK_CLASS) === 0
+                ? $first->type
+                : $this->elementTypeOf($first->type));
+            $element = $task !== null && $task->kind === 'class' && strcasecmp((string) $task->class, self::TASK_CLASS) === 0 ? ($task->args[0] ?? null) : null;
+
+            return $element === null ? Type::class(self::TASK_CLASS) : Type::class(self::TASK_CLASS, [Type::array($element)]);
+        }
+
         // Select(x => ...) produces a list of whatever the lambda returns.
         if ($member->name === 'Select' && $type->isClass()) {
             $selector = end($values);

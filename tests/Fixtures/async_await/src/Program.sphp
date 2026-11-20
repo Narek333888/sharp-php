@@ -1,0 +1,59 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace App;
+
+public class Program
+{
+    static async Task<int> SlowSquare(int x, int ms)
+    {
+        await Task.Delay(ms);
+        Console.WriteLine($"  done {x}");
+        return x * x;
+    }
+
+    static async Task Greet()
+    {
+        Console.WriteLine("  before await");
+        await Task.Delay(10);
+        Console.WriteLine("  after await");
+    }
+
+    public static async Task<int> Main(string[] args)
+    {
+        var started = Environment.TickCount;
+        int[] results = await Task.WhenAll(SlowSquare(3, 300), SlowSquare(2, 200), SlowSquare(1, 100));
+        var elapsed = Environment.TickCount - started;
+        Console.WriteLine(string.Join(",", results));
+        Console.WriteLine(elapsed < 500 ? "parallel" : $"sequential ({elapsed} ms)");
+
+        var task = Greet();
+        Console.WriteLine("  Greet started");
+        await task;
+
+        Func<int, Task<string>> describe = async n => { await Task.Delay(5); return $"#{n}"; };
+        Console.WriteLine(await describe(7));
+        var many = await Task.WhenAll(new List<int> { 1, 2, 3 }.Select(n => describe(n)));
+        Console.WriteLine(many[2].Length);
+
+        try
+        {
+            await Fail();
+        }
+        catch (InvalidOperationException e)
+        {
+            Console.WriteLine("caught: " + e.Message);
+        }
+        Console.WriteLine(Task.FromResult(41).Result + 1);
+        var first = await Task.WhenAny(Task.Delay(200), Task.Delay(10));
+        Console.WriteLine(first.IsCompleted);
+        return 3;
+    }
+
+    static async Task Fail()
+    {
+        await Task.Delay(1);
+        throw new InvalidOperationException("boom");
+    }
+}

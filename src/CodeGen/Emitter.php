@@ -42,6 +42,9 @@ final class Emitter
     use EmitsPatterns;
     use ChecksTypes;
 
+    /** System.Threading.Tasks.Task, which async methods return. */
+    private const TASK_CLASS = Names::RUNTIME_NAMESPACE . '\\System\\Threading\\Tasks\\Task';
+
     public const VERSION = '0.3.3';
 
     private CodeWriter $w;

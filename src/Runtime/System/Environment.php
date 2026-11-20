@@ -23,7 +23,8 @@ final class Environment
         return $value === false ? null : $value;
     }
 
-    public static function TickCount(): int
+    /** Environment.TickCount: milliseconds since an arbitrary start (for measuring durations). */
+    public static function get_TickCount(): int
     {
         return (int) (hrtime(true) / 1_000_000);
     }

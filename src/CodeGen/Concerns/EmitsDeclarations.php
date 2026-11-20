@@ -11,6 +11,7 @@ use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\ParameterSymbol;
 use SharpPhp\Semantics\Type;
 use SharpPhp\Semantics\TypeSymbol;
+use SharpPhp\Syntax\AwaitExpr;
 use SharpPhp\Syntax\Accessor;
 use SharpPhp\Syntax\ArrayCreationExpr;
 use SharpPhp\Syntax\BinaryExpr;
@@ -581,9 +582,28 @@ trait EmitsDeclarations
             }
         }
 
-        $context = new FunctionContext($static, $member->type, $typeParams);
-        $this->inFunction($context, function () use ($method, $member, $modifiers, $static, $abstract, $inInterface, $isGenerator): void {
-            $this->inScope(function () use ($method, $member, $modifiers, $static, $abstract, $inInterface, $isGenerator): void {
+        $async = in_array('async', $modifiers, true);
+        $bodyType = $member->type;
+        if ($async) {
+            $bodyType = $this->asyncResultType($member->type)
+                ?? throw $this->error('SP1983', "The return type of an async method must be void, Task or Task<T>", $method);
+            foreach ($method->params as $param) {
+                if (in_array($param->modifier, ['ref', 'out', 'in'], true)) {
+                    throw $this->error('SP1988', 'Async methods cannot have ref, in or out parameters', $param);
+                }
+            }
+            if ($isGenerator) {
+                throw $this->error('SP1624', "The body of '{$this->currentClass()->csharpName()}.{$method->name}' cannot be an iterator block because 'Task' is not an iterator interface type", $method);
+            }
+            if ($abstract || $inInterface) {
+                throw $this->error('SP1994', "The 'async' modifier can only be used in methods that have a body", $method);
+            }
+        }
+
+        $context = new FunctionContext($static, $bodyType, $typeParams);
+        $context->isAsync = $async;
+        $this->inFunction($context, function () use ($method, $member, $modifiers, $static, $abstract, $inInterface, $isGenerator, $async, $bodyType): void {
+            $this->inScope(function () use ($method, $member, $modifiers, $static, $abstract, $inInterface, $isGenerator, $async, $bodyType): void {
                 $visibility = $inInterface ? 'public' : $member->visibility;
                 $prefix = ($abstract && !$inInterface ? 'abstract ' : '')
                     . (in_array('sealed', $modifiers, true) ? 'final ' : '')
@@ -602,9 +622,13 @@ trait EmitsDeclarations
                 $this->w->line('{');
                 $this->w->indent();
                 $this->emitParamConversions();
-                $this->methodBody($method, $member->type);
+                if ($async) {
+                    $this->asyncBody($member->type, $static, array_map(static fn ($p): string => $p->name, $method->params), fn () => $this->methodBody($method, $bodyType));
+                } else {
+                    $this->methodBody($method, $member->type);
+                }
                 $this->requireOutParamsAssigned($method);
-                if ($method->body !== null && $member->type->kind !== 'void') {
+                if ($method->body !== null && $bodyType->kind !== 'void') {
                     $params = ParameterSymbol::describeTypes($member->params);
                     $this->requireReturnOnAllPaths($method->body, "'{$this->class?->csharpName()}.{$method->name}($params)'", $method);
                 }
@@ -648,6 +672,42 @@ trait EmitsDeclarations
         if ($method->body !== null) {
             $this->statements($method->body->statements);
         }
+    }
+
+    /**
+     * The T of an async method's Task<T> (void for Task and for async void), or null when the type is
+     * not one an async method can return.
+     */
+    private function asyncResultType(Type $declared): ?Type
+    {
+        if ($declared->kind === 'void') {
+            return Type::void();
+        }
+        if ($declared->kind === 'class' && strcasecmp((string) $declared->class, self::TASK_CLASS) === 0) {
+            return $declared->args[0] ?? Type::void();
+        }
+
+        return null;
+    }
+
+    /**
+     * The body of an async method, run as a Task on the event loop (until its first await it runs
+     * right away, as in C#):
+     *
+     *   return Task::async(function () use ($id) { ... });
+     *
+     * @param list<string> $captures the method's parameters
+     * @param callable(): void $emitBody
+     */
+    private function asyncBody(Type $declared, bool $static, array $captures, callable $emitBody): void
+    {
+        $task = $this->classRef(self::TASK_CLASS);
+        $use = $captures === [] ? '' : ' use (' . implode(', ', array_map(static fn (string $n): string => '$' . $n, $captures)) . ')';
+        $this->w->line(($declared->kind === 'void' ? '' : 'return ') . "$task::async(" . ($static ? 'static ' : '') . "function ()$use {");
+        $this->w->indent();
+        $emitBody();
+        $this->w->outdent();
+        $this->w->line('});');
     }
 
     /** The base class or interface method that $name overrides or implements, if any. */
@@ -887,19 +947,33 @@ trait EmitsDeclarations
             }
         }
         $returnType = $returnsValue ? Type::int() : Type::void();
-        $symbol->members['Main']->type = $returnType;
+        // await in top-level statements makes Main async (Task / Task<int>).
+        $async = false;
+        foreach ($unit->topLevelStatements as $statement) {
+            if (NodeFinder::contains($statement, static fn (Node $n): bool => $n instanceof AwaitExpr)) {
+                $async = true;
+            }
+        }
+        $mainType = $async ? Type::class(self::TASK_CLASS, $returnsValue ? [Type::int()] : []) : $returnType;
+        $symbol->members['Main']->type = $mainType;
 
         $this->w->sourceLine = $unit->topLevelStatements[0]->line;
         $this->w->line('final class ' . Declarator::TOP_LEVEL_CLASS);
         $this->w->line('{');
         $this->w->indent();
-        $this->w->line('public static function Main(array $args): ' . $returnType->kind);
+        $this->w->line('public static function Main(array $args): ' . ($async ? $this->classRef(self::TASK_CLASS) : $returnType->kind));
         $this->w->line('{');
         $this->w->indent();
-        $this->inFunction(new FunctionContext(true, $returnType), function () use ($unit): void {
-            $this->inScope(function () use ($unit): void {
+        $context = new FunctionContext(true, $returnType);
+        $context->isAsync = $async;
+        $this->inFunction($context, function () use ($unit, $async, $mainType): void {
+            $this->inScope(function () use ($unit, $async, $mainType): void {
                 $this->scope->declare('args', Type::array(Type::string()));
-                $this->statements($unit->topLevelStatements);
+                if ($async) {
+                    $this->asyncBody($mainType, true, ['args'], fn () => $this->statements($unit->topLevelStatements));
+                } else {
+                    $this->statements($unit->topLevelStatements);
+                }
             });
         });
         $this->w->outdent();

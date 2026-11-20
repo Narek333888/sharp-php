@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `async` / `await`: async methods and lambdas, `Task` / `Task<T>` (`Run`, `Delay`, `WhenAll`, `WhenAny`,
+  `FromResult`, `CompletedTask`, `Result`, `Wait`), `static async Task Main()` and `await` in top-level
+  statements, on PHP Fibers and an event loop; C#'s errors for misuse (SP4033, SP1983, SP1988, SP1997, ...)
+- `System.Net.Http.HttpClient`: requests in the background (curl_multi), so several are in flight at once
+- `System.Threading.Tasks` and `System.Net.Http` are imported implicitly, as in .NET
+- Runtime static properties written as `get_Name()` methods: `Environment.TickCount` is a property, as in C#
 - VS Code: the extension in `editors/sharpphp` now starts the language server (completion, errors while
   typing, hover, go to definition), with settings `sharpphp.php.path` / `sharpphp.server.path` and the command
   **SharpPHP: Restart Language Server**; `sharp vscode` installs it (or writes the `.vsix`)

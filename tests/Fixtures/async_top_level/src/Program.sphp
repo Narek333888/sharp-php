@@ -1,0 +1,16 @@
+using System;
+using System.Collections.Generic;
+
+var order = new List<string>();
+Func<string, int, Task> step = async (name, ms) =>
+{
+    await Task.Delay(ms);
+    order.Add(name);
+};
+
+await Task.WhenAll(step("slow", 60), step("fast", 10), step("middle", 30));
+Console.WriteLine(string.Join(" < ", order));
+
+var value = await Task.Run(() => 6 * 7);
+Console.WriteLine(value);
+return value - 42;

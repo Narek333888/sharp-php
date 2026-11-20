@@ -22,6 +22,9 @@ final class FunctionContext
 
     private int $temp = 0;
 
+    /** An async method or lambda: await may be used, returnType is the T of Task<T> (void for Task). */
+    public bool $isAsync = false;
+
     /**
      * @param array<string, Type> $typeParams
      */

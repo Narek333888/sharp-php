@@ -1,0 +1,13 @@
+  done 1
+  done 2
+  done 3
+9,4,1
+parallel
+  before await
+  Greet started
+  after await
+#7
+2
+caught: boom
+42
+True

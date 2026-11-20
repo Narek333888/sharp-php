@@ -14,6 +14,7 @@ use SharpPhp\Syntax\AnonymousObjectExpr;
 use SharpPhp\Syntax\Argument;
 use SharpPhp\Syntax\ArrayCreationExpr;
 use SharpPhp\Syntax\AsExpr;
+use SharpPhp\Syntax\AwaitExpr;
 use SharpPhp\Syntax\AssignExpr;
 use SharpPhp\Syntax\BaseExpr;
 use SharpPhp\Syntax\BinaryExpr;
@@ -93,6 +94,9 @@ final class Parser
         'virtual', 'const', 'extern', 'unsafe', 'volatile', 'new',
     ];
 
+    /** Parsing the body of an async method or lambda (or top-level statements), where await is an operator. */
+    private bool $inAsync = false;
+
     private const CONTEXTUAL_MODIFIERS = ['partial', 'async', 'required', 'file'];
 
     private const ASSIGNMENT_OPERATORS = ['=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '??='];
@@ -166,7 +170,8 @@ final class Parser
                 throw $this->error('A using directive must precede all other elements defined in the file', $this->current());
             }
 
-            $topLevel[] = $this->parseStatement();
+            // C# allows await in top-level statements: Main becomes async.
+            $topLevel[] = $this->inAsyncContext(true, fn (): Stmt => $this->parseStatement());
         }
 
         if ($globalTypes !== []) {
@@ -242,7 +247,7 @@ final class Parser
         $modifiers = [];
         while ($this->isModifierAt(0)) {
             $token = $this->advance();
-            if (in_array($token->value, ['extern', 'unsafe', 'volatile', 'async'], true)) {
+            if (in_array($token->value, ['extern', 'unsafe', 'volatile'], true)) {
                 throw $this->error("The '{$token->value}' modifier is not supported", $token, 'SP1010');
             }
             $modifiers[] = $token->text();
@@ -468,7 +473,7 @@ final class Parser
             $typeParams = $this->check('<') ? $this->parseTypeParameterList() : [];
             $params = $this->parseParameterList();
             $constraints = $this->parseConstraints();
-            [$body, $exprBody] = $this->parseMethodBody();
+            [$body, $exprBody] = $this->inAsyncContext(in_array('async', $modifiers, true), fn (): array => $this->parseMethodBody());
 
             return (new MethodDecl($modifiers, $type, $nameToken->text(), $typeParams, $params, $body, $exprBody, 'method', null, [], $constraints))->at($start);
         }
@@ -1017,6 +1022,10 @@ final class Parser
     private function tryParseLocalDeclaration(): ?LocalDecl
     {
         $token = $this->current();
+        // "await Fail();" in async code is an expression statement, not a declaration of a type "await".
+        if ($this->inAsync && $token->isIdentifier('await') && $this->startsAwaitOperand($this->peek(1))) {
+            return null;
+        }
 
         if ($token->isIdentifier('var') && $this->peek(1)->isIdentifier()) {
             $this->advance();
@@ -1110,6 +1119,10 @@ final class Parser
     private function isLambdaStart(): bool
     {
         $i = $this->current()->is('static') ? 1 : 0;
+        // async x => ..., async (a, b) => ... ("async => ..." is a lambda whose parameter is named async)
+        if ($this->peek($i)->isIdentifier('async') && !$this->peek($i + 1)->is('=>')) {
+            $i++;
+        }
         $token = $this->peek($i);
 
         if ($token->isIdentifier() && $this->peek($i + 1)->is('=>')) {
@@ -1140,6 +1153,11 @@ final class Parser
     {
         $start = $this->current();
         $isStatic = $this->accept('static') !== null;
+        $isAsync = false;
+        if ($this->current()->isIdentifier('async') && !$this->peek(1)->is('=>')) {
+            $this->advance();
+            $isAsync = true;
+        }
         $params = [];
 
         if ($this->current()->isIdentifier()) {
@@ -1168,9 +1186,9 @@ final class Parser
         }
 
         $this->expect('=>');
-        $body = $this->check('{') ? $this->parseBlock() : $this->parseExpression();
+        $body = $this->inAsyncContext($isAsync, fn (): Block|Expr => $this->check('{') ? $this->parseBlock() : $this->parseExpression());
 
-        return (new LambdaExpr($params, $body, $isStatic))->at($start);
+        return (new LambdaExpr($params, $body, $isStatic, $isAsync))->at($start);
     }
 
     private function parseConditional(): Expr
@@ -1335,11 +1353,46 @@ final class Parser
                 return (new CastExpr($type, $this->parseUnary()))->at($token);
             }
         }
-        if ($token->isIdentifier('await') && !$this->peek(1)->is('(') && !$this->peek(1)->is('.')) {
-            throw $this->error("'await' is not supported", $token, 'SP1010');
+        if ($token->isIdentifier('await') && $this->startsAwaitOperand($this->peek(1))) {
+            if (!$this->inAsync) {
+                throw $this->error("The 'await' operator can only be used within an async method. Consider marking this method with the 'async' modifier and changing its return type to 'Task'.", $token, 'SP4033');
+            }
+            $this->advance();
+
+            return (new AwaitExpr($this->parseUnary()))->at($token);
         }
 
         return $this->parsePostfix($this->parsePrimary());
+    }
+
+    /**
+     * After "await": the start of its operand. Outside async code "await" may still be a name
+     * (await(x), await.Run(), var await = 1;), so only an operand that cannot follow a name counts.
+     */
+    private function startsAwaitOperand(Token $next): bool
+    {
+        if ($this->inAsync) {
+            return !$next->is(';') && !$next->is(')') && !$next->is(',') && !$next->is('=') && !$next->is('.')
+                && !$next->is(']') && !$next->is('}') && !$next->is('=>') && $next->type !== TokenType::EndOfFile;
+        }
+
+        return $next->isIdentifier() || $next->is('new') || $next->is('this') || $next->is('base');
+    }
+
+    /**
+     * @template R
+     * @param callable(): R $parse
+     * @return R
+     */
+    private function inAsyncContext(bool $async, callable $parse): mixed
+    {
+        $outer = $this->inAsync;
+        $this->inAsync = $async;
+        try {
+            return $parse();
+        } finally {
+            $this->inAsync = $outer;
+        }
     }
 
     private function isCast(): bool

@@ -12,7 +12,8 @@ use SharpPhp\Compiler\SourceFile;
 final class ResolutionContext
 {
     /** Namespaces that are always imported (like C# implicit usings). */
-    public const IMPLICIT_USINGS = ['System', 'System.Collections.Generic', 'System.Linq'];
+    /** As .NET's implicit usings: System, collections, LINQ, tasks and HttpClient need no using directive. */
+    public const IMPLICIT_USINGS = ['System', 'System.Collections.Generic', 'System.Linq', 'System.Threading.Tasks', 'System.Net.Http'];
 
     /**
      * @param list<string> $usings namespaces (dotted)

@@ -14,6 +14,8 @@ final class LambdaExpr extends Expr
         public readonly array $params,
         public readonly Block|Expr $body,
         public readonly bool $isStatic,
+        /** async x => ...: the lambda returns a Task and may await. */
+        public readonly bool $isAsync = false,
     ) {
     }
 }

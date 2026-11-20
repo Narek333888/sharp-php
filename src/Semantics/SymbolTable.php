@@ -388,6 +388,21 @@ final class SymbolTable
             $symbol->members[isset($symbol->members[$method->getName()]) ? $method->getName() . '()' : $method->getName()] = $member;
         }
 
+        // A static method get_Name() is the static property Name (Environment.TickCount), as for project
+        // classes: PHP has no static property hooks.
+        foreach ($symbol->members as $member) {
+            if ($member->kind === 'method' && $member->isStatic && str_starts_with($member->name, 'get_') && strlen($member->name) > 4
+                && array_filter($member->params, static fn (ParameterSymbol $p): bool => !$p->optional) === []) {
+                $name = substr($member->name, 4);
+                if (!isset($symbol->members[$name])) {
+                    $property = new MemberSymbol('property', $name, true, $member->type, $symbol);
+                    $property->isStaticAccessor = true;
+                    $property->location = $member->location;
+                    $symbol->members[$name] = $property;
+                }
+            }
+        }
+
         $this->docFile = $class->getFileName() ?: null;
         $this->addMagicMembers($symbol, (string) $class->getDocComment(), $class);
 
