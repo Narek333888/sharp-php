@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 - Extension methods: a static method of a non-generic static class whose first parameter is declared `this`
   (`public static string Shout(this string text)`) is called as `text.Shout()`, compiled to
