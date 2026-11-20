@@ -90,6 +90,32 @@ final class DiagnosticsTest extends TestCase
         yield 'await result type' => ["using System.Threading.Tasks;\nclass P\n{\n    static async Task<int> F() => 1;\n    static async Task G() { string s = await F(); }\n    static void Main() {}\n}", 'SP0029', "Cannot implicitly convert type 'int' to 'string'", 5, 40];
         yield 'route handler request is typed' => ["using System.Web;
 class P { static void Main() { WebApp.Create().MapGet(\"/\", req => { int m = req.Method; return m; }); } }", 'SP0029', "Cannot implicitly convert type 'string' to 'int'", 2, 81];
+        yield 'invariant generic class' => ['class Animal {}
+class Dog : Animal {}
+interface IBox<out T> { T Get(); }
+class P { static void Main() { List<Animal> a = new List<Dog>(); } }', 'SP0029', 'Cannot implicitly convert type \'System.Collections.Generic.List<Dog>\' to \'System.Collections.Generic.List<Animal>\'', 4, 49];
+        yield 'variance in the wrong direction' => ['class Animal {}
+class Dog : Animal {}
+interface IBox<out T> { T Get(); }
+class P { static void Main(IBox<Animal> b) { IBox<Dog> d = b; } }', 'SP0266', 'Cannot implicitly convert type \'IBox<Animal>\' to \'IBox<Dog>\'. An explicit conversion exists (are you missing a cast?)', 4, 60];
+        yield 'delegate variance' => ['class Animal {}
+class Dog : Animal {}
+interface IBox<out T> { T Get(); }
+class P { static void Main() { Func<Animal> f = () => new Animal(); Func<Dog> g = f; } }', 'SP0029', 'Cannot implicitly convert type \'Func<Animal>\' to \'Func<Dog>\'', 4, 83];
+        yield 'variance on a class' => ['class Box<out T> {}
+class P { static void Main() {} }', 'SP1960', 'Invalid variance modifier. Only interface and delegate type parameters can be specified as variant.', 1, 11];
+        yield 'covariant parameter' => ['interface IBox<out T> { void Put(T item); }
+class P { static void Main() {} }', 'SP1961', 'Invalid variance: The type parameter \'T\' must be contravariantly valid on \'IBox<T>.Put(T)\'. \'T\' is covariant.', 1, 25];
+        yield 'using a non-disposable' => [$main('using (var s = "text") { }'), 'SP1674', '\'string\': type used in a using statement must be implicitly convertible to \'System.IDisposable\'', 6, 20];
+        yield 'finalizer name' => ['class A { ~B() {} }
+class P { static void Main() {} }', 'SP0574', 'Name of destructor must match name of type', 1, 12];
+        yield 'finalizer in a struct' => ['struct S { ~S() {} }
+class P { static void Main() {} }', 'SP0575', 'Only class types can contain destructors', 1, 12];
+        yield 'finalizer modifier' => ['class A { public ~A() {} }
+class P { static void Main() {} }', 'SP0106', 'The modifier \'public\' is not valid for this item', 1, 11];
+        yield 'finalizer in a static class' => ['static class A { ~A() {} }
+class P { static void Main() {} }', 'SP0711', 'Static classes cannot contain destructors', 1, 18];
+        yield 'object constructor arguments' => [$main('var o = new object(1);'), 'SP1729', '\'object\' does not contain a constructor that takes 1 arguments', 6, 17];
     }
 
     #[DataProvider('errors')]

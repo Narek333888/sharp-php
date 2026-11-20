@@ -1,0 +1,49 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+public class Animal { public virtual string Name() => "animal"; }
+public class Dog : Animal { public override string Name() => "dog"; }
+
+public interface IProducer<out T> { T Make(); }
+public interface IConsumer<in T> { void Take(T item); }
+public class Kennel : IProducer<Dog> { public Dog Make() => new Dog(); }
+public class Box<T> : IProducer<T> { private readonly T value; public Box(T value) => this.value = value; public T Make() => value; }
+public class Vet : IConsumer<Animal> { public void Take(Animal item) => Console.WriteLine($"vet takes {item.Name()}"); }
+
+public class Shelter { public virtual Animal Adopt() => new Animal(); }
+public class DogShelter : Shelter { public override Dog Adopt() => new Dog(); }
+
+public class Program
+{
+    static int Count(IEnumerable<Animal> animals) => animals.Count();
+
+    public static void Main()
+    {
+        // covariance: a producer of dogs is a producer of animals
+        IProducer<Animal> producer = new Kennel();
+        Console.WriteLine(producer.Make().Name());
+        IProducer<Animal> boxed = new Box<Dog>(new Dog());
+        Console.WriteLine(boxed.Make().Name());
+
+        // contravariance: a consumer of animals can take dogs
+        IConsumer<Dog> consumer = new Vet();
+        consumer.Take(new Dog());
+
+        // IEnumerable<out T>, arrays and delegates
+        var dogs = new List<Dog> { new(), new() };
+        Console.WriteLine(Count(dogs));
+        Animal[] animals = new Dog[] { new Dog() };
+        Console.WriteLine(animals[0].Name());
+        Func<Dog> makeDog = () => new Dog();
+        Func<Animal> makeAnimal = makeDog;
+        Console.WriteLine(makeAnimal().Name());
+        Action<Animal> greet = a => Console.WriteLine($"hello {a.Name()}");
+        Action<Dog> greetDog = greet;
+        greetDog(new Dog());
+
+        // covariant return type of an override
+        Shelter shelter = new DogShelter();
+        Console.WriteLine(shelter.Adopt().Name());
+    }
+}

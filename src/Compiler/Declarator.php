@@ -58,6 +58,7 @@ final class Declarator
                 $symbol->isStruct = $decl->kind === 'struct';
                 $symbol->isAbstract = in_array('abstract', $decl->modifiers, true);
                 $symbol->typeParams = $decl->typeParams;
+                $symbol->variance = $decl->variance;
                 $symbol->location = [$unit->file->path, $decl->line, $decl->column];
                 if ($this->symbols->declare($symbol) !== null) {
                     $where = $ns->name === '' ? 'the global namespace' : "namespace '{$ns->name}'";
@@ -87,7 +88,108 @@ final class Declarator
             $ctx = $this->contextFor($unit, $ns);
             foreach ($ns->types as $decl) {
                 $this->defineType($decl, $this->symbolOf($decl), $ctx);
+                if ($decl->variance !== []) {
+                    $this->checkVariance($decl, $this->symbolOf($decl), $ctx->file);
+                }
             }
+        }
+    }
+
+    /**
+     * C#'s variance safety: in "interface IBox<out T>", T may only be produced (returned), never
+     * consumed (a parameter); in "ISink<in T>" the other way round. A property with get and set, and
+     * ref/out parameters, need invariant types.
+     */
+    private function checkVariance(TypeDecl $decl, TypeSymbol $symbol, SourceFile $file): void
+    {
+        $owner = $symbol->csharpName() . '<' . implode(', ', $symbol->typeParams) . '>';
+        foreach ($decl->members as $node) {
+            if (!($node instanceof MethodDecl && $node->kind === 'method') && !$node instanceof PropertyDecl) {
+                continue;
+            }
+            $member = $symbol->members[$node->name] ?? null;
+            if ($member === null) {
+                continue;
+            }
+            if ($node instanceof MethodDecl) {
+                $where = "$owner.{$member->name}(" . implode(', ', array_map(static fn (ParameterSymbol $p): string => $p->type->describe(), $member->params)) . ')';
+                $checks = [[$member->type, 1]];
+                foreach ($member->params as $param) {
+                    $checks[] = [$param->type, in_array($param->modifier, ['ref', 'out'], true) ? 0 : -1];
+                }
+            } else {
+                $kinds = array_map(static fn ($a): string => $a->kind, $node->accessors);
+                $get = $node->accessors === [] || in_array('get', $kinds, true);
+                $set = in_array('set', $kinds, true) || in_array('init', $kinds, true);
+                $where = "$owner.{$member->name}";
+                $checks = [[$member->type, $get && $set ? 0 : ($get ? 1 : -1)]];
+            }
+            foreach ($checks as [$type, $position]) {
+                $violation = $this->varianceViolation($type, $position, $symbol);
+                if ($violation !== null) {
+                    [$name, $variance, $required] = $violation;
+                    $validity = match ($required) {
+                        1 => 'covariantly',
+                        -1 => 'contravariantly',
+                        default => 'invariantly',
+                    };
+                    $is = $variance === 'out' ? 'covariant' : 'contravariant';
+                    throw $this->error('SP1961', "Invalid variance: The type parameter '$name' must be $validity valid on '$where'. '$name' is $is.", $file, $node);
+                }
+            }
+        }
+    }
+
+    /**
+     * A variant type parameter of $owner used where its variance does not allow it, with the position
+     * it would need (1 covariant, -1 contravariant, 0 invariant).
+     *
+     * @return array{0: string, 1: 'in'|'out', 2: int}|null
+     */
+    private function varianceViolation(Type $type, int $position, TypeSymbol $owner): ?array
+    {
+        switch ($type->kind) {
+            case 'typeparam':
+                $variance = $owner->variance[(string) $type->param] ?? null;
+                if (($variance === 'out' && $position !== 1) || ($variance === 'in' && $position !== -1)) {
+                    return [(string) $type->param, $variance, $position];
+                }
+
+                return null;
+            case 'array':
+            case 'iterable':
+                return $this->varianceViolation($type->element(), $position, $owner);
+            case 'closure':
+                $last = count($type->args) - 1;
+                foreach ($type->args as $i => $arg) {
+                    if ($i === $last && $arg->kind === 'void') {
+                        continue;
+                    }
+                    $violation = $this->varianceViolation($arg, $i === $last ? $position : -$position, $owner);
+                    if ($violation !== null) {
+                        return $violation;
+                    }
+                }
+
+                return null;
+            case 'class':
+                $generic = $this->symbols->find((string) $type->class);
+                foreach ($type->args as $i => $arg) {
+                    $variance = $generic !== null ? ($generic->variance[$generic->typeParams[$i] ?? ''] ?? null) : null;
+                    $inner = match ($variance) {
+                        'out' => $position,
+                        'in' => -$position,
+                        default => 0,
+                    };
+                    $violation = $this->varianceViolation($arg, $inner, $owner);
+                    if ($violation !== null) {
+                        return $violation;
+                    }
+                }
+
+                return null;
+            default:
+                return null;
         }
     }
 
@@ -163,6 +265,7 @@ final class Declarator
                 if ($base === null) {
                     throw $this->error('SP0527', "Type '{$type->describe()}' in the base list is not a class or interface", $file, $ref);
                 }
+                $symbol->supertypeArgs[strtolower($base->fqn)] = $type->args;
                 if ($base->isInterface()) {
                     $symbol->interfaces[] = $base->fqn;
                     continue;
@@ -241,6 +344,16 @@ final class Declarator
                 $this->add($symbol, $property, $file, $member);
             } elseif ($member instanceof MethodDecl) {
                 if ($member->kind === 'static_constructor') {
+                    continue;
+                }
+                if ($member->kind === 'finalizer') {
+                    if (in_array('static', $decl->modifiers, true)) {
+                        throw $this->error('SP0711', 'Static classes cannot contain destructors', $file, $member);
+                    }
+                    if ($symbol->hasFinalizer) {
+                        throw $this->error('SP0111', "Type '{$decl->name}' already defines a member called 'Finalize' with the same parameter types", $file, $member);
+                    }
+                    $symbol->hasFinalizer = true;
                     continue;
                 }
                 if ($member->kind === 'constructor') {

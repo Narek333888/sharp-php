@@ -1,0 +1,62 @@
+using System;
+using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+
+public class Base
+{
+    ~Base() => Console.WriteLine("Base finalized");
+}
+
+public class Node : Base
+{
+    public string Name { get; }
+    public Node? Other { get; set; }
+    public Node(string name) => Name = name;
+    ~Node() { Console.WriteLine($"{Name} finalized"); }
+}
+
+public class Handle : IDisposable
+{
+    public void Dispose() { Console.WriteLine("Handle disposed"); GC.SuppressFinalize(this); }
+    ~Handle() => Console.WriteLine("Handle finalized (should not happen after Dispose)");
+}
+
+class Memory
+{
+    public static void Run()
+    {
+        var a = new Node("a");
+        a = null;
+        Console.WriteLine("after a = null");
+
+        var x = new Node("x");
+        var y = new Node("y");
+        x.Other = y;
+        y.Other = x;
+        x = null;
+        y = null;
+        Console.WriteLine("cycle unreachable");
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        Console.WriteLine("after GC.Collect");
+
+        using (var h = new Handle()) { }
+
+        var o = new object();
+        Console.WriteLine(o.ToString());
+        Console.WriteLine(o.GetType().Name);
+        var weak = new WeakReference<object>(o);
+        Console.WriteLine(weak.TryGetTarget(out var target) && target == o);
+        o = null;
+        target = null;
+        Console.WriteLine(weak.TryGetTarget(out _));
+        Console.WriteLine(weak.IsAlive);
+
+        var key = new Node("key");
+        var table = new ConditionalWeakTable<Node, string>();
+        table.Add(key, "attached");
+        Console.WriteLine(table.TryGetValue(key, out var text) ? text : "none");
+        Console.WriteLine(GC.GetTotalMemory(false) > 0);
+        Console.WriteLine("end");
+    }
+}

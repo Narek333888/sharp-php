@@ -26,6 +26,8 @@ final class TypeDecl extends Node
         public readonly array $enumMembers,
         /** @var array<string, list<TypeRef>> */
         public readonly array $constraints,
+        /** @var array<string, 'in'|'out'> variant type parameters of an interface: IEnumerable<out T> */
+        public readonly array $variance = [],
     ) {
     }
 }

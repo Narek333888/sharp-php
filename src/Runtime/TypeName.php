@@ -10,6 +10,7 @@ namespace SharpPhp\Runtime;
 final class TypeName
 {
     private const NATIVE = [
+        'stdClass' => 'System.Object',
         'DivisionByZeroError' => 'System.DivideByZeroException',
         'ArithmeticError' => 'System.ArithmeticException',
         'UnhandledMatchError' => 'System.InvalidOperationException',

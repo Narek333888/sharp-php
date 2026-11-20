@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SharpPhp\CodeGen\Concerns;
 
 use SharpPhp\CodeGen\Emitted;
+use SharpPhp\CodeGen\EmitStep;
 use SharpPhp\Semantics\MemberSymbol;
 use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\Type;
@@ -28,7 +29,9 @@ use SharpPhp\Syntax\Stmt;
 use SharpPhp\Syntax\SwitchStmt;
 use SharpPhp\Syntax\ThrowStmt;
 use SharpPhp\Syntax\TryStmt;
+use SharpPhp\Syntax\InvocationExpr;
 use SharpPhp\Syntax\UnaryExpr;
+use SharpPhp\Syntax\UsingStmt;
 use SharpPhp\Syntax\WhileStmt;
 use SharpPhp\Syntax\YieldStmt;
 
@@ -73,6 +76,8 @@ trait EmitsStatements
             $s instanceof ThrowStmt => $this->throwStatement($s),
             $s instanceof TryStmt => $this->tryStatement($s),
             $s instanceof YieldStmt => $this->yieldStatement($s),
+            $s instanceof UsingStmt => $this->usingStatement($s),
+            $s instanceof EmitStep => ($s->emit)(),
             $s instanceof EmptyStmt => null,
             default => throw $this->error('SP1010', 'Unsupported statement', $s),
         };
@@ -500,6 +505,59 @@ trait EmitsStatements
         }
         $this->w->line("throw $variable;");
         $this->flow->markUnreachable();
+    }
+
+    /**
+     * using (var a = A(), b = B()) body  =>  a = A(); try { b = B(); try { body } finally { b?.Dispose(); } }
+     * finally { a?.Dispose(); }: every resource is disposed, in reverse order, however the body is left.
+     */
+    private function usingStatement(UsingStmt $s): void
+    {
+        $body = $s->body ?? throw $this->error('SP1023', 'Embedded statement cannot be a declaration or labeled statement', $s);
+        $resources = [];
+        if ($s->declaration !== null) {
+            foreach ($s->declaration->declarators as $declarator) {
+                $resources[] = (new LocalDecl($s->declaration->type, [$declarator], false))->at($declarator);
+            }
+        } elseif ($s->expression !== null) {
+            $resources[] = $s->expression;
+        }
+        $this->inScope(fn () => $this->usingResources($resources, $body));
+    }
+
+    /** @param list<LocalDecl|Expr> $resources */
+    private function usingResources(array $resources, Stmt $body): void
+    {
+        if ($resources === []) {
+            $body instanceof Block ? $this->statements($body->statements) : $this->statement($body);
+
+            return;
+        }
+        $resource = array_shift($resources);
+        if ($resource instanceof LocalDecl) {
+            $this->localDeclaration($resource);
+            $at = $resource->declarators[0];
+            $name = $at->name;
+            $type = $this->scope->lookup($name)[0] ?? Type::mixed();
+        } else {
+            $at = $resource;
+            $value = $this->expr($resource);
+            $type = $value->type;
+            $name = substr($this->currentFunction()->temp('using'), 1);
+            $this->declareLocal($name, $type, $resource);
+            $this->w->line('$' . $name . ' = ' . $value->code . ';');
+        }
+        $disposable = Type::class(Names::RUNTIME_NAMESPACE . '\\System\\IDisposable');
+        if (!$type->isNull() && !$this->conversions->isImplicit($type, $disposable)) {
+            throw $this->error('SP1674', "'{$type->describe()}': type used in a using statement must be implicitly convertible to 'System.IDisposable'", $at);
+        }
+
+        $dispose = (new ExprStmt((new InvocationExpr(
+            (new MemberAccessExpr((new NameExpr($name, []))->at($at), 'Dispose', true, []))->at($at),
+            [],
+        ))->at($at)))->at($at);
+        $rest = (new EmitStep(fn () => $this->usingResources($resources, $body)))->at($body);
+        $this->tryStatement((new TryStmt((new Block([$rest]))->at($body), [], (new Block([$dispose]))->at($at)))->at($at));
     }
 
     private function tryStatement(TryStmt $s): void

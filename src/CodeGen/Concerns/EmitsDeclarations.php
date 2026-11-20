@@ -104,12 +104,14 @@ trait EmitsDeclarations
         $consts = $fields = $properties = $methods = [];
         $constructor = null;
         $staticConstructor = null;
+        $finalizer = null;
         foreach ($decl->members as $member) {
             match (true) {
                 $member instanceof FieldDecl => $member->isConst ? $consts[] = $member : $fields[] = $member,
                 $member instanceof PropertyDecl => $properties[] = $member,
                 $member instanceof MethodDecl && $member->kind === 'constructor' => $constructor = $member,
                 $member instanceof MethodDecl && $member->kind === 'static_constructor' => $staticConstructor = $member,
+                $member instanceof MethodDecl && $member->kind === 'finalizer' => $finalizer = $member,
                 $member instanceof MethodDecl => $methods[] = $member,
                 default => null,
             };
@@ -156,6 +158,13 @@ trait EmitsDeclarations
                 $this->w->blank();
             }
             $this->tolerating(fn () => $this->emitMethod($method, false));
+        }
+
+        if ($finalizer !== null) {
+            if ($sections++ > 0) {
+                $this->w->blank();
+            }
+            $this->tolerating(fn () => $this->emitFinalizer($finalizer, $symbol));
         }
 
         if ($symbol->isRecord && !isset($symbol->members['ToString'])) {
@@ -670,6 +679,49 @@ trait EmitsDeclarations
         if ($this->flow->isReachable() && !$isIterator) {
             throw $this->error('SP0161', "$what: not all code paths return a value", $at);
         }
+    }
+
+    /**
+     * ~Name() as __destruct: PHP runs it as soon as the object is freed (when its last reference goes,
+     * or when the cycle collector frees it), unless GC.SuppressFinalize(obj) was called. Like C#, the
+     * base class's finalizer runs after it, even when it throws.
+     */
+    private function emitFinalizer(MethodDecl $finalizer, TypeSymbol $symbol): void
+    {
+        $this->w->sourceLine = $finalizer->line;
+        $this->w->line('public function __destruct()');
+        $this->w->line('{');
+        $this->w->indent();
+        $this->w->line('if (' . $this->runtime('System\\GC') . '::isFinalizerSuppressed($this)) {');
+        $this->w->line('    return;');
+        $this->w->line('}');
+        $callsBase = $this->baseHasFinalizer($symbol);
+        if ($callsBase) {
+            $this->w->line('try {');
+            $this->w->indent();
+        }
+        $this->inFunction(new FunctionContext(false, Type::void(), $symbol->typeParamTypes), function () use ($finalizer): void {
+            $this->inScope(fn () => $this->methodBody($finalizer, Type::void()));
+        });
+        if ($callsBase) {
+            $this->w->outdent();
+            $this->w->line('} finally {');
+            $this->w->line('    parent::__destruct();');
+            $this->w->line('}');
+        }
+        $this->w->outdent();
+        $this->w->line('}');
+    }
+
+    private function baseHasFinalizer(TypeSymbol $symbol): bool
+    {
+        for ($base = $symbol->baseClass !== null ? $this->symbols->find($symbol->baseClass) : null; $base !== null; $base = $base->baseClass !== null ? $this->symbols->find($base->baseClass) : null) {
+            if ($base->hasFinalizer || ($base->external && method_exists($base->fqn, '__destruct'))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function methodBody(MethodDecl $method, Type $returnType): void

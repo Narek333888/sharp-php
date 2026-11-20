@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0
+
+- Generic variance as in C#: the compiler compares generic arguments in conversions. `List<Dog>` is no
+  longer accepted as a `List<Animal>` (or a `List<int>` as a `List<string>`), while covariant and
+  contravariant conversions work: `IEnumerable<Dog>` and `Dog[]` to `IEnumerable<Animal>`, `Func<Dog>` to
+  `Func<Animal>`, `Action<Animal>` to `Action<Dog>`, and interfaces declared `interface I<out T>` /
+  `interface I<in T>`. Variance safety of interfaces is checked (SP1961), and `in`/`out` on a class or
+  method type parameter is an error (SP1960). Casts between invariant generic classes with other
+  arguments are errors too; delegate types are named `Func<...>` / `Action<...>` in messages
+- `using` statements and declarations (`using (var r = ...) { }`, `using (expr) ...`, `using var r = ...;`),
+  disposing in reverse order on every exit (SP1674 for a type that is not `IDisposable`)
+- Finalizers `~Name()`, compiled to `__destruct` (the base finalizer runs after), with `GC.SuppressFinalize`
+- `System.GC` (`Collect`, `GetTotalMemory`, `CollectionCount`, `SuppressFinalize`, `ReRegisterForFinalize`,
+  `WaitForPendingFinalizers`, `KeepAlive`), `WeakReference<T>` / `WeakReference`, and
+  `System.Runtime.CompilerServices.ConditionalWeakTable<TKey, TValue>`
+- `new object()`, and the discard `out _`
+- README: a **Memory** section on how PHP's memory management differs from .NET's
+
 ## 0.4.2
 
 - Records and anonymous objects implement `JsonSerializable`: a Laravel controller that returns one sends

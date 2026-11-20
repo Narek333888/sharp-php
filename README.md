@@ -331,7 +331,8 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - Constructors with `: base(...)`, expression-bodied constructors, static constructors
 - Fields, `const`, `readonly`, `static`
 - Properties: auto (`{ get; set; }`, `{ get; private set; }`, `{ get; init; }`, get-only), with initializers, expression-bodied (`=> ...`), full `get { } set { }` with `value`, abstract and interface properties, static properties (with accessor bodies they become `get_Name()`/`set_Name()` methods)
-- Methods: `virtual` / `override` / `abstract`, expression bodies, default and named arguments, `params`, `ref`, `out` (incl. `out var x`)
+- Methods: `virtual` / `override` / `abstract` (an override may return a more derived type), expression bodies, default and named arguments, `params`, `ref`, `out` (incl. `out var x` and the discard `out _`), `in`
+- Finalizers `~Name() { ... }`, which run when the object is freed (see [Memory](#memory))
 - Records: `record Point(int X, int Y);` with value equality (`==`), C#-style `ToString()` (every public property) and `with` expressions (`p with { X = 5 }`)
 - Enums: `enum Color { Red, Green = 5 }`, `(int)color`, `(Color)1`, `color.ToString()`
 
@@ -339,6 +340,7 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 
 - Generic classes, interfaces and methods: `class Box<T>`, `interface IRepository<T>`, `T Max<T>(T a, T b)`
 - Constraints: `where T : IShape, new()` — a class/interface constraint becomes the PHP parameter type
+- Variance as in C#: `List<Dog>` is not a `List<Animal>` (classes are invariant), while `IEnumerable<Dog>`, `Dog[]` and `Func<Dog>` are an `IEnumerable<Animal>`, an `Animal[]` and a `Func<Animal>`, and an `Action<Animal>` is an `Action<Dog>`. Interfaces declare it: `interface IProducer<out T>`, `interface IConsumer<in T>`; the compiler checks that `out T` is only produced and `in T` only consumed (SP1961)
 - Type inference for generic methods, including through lambdas: `box.Map(x => x * 2)` is a `Box<int>`
 - The compiler tracks generic arguments, so `List<string>` elements are known to be strings (`names[0].Length`)
 - Runtime checks: `new List<int>()` rejects non-integers, like C# (`ArgumentException`)
@@ -349,6 +351,7 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - `if`/`else`, `while`, `do`, `for`, `foreach` (incl. `foreach (var (key, value) in dict)`), `break`, `continue`
 - `switch` statements (with patterns and `when`), `switch` expressions
 - `try`/`catch`/`finally`, exception filters (`catch (E e) when (...)`), `throw;`, throw expressions (`x ?? throw ...`)
+- `using (var file = Open()) { ... }`, `using (expression) ...` and `using var file = Open();` (disposed at the end of the block): `Dispose()` runs however the block is left, in reverse order for several resources
 - `yield return` / `yield break` with `IEnumerable<T>`
 - Lambdas `x => x * 2`, `(a, b) => { ... }`, closures with C# capture semantics, method groups (`list.ForEach(Print)`)
 - Pattern matching: `is T x`, `is null`, `is not null`, `is > 0 and < 10`, `or`, `not`, `var`, `_`, property patterns (`Circle { R: > 10 } c`, `{ Name: var n, Age: >= 18 }`, `{ Home.City: "Paris" }`)
@@ -387,6 +390,7 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - `System.Web`: `WebApp`, `HttpRequest`, `HttpResponse`, `Results`, `IResult` (see [Web apps](#web-apps)); `System.Net.WebUtility` (`HtmlEncode`, `UrlEncode`, ...)
 - `System.Threading.Tasks`: `Task`, `Task<T>` (see [Async and await](#async-and-await)); `System.Net.Http`: `HttpClient`, `HttpResponseMessage`, `StringContent`
 - `System.Text.Json`: `JsonSerializer.Serialize(value, options)` with `JsonSerializerOptions` (`WriteIndented`, `PropertyNamingPolicy = JsonNamingPolicy.CamelCase`)
+- Memory: `GC` (`Collect`, `GetTotalMemory`, `SuppressFinalize`, `CollectionCount`, ...), `WeakReference<T>` / `WeakReference`, `System.Runtime.CompilerServices.ConditionalWeakTable<TKey, TValue>`; `new object()`
 - Exceptions: `Exception`, `ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`, `InvalidOperationException`, `NotImplementedException`, `NotSupportedException`, `FormatException`, `IndexOutOfRangeException`, `DivideByZeroException`, `InvalidCastException`, `NullReferenceException`, `KeyNotFoundException`, ...
 
 ## Async and await
@@ -578,12 +582,31 @@ Unhandled exception. System.InvalidOperationException: Queue empty.
    at App.Program.Main() in /app/src/Program.sphp:line 8
 ```
 
+## Memory
+
+SharpPHP uses PHP's memory management, which frees objects earlier and more predictably than .NET's
+garbage collector:
+
+- An object is freed as soon as its last reference goes (reference counting); objects that only reference
+  each other are freed by PHP's cycle collector, which runs by itself and on `GC.Collect()`.
+- So a finalizer (`~Name()`, compiled to `__destruct`) runs right then, not on some later collection, and
+  `GC.WaitForPendingFinalizers()` has nothing to wait for. `GC.SuppressFinalize(this)` in `Dispose()` stops it,
+  as in .NET. The base class's finalizer runs after the derived one.
+- For resources (files, connections, locks) use `IDisposable` with `using`: it releases them at a known point,
+  also when an exception is thrown.
+- In a web request all memory is freed when the request ends, so leaks matter only in long-running processes
+  (console daemons, async servers). `GC.GetTotalMemory(false)` is `memory_get_usage()`.
+- PHP's `memory_limit` caps a process; going over it is a fatal error, not a catchable `OutOfMemoryException`.
+- `WeakReference<T>` and `ConditionalWeakTable` don't keep their targets alive (PHP's `WeakReference` and `WeakMap`).
+
 ## Differences from C#
 
 SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 
 - No method or constructor overloading (PHP has one method per name; names are case-insensitive)
-- Generics are checked by the compiler and erased at runtime (only the built-in collections check element types); `typeof(List<int>).Name` is `List`
+- Generics are checked by the compiler and erased at runtime (only the built-in collections check element types); `typeof(List<int>).Name` is `List`, and `new T()` is not supported
+- `object` stands for any value, also as a generic argument: `IEnumerable<object> xs = new List<int>()` compiles (C# rejects it, `int` being a value type)
+- Finalizers run when the object is freed, at a known point (see [Memory](#memory)), not when a garbage collection happens to run
 - Arrays (`int[]`) are PHP arrays and are copied on assignment (value semantics)
 - Integer arithmetic is 64-bit and does not wrap: `int.MaxValue + 1` is `2147483648`, not `-2147483648`
 - `ulong` is limited to `long.MaxValue` (there is no `ulong.MaxValue`); `decimal`/`float`/`double` are PHP floats
@@ -592,7 +615,7 @@ SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 - The runtime library implements the common .NET APIs, not all of them (no `StringComparison`, `ThenBy`, `Zip`, `DateTime.Now`, ...)
 - A named argument for a `params` parameter (`string.Join(separator: ",", values: words)`) is not supported; pass it positionally
 - `async`/`await` runs on one thread (Fibers and an event loop): waiting overlaps, CPU work does not; there is no `CancellationToken`, `ConfigureAwait`, `ValueTask` or `IAsyncEnumerable`
-- Not supported: nested types, operator overloading, indexers, extension methods, events/delegates declarations, LINQ query syntax, tuples, `using` statements, `goto`, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters
+- Not supported: nested types, operator overloading, indexers, extension methods, events/delegates declarations, LINQ query syntax, tuples, `goto`, `ref` locals and `ref` returns, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters
 
 ## Development
 

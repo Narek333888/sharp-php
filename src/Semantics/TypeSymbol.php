@@ -31,6 +31,8 @@ final class TypeSymbol
     public bool $isStruct = false;
 
     public bool $hasConstructor = false;
+    /** Declares a finalizer (~Name()), compiled to __destruct. */
+    public bool $hasFinalizer = false;
 
     /** @var list<ParameterSymbol>|null parameters of the declared constructor (null: none declared, or unknown) */
     public ?array $constructorParams = null;
@@ -43,6 +45,17 @@ final class TypeSymbol
 
     /** @var array{0: string, 1: int, 2: int}|null where it is declared: file, line, column */
     public ?array $location = null;
+
+    /** @var array<string, 'in'|'out'> variant type parameters (interface IBox<out T>), by name */
+    public array $variance = [];
+
+    /**
+     * Generic arguments of the base class and interfaces, in terms of this type's own parameters:
+     * for "class Box<T> : IBox<T>", ['ibox' => [T]]. Keyed by lowercase FQN.
+     *
+     * @var array<string, list<Type>>
+     */
+    public array $supertypeArgs = [];
 
     public function __construct(
         public readonly string $kind,

@@ -1,0 +1,42 @@
+using System;
+
+public class Res : IDisposable
+{
+    private readonly string name;
+    public Res(string name) { this.name = name; Console.WriteLine($"open {name}"); }
+    public void Dispose() => Console.WriteLine($"dispose {name}");
+}
+
+class Program
+{
+    static int Early()
+    {
+        using var r = new Res("early");
+        if (true) { return 1; }
+    }
+
+    static void Main()
+    {
+        using (var a = new Res("a"))
+        {
+            Console.WriteLine("body a");
+        }
+        using (Res b = new Res("b"), c = new Res("c"))
+            Console.WriteLine("body bc");
+        using (new Res("expr")) { Console.WriteLine("body expr"); }
+        try
+        {
+            using var d = new Res("d");
+            using var e = new Res("e");
+            Console.WriteLine("before throw");
+            throw new InvalidOperationException("boom");
+        }
+        catch (InvalidOperationException ex) { Console.WriteLine($"caught {ex.Message}"); }
+        Console.WriteLine(Early());
+        Res? none = null;
+        using (none) { Console.WriteLine("null resource"); }
+        Memory.Run();
+        using var last = new Res("last");
+        Console.WriteLine("end of Main");
+    }
+}

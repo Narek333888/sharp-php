@@ -275,6 +275,22 @@ final class Type
         return $this->describe() === $other->describe();
     }
 
+    /** Func<int, string> / Action<int> for a closure type; "delegate" when its signature is unknown. */
+    public function delegateName(): string
+    {
+        if ($this->kind !== 'closure' || $this->args === []) {
+            return 'delegate';
+        }
+        $return = $this->closureReturn();
+        $args = array_slice($this->args, 0, -1);
+        if ($return->kind !== 'void') {
+            $args[] = $return;
+        }
+        $base = $return->kind === 'void' ? 'Action' : 'Func';
+
+        return $args === [] ? $base : $base . '<' . implode(', ', array_map(static fn (Type $t): string => $t->describe(), $args)) . '>';
+    }
+
     /** C#-style description for diagnostics. */
     public function describe(): string
     {
@@ -284,7 +300,7 @@ final class Type
             'null' => 'null',
             'array' => $this->isPhpArray() ? 'array' : $this->element()->describe() . '[]',
             'iterable' => 'IEnumerable<' . $this->element()->describe() . '>',
-            'closure' => 'delegate',
+            'closure' => $this->delegateName(),
             'typeparam' => (string) $this->param,
             'class' => Names::csharpName((string) $this->class) . ($this->args !== []
                 ? '<' . implode(', ', array_map(static fn (Type $t): string => $t->describe(), $this->args)) . '>'

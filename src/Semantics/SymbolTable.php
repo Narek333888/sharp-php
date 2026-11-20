@@ -219,6 +219,44 @@ final class SymbolTable
         return false;
     }
 
+    /**
+     * The generic arguments $target has as a supertype of $from with arguments $fromArgs: for
+     * "class Box<T> : IBox<T>", Box<Dog> is an IBox<Dog>, so [Dog]. Null when they are not known
+     * (a PHP class, a base type named without its arguments).
+     *
+     * @param list<Type> $fromArgs
+     * @return list<Type>|null
+     */
+    public function supertypeArgs(TypeSymbol $from, array $fromArgs, string $target, int $depth = 0): ?array
+    {
+        if (strcasecmp($from->fqn, ltrim($target, '\\')) === 0) {
+            return count($fromArgs) === count($from->typeParams) ? $fromArgs : null;
+        }
+        if ($depth > 32) {
+            return null;
+        }
+        $map = [];
+        foreach ($from->typeParams as $i => $name) {
+            $map[$name] = $fromArgs[$i] ?? Type::mixed();
+        }
+        foreach ([$from->baseClass, ...$from->interfaces] as $super) {
+            if ($super === null || !$this->isSubtypeOf($super, $target)) {
+                continue;
+            }
+            $symbol = $this->find($super);
+            $args = $from->supertypeArgs[strtolower($super)] ?? null;
+            if ($symbol === null || $args === null) {
+                return null;
+            }
+            $result = $this->supertypeArgs($symbol, array_map(static fn (Type $t): Type => $t->substitute($map), $args), $target, $depth + 1);
+            if ($result !== null) {
+                return $result;
+            }
+        }
+
+        return null;
+    }
+
     public function isThrowable(string $fqn): bool
     {
         return $this->isSubtypeOf($fqn, 'Throwable');

@@ -837,14 +837,7 @@ trait EmitsMembers
     /** Func<int, string> / Action<int> for a closure type. */
     private function delegateName(Type $closure): string
     {
-        $return = $closure->closureReturn();
-        $args = array_slice($closure->args, 0, -1);
-        if ($return->kind !== 'void') {
-            $args[] = $return;
-        }
-        $base = $return->kind === 'void' ? 'Action' : 'Func';
-
-        return $args === [] ? $base : $base . '<' . implode(', ', array_map(static fn (Type $t): string => $t->describe(), $args)) . '>';
+        return $closure->args === [] ? 'Action' : $closure->delegateName();
     }
 
     /**
@@ -886,6 +879,9 @@ trait EmitsMembers
                     : ($expected?->withNullable(false) ?? Type::mixed());
                 $this->declareLocal($arg->value->name, $declType, $arg->value);
                 $value = Emitted::value('$' . $arg->value->name, $declType);
+            } elseif ($arg->modifier === 'out' && $arg->value instanceof NameExpr && $arg->value->name === '_' && $this->scope->lookup('_') === null) {
+                // out _: a discard; PHP passes a variable by reference, so a fresh one nobody reads.
+                $value = Emitted::value($this->currentFunction()->temp('discard'), $expected ?? Type::mixed());
             } elseif ($arg->modifier === 'ref' || $arg->modifier === 'out') {
                 $value = $this->place($arg->value);
                 if ($value->member?->isStaticAccessor) {

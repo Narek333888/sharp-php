@@ -769,6 +769,14 @@ trait EmitsExpressions
 
     private function newExpr(NewExpr $e, ?Type $expected): Emitted
     {
+        // new object(): a plain object (a lock, a sentinel, a key of a ConditionalWeakTable).
+        if ($e->type !== null && in_array($e->type->name, ['object', 'Object', 'System.Object'], true) && $e->type->args === []) {
+            if ($e->args !== [] || $e->initializer !== null) {
+                throw $this->error('SP1729', "'object' does not contain a constructor that takes " . count($e->args) . ' arguments', $e);
+            }
+
+            return Emitted::value('new \\stdClass()', Type::mixed());
+        }
         $type = $e->type !== null ? $this->resolveType($e->type) : $expected?->withNullable(false);
         if ($type === null || !$type->isClass()) {
             throw $this->error('SP8754', $type === null

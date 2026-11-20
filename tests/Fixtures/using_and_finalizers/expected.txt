@@ -1,0 +1,44 @@
+open a
+body a
+dispose a
+open b
+open c
+body bc
+dispose c
+dispose b
+open expr
+body expr
+dispose expr
+open d
+open e
+before throw
+dispose e
+dispose d
+caught boom
+open early
+dispose early
+1
+null resource
+a finalized
+Base finalized
+after a = null
+cycle unreachable
+x finalized
+Base finalized
+y finalized
+Base finalized
+after GC.Collect
+Handle disposed
+System.Object
+Object
+True
+False
+False
+attached
+True
+end
+key finalized
+Base finalized
+open last
+end of Main
+dispose last

@@ -73,6 +73,7 @@ use SharpPhp\Syntax\TypeDecl;
 use SharpPhp\Syntax\TypeOfExpr;
 use SharpPhp\Syntax\TypeRef;
 use SharpPhp\Syntax\UnaryExpr;
+use SharpPhp\Syntax\UsingStmt;
 use SharpPhp\Syntax\UsingDirective;
 use SharpPhp\Syntax\VarDeclarator;
 use SharpPhp\Syntax\WhileStmt;
@@ -178,7 +179,7 @@ final class Parser
             array_unshift($namespaces, (new NamespaceDecl('', [], $globalTypes))->at($start));
         }
 
-        return (new CompilationUnit($this->file, $usings, $namespaces, $topLevel))->at($start);
+        return (new CompilationUnit($this->file, $usings, $namespaces, $this->withUsingDeclarations($topLevel)))->at($start);
     }
 
     /** @return list<UsingDirective> */
@@ -307,7 +308,8 @@ final class Parser
         }
 
         $name = $this->expectIdentifier('type name')->text();
-        $typeParams = $this->check('<') ? $this->parseTypeParameterList() : [];
+        $variance = [];
+        $typeParams = $this->check('<') ? $this->parseTypeParameterList($kind === 'interface', $variance) : [];
         $recordParams = $kind === 'record' && $this->check('(') ? $this->parseParameterList() : [];
 
         $baseTypes = [];
@@ -336,20 +338,34 @@ final class Parser
             $this->accept(';');
         }
 
-        return (new TypeDecl($kind, $name, $modifiers, $typeParams, $baseTypes, $members, $recordParams, $enumMembers, $constraints))->at($start);
+        return (new TypeDecl($kind, $name, $modifiers, $typeParams, $baseTypes, $members, $recordParams, $enumMembers, $constraints, $variance))->at($start);
     }
 
-    /** @return list<string> */
-    private function parseTypeParameterList(): array
+    /**
+     * <T, in TIn, out TOut>. Variance (in/out) is allowed only where $variant (interfaces), as in C#.
+     *
+     * @param array<string, 'in'|'out'> $variance the variant parameters, by name
+     * @return list<string>
+     */
+    private function parseTypeParameterList(bool $variant = false, array &$variance = []): array
     {
         $this->expect('<');
         $names = [];
         do {
             $this->skipAttributes();
+            $modifier = null;
             if ($this->check('in') || $this->check('out')) {
-                $this->advance();
+                $token = $this->advance();
+                if (!$variant) {
+                    throw $this->error('Invalid variance modifier. Only interface and delegate type parameters can be specified as variant.', $token, 'SP1960');
+                }
+                $modifier = $token->text() === 'in' ? 'in' : 'out';
             }
-            $names[] = $this->expectIdentifier('type parameter')->text();
+            $name = $this->expectIdentifier('type parameter')->text();
+            $names[] = $name;
+            if ($modifier !== null) {
+                $variance[$name] = $modifier;
+            }
         } while ($this->accept(','));
         $this->expect('>');
 
@@ -408,6 +424,34 @@ final class Parser
         return $members;
     }
 
+    /**
+     * ~Name() { ... }: runs when the object is freed (compiled to PHP's __destruct).
+     *
+     * @param list<string> $modifiers
+     */
+    private function parseFinalizer(Token $start, array $modifiers, string $typeName, string $typeKind): MethodDecl
+    {
+        $tilde = $this->advance();
+        if ($modifiers !== []) {
+            throw $this->error("The modifier '{$modifiers[0]}' is not valid for this item", $start, 'SP0106');
+        }
+        $name = $this->expectIdentifier('type name');
+        if ($name->text() !== $typeName) {
+            throw $this->error('Name of destructor must match name of type', $name, 'SP0574');
+        }
+        if ($typeKind === 'struct' || $typeKind === 'interface') {
+            throw $this->error('Only class types can contain destructors', $tilde, 'SP0575');
+        }
+        $this->expect('(');
+        if (!$this->check(')')) {
+            throw $this->error("')' expected (a finalizer has no parameters)", $this->current(), 'SP1026');
+        }
+        $this->expect(')');
+        [$body, $exprBody] = $this->parseMethodBody();
+
+        return (new MethodDecl([], null, '~' . $typeName, [], [], $body, $exprBody, 'finalizer', null, [], []))->at($tilde);
+    }
+
     private function parseMember(string $typeName, string $typeKind): Node
     {
         $this->skipAttributes();
@@ -419,7 +463,7 @@ final class Parser
             throw $this->error('Nested types are not supported; declare the type at namespace level', $token, 'SP1010');
         }
         if ($token->is('~')) {
-            throw $this->error('Finalizers are not supported', $token, 'SP1010');
+            return $this->parseFinalizer($start, $modifiers, $typeName, $typeKind);
         }
         if ($token->is('event') || $token->is('delegate')) {
             throw $this->error("'{$token->text()}' declarations are not supported", $token, 'SP1010');
@@ -745,7 +789,7 @@ final class Parser
         }
         $this->expect('}');
 
-        return (new Block($statements))->at($start);
+        return (new Block($this->withUsingDeclarations($statements)))->at($start);
     }
 
     public function parseStatement(): Stmt
@@ -822,7 +866,7 @@ final class Parser
 
                     return (new LocalDecl($type, $declarators, true))->at($token);
                 case 'using':
-                    throw $this->error("'using' statements are not supported", $token, 'SP1010');
+                    return $this->parseUsingStatement();
                 case 'lock':
                 case 'goto':
                 case 'checked':
@@ -859,6 +903,45 @@ final class Parser
         $this->expect(';');
 
         return (new ExprStmt($expr))->at($token);
+    }
+
+    /** using (var r = ...) statement, using (expression) statement, or "using var r = ...;". */
+    private function parseUsingStatement(): UsingStmt
+    {
+        $token = $this->advance();
+        if ($this->accept('(')) {
+            $declaration = $this->tryParseLocalDeclaration();
+            $expression = $declaration === null ? $this->parseExpression() : null;
+            $this->expect(')');
+
+            return (new UsingStmt($declaration, $expression, $this->parseEmbeddedStatement(), false))->at($token);
+        }
+        $declaration = $this->tryParseLocalDeclaration()
+            ?? throw $this->error("'(' or a variable declaration expected after 'using'", $this->current());
+        $this->expect(';');
+
+        return (new UsingStmt($declaration, null, null, true))->at($token);
+    }
+
+    /**
+     * "using var r = ...;" disposes r at the end of the enclosing block: the statements after it
+     * become the body of the using statement.
+     *
+     * @param list<Stmt> $statements
+     * @return list<Stmt>
+     */
+    private function withUsingDeclarations(array $statements): array
+    {
+        foreach ($statements as $i => $statement) {
+            if ($statement instanceof UsingStmt && $statement->body === null) {
+                $rest = $this->withUsingDeclarations(array_slice($statements, $i + 1));
+                $body = (new Block($rest))->at($statement);
+
+                return [...array_slice($statements, 0, $i), (new UsingStmt($statement->declaration, null, $body, true))->at($statement)];
+            }
+        }
+
+        return $statements;
     }
 
     /** Statement used as a body of if/while/for; a bare declaration is not allowed there. */
@@ -979,7 +1062,7 @@ final class Parser
                 }
                 $statements[] = $this->parseStatement();
             }
-            $sections[] = (new SwitchSection($labels, $statements))->at($sectionStart);
+            $sections[] = (new SwitchSection($labels, $this->withUsingDeclarations($statements)))->at($sectionStart);
         }
         $this->expect('}');
 
