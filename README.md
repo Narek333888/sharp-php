@@ -27,10 +27,40 @@ public class Program
 public record Person(string Name, int Age);
 ```
 
+## Features
+
+- **The C# you know:** classes, records, structs, interfaces, enums, properties, generics with constraints and
+  variance, extension methods, lambdas and closures, LINQ, pattern matching, `switch` expressions, exceptions
+  with filters, `using` and `IDisposable`, `yield return`, `async`/`await`: see the [Language guide](#language-guide)
+- **C#'s semantics, not PHP's:** integer division, value equality of records, banker's rounding, checked casts,
+  `IndexOutOfRangeException` and `NullReferenceException`: see [Semantics that match C#](#semantics-that-match-c)
+- **The C# compiler's errors at compile time:** types, arguments, definite assignment, access rules, missing
+  returns, with C#'s messages; exceptions are reported with `.sphp` lines: see [Errors](#errors)
+- **A .NET-style library:** `Console`, `Math`, `string`, `List`, `Dictionary`, `HashSet`, `Queue`, `Stack`, LINQ,
+  `Task`, `HttpClient`, `JsonSerializer`, `GC`: see [Runtime library](#runtime-library)
+- **Web apps** in the style of ASP.NET Core minimal APIs: `app.MapGet("/users/{id:int}", ...)`, see [Web apps](#web-apps)
+- **Async and await** on PHP fibers, with HTTP requests running at the same time: see [Async and await](#async-and-await)
+- **PHP both ways:** SharpPHP calls PHP classes, functions and Composer packages; PHP calls SharpPHP classes;
+  collections and PHP arrays are converted: see [Mixing PHP and SharpPHP](#mixing-php-and-sharpphp)
+- **Laravel:** controllers, services, models and jobs written in SharpPHP: see [Laravel](#laravel)
+- **Editors:** PhpStorm and VS Code get highlighting, completion, parameter info, errors while typing, hover
+  and go to definition: see [PhpStorm setup](#phpstorm-setup) and [VS Code setup](#vs-code-setup)
+- **Command line:** cached builds, `sharp run`, `sharp serve`, `sharp check` for CI: see [Command line](#command-line)
+
+## Contents
+
+[Requirements](#requirements) · [Installation](#installation) · [Quick start](#quick-start) ·
+[Command line](#command-line) · [Web apps](#web-apps) · [PhpStorm setup](#phpstorm-setup) ·
+[VS Code setup](#vs-code-setup) · [Configuration](#configuration) · [Language guide](#language-guide) ·
+[Extension methods](#extension-methods) · [Runtime library](#runtime-library) · [Async and await](#async-and-await) ·
+[Mixing PHP and SharpPHP](#mixing-php-and-sharpphp) · [Laravel](#laravel) · [Errors](#errors) · [Memory](#memory) ·
+[Differences from C#](#differences-from-c) · [Development](#development)
+
 ## Requirements
 
 - PHP 8.4 or newer, tested on 8.4 and 8.5 (the generated code uses property hooks and asymmetric visibility)
-- `ext-mbstring`
+- `ext-mbstring` and `ext-ctype` (enabled in almost every PHP build)
+- `ext-curl`, only for `HttpClient`
 
 ## Installation
 
@@ -116,6 +146,11 @@ or [VS Code setup](#vs-code-setup) (two minutes, once per editor).
 | `sharp check [--project=DIR]` | Compile without writing files (CI) |
 | `sharp compile <file.sphp>` | Print the PHP generated for one file |
 | `sharp clean [--project=DIR]` | Delete the build directory |
+| `sharp lsp` | The language server, for editors (LSP over stdin/stdout): see [Other editors](#other-editors) |
+| `sharp vscode [--package=FILE]` | Install the VS Code extension, or only write its `.vsix`: see [VS Code setup](#vs-code-setup) |
+| `sharp --version` | Print the version |
+
+In a Laravel app, `php artisan sharp:build [--force]` builds the sources (see [Laravel](#laravel)).
 
 ## Web apps
 
@@ -411,19 +446,37 @@ new List<string> { "a", "b" }.Second();    // "b", a string: T comes from the re
 
 ## Runtime library
 
-`System` maps to `SharpPhp\Runtime\System`:
+`System` maps to `SharpPhp\Runtime\System`, and works as in .NET. `System`, `System.Collections.Generic`,
+`System.Linq`, `System.Threading.Tasks` and `System.Net.Http` are imported implicitly; the other namespaces
+below need a `using`.
 
-- `Console` (`WriteLine`, `Write`, `ReadLine`, composite formatting `"{0:F2}"`)
-- `Math`, `Convert`, `Environment`, `Random`, `Array`
-- `string` / `String` (`Join`, `Format`, `IsNullOrEmpty`, `Split`, `Substring`, `PadLeft`, `Contains`, ...), `char`, `int.Parse`/`TryParse`, `double.Parse`
-- Integral types with their real ranges: `int.MaxValue`, `long.MaxValue`, `short`, `byte`, `sbyte`, `ushort`, `uint` (`Parse` throws `OverflowException` when out of range)
-- `System.Collections.Generic`: `List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `Queue<T>`, `Stack<T>`, `KeyValuePair`
-- `System.Linq`: `Where`, `Select`, `SelectMany`, `OrderBy(Descending)`, `GroupBy`, `First(OrDefault)`, `Any`, `All`, `Count`, `Sum`, `Min`, `Max`, `Average`, `Distinct`, `Take`, `Skip`, `Aggregate`, `ToList`, `ToArray`, `ToDictionary`, `Enumerable.Range`, ... (on arrays and all collections)
-- `System.Web`: `WebApp`, `HttpRequest`, `HttpResponse`, `Results`, `IResult` (see [Web apps](#web-apps)); `System.Net.WebUtility` (`HtmlEncode`, `UrlEncode`, ...)
-- `System.Threading.Tasks`: `Task`, `Task<T>` (see [Async and await](#async-and-await)); `System.Net.Http`: `HttpClient`, `HttpResponseMessage`, `StringContent`
-- `System.Text.Json`: `JsonSerializer.Serialize(value, options)` with `JsonSerializerOptions` (`WriteIndented`, `PropertyNamingPolicy = JsonNamingPolicy.CamelCase`)
-- Memory: `GC` (`Collect`, `GetTotalMemory`, `SuppressFinalize`, `CollectionCount`, ...), `WeakReference<T>` / `WeakReference`, `System.Runtime.CompilerServices.ConditionalWeakTable<TKey, TValue>`; `new object()`
-- Exceptions: `Exception`, `ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`, `InvalidOperationException`, `NotImplementedException`, `NotSupportedException`, `FormatException`, `IndexOutOfRangeException`, `DivideByZeroException`, `InvalidCastException`, `NullReferenceException`, `KeyNotFoundException`, ...
+| Type | Members |
+|---|---|
+| `Console` | `WriteLine`, `Write`, `ReadLine`; composite formatting: `Console.WriteLine("{0} costs {1:F2}", name, price)` |
+| `Math` | `Abs`, `Atan2`, `Cbrt`, `Ceiling`, `Clamp`, `Cos`, `Exp`, `Floor`, `Log`, `Log10`, `Log2`, `Max`, `Min`, `Pow`, `Round` (banker's rounding), `Sign`, `Sin`, `Sqrt`, `Tan`, `Truncate`; `PI`, `E`, `Tau` |
+| `string` / `String` | `Length`, `s[i]`; `Compare`, `CompareTo`, `Concat`, `Contains`, `EndsWith`, `Equals`, `Format`, `IndexOf`, `Insert`, `IsNullOrEmpty`, `IsNullOrWhiteSpace`, `Join`, `LastIndexOf`, `PadLeft`, `PadRight`, `Remove`, `Replace`, `Split`, `StartsWith`, `Substring`, `ToCharArray`, `ToLower`, `ToLowerInvariant`, `ToUpper`, `ToUpperInvariant`, `Trim`, `TrimEnd`, `TrimStart`; `string.Empty` |
+| `char` | `IsDigit`, `IsLetter`, `IsLetterOrDigit`, `IsLower`, `IsUpper`, `IsWhiteSpace`, `ToLower`, `ToUpper`; a `char` is a number in arithmetic (`c - '0'`) |
+| `int`, `long`, `short`, `byte`, `sbyte`, `ushort`, `uint`, `ulong` | `Parse`, `TryParse` (`OverflowException` out of range), `MaxValue`, `MinValue`, `CompareTo`, `ToString("D3")` |
+| `double`, `float`, `decimal` | `Parse`, `TryParse`, `IsNaN`, `IsInfinity`, `NaN`, `PositiveInfinity`, `NegativeInfinity`, `Epsilon`, `MaxValue`, `MinValue`, `ToString("F2")` |
+| `bool` | `Parse`, `TryParse`; `ToString()` gives `True` / `False` |
+| `Convert` | `ToBoolean`, `ToDouble`, `ToInt32`, `ToString` |
+| `Environment` | `NewLine`, `Exit`, `GetEnvironmentVariable` |
+| `Random` | `Next`, `NextDouble` |
+| `Array` | `Empty`, `Exists`, `Fill`, `Find`, `IndexOf`, `Resize`, `Reverse`, `Sort`; arrays have `Length` and the LINQ methods |
+| `Type` (`typeof(T)`, `value.GetType()`) | `Name`, `FullName`, `Namespace` |
+| `List<T>` | `Count`, `list[i]`, `Add`, `AddRange`, `Clear`, `Contains`, `Exists`, `Find`, `FindAll`, `FindIndex`, `ForEach`, `GetRange`, `IndexOf`, `Insert`, `Remove`, `RemoveAll`, `RemoveAt`, `Reverse`, `Sort`, `ToArray`, `TrueForAll` |
+| `Dictionary<TKey, TValue>` | `Count`, `Keys`, `Values`, `dict[key]` (`KeyNotFoundException` when missing), `Add`, `Clear`, `ContainsKey`, `ContainsValue`, `GetValueOrDefault`, `Remove`, `TryAdd`, `TryGetValue`; `foreach (var (key, value) in dict)`, `KeyValuePair` |
+| `HashSet<T>` | `Count`, `Add`, `Clear`, `Contains`, `ExceptWith`, `IntersectWith`, `Remove`, `UnionWith` |
+| `Queue<T>` / `Stack<T>` | `Count`, `Enqueue`, `Dequeue`, `TryDequeue`, `Peek`, `Clear` / `Count`, `Push`, `Pop`, `Peek`, `Clear` |
+| LINQ, on arrays and collections | `Aggregate`, `All`, `Any`, `Average`, `Concat`, `Contains`, `Count`, `Distinct`, `ElementAt`, `First`, `FirstOrDefault`, `GroupBy`, `Last`, `LastOrDefault`, `Max`, `Min`, `OrderBy`, `OrderByDescending`, `Reverse`, `Select`, `SelectMany`, `SequenceEqual`, `Single`, `Skip`, `SkipWhile`, `Sum`, `Take`, `TakeWhile`, `ToArray`, `ToDictionary`, `ToList`, `Where`; `Enumerable.Range`, `Enumerable.Repeat` |
+| `Task`, `Task<T>` | `Run`, `Delay`, `WhenAll`, `WhenAny`, `FromResult`, `FromException`, `CompletedTask`; `Result`, `Wait`, `IsCompleted`, `IsCompletedSuccessfully`, `IsFaulted`, `Exception`: see [Async and await](#async-and-await) |
+| `HttpClient` (needs `ext-curl`) | `GetStringAsync`, `GetAsync`, `PostAsync`, `PutAsync`, `DeleteAsync`, `AddDefaultHeader`, `BaseAddress`, `Timeout`, `Dispose`; `HttpResponseMessage` (`StatusCode`, `IsSuccessStatusCode`, `ReasonPhrase`, `Headers`, `Content.ReadAsStringAsync()`, `EnsureSuccessStatusCode()`), `StringContent` |
+| `WebUtility` (`System.Net`) | `HtmlEncode`, `HtmlDecode`, `UrlEncode`, `UrlDecode` |
+| `JsonSerializer` (`System.Text.Json`) | `Serialize(value, options)` with `JsonSerializerOptions` (`WriteIndented`, `PropertyNamingPolicy = JsonNamingPolicy.CamelCase`) |
+| `System.Web` | `WebApp`, `HttpRequest`, `HttpResponse`, `Results`, `IResult`: see [Web apps](#web-apps) |
+| Memory | `GC` (`Collect`, `CollectionCount`, `GetTotalMemory`, `KeepAlive`, `ReRegisterForFinalize`, `SuppressFinalize`, `WaitForPendingFinalizers`), `WeakReference<T>`, `WeakReference`, `ConditionalWeakTable<TKey, TValue>` (`System.Runtime.CompilerServices`), `new object()`: see [Memory](#memory) |
+| Interfaces | `IDisposable` (for `using`), `IComparable<T>` (for `OrderBy` and `Sort`), `IEquatable<T>`, `IEnumerable<T>` |
+| Exceptions | `Exception` (`Message`, `InnerException`, `StackTrace`), `SystemException`, `ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`, `ArithmeticException`, `DivideByZeroException`, `FormatException`, `IndexOutOfRangeException`, `InvalidCastException`, `InvalidOperationException`, `KeyNotFoundException`, `NotImplementedException`, `NotSupportedException`, `NullReferenceException`, `OverflowException`, `TimeoutException`, `HttpRequestException`; classes of your own can derive from them |
 
 ## Async and await
 
