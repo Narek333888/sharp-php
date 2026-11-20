@@ -84,6 +84,13 @@ minor version. Require the newer version once, as above, and `composer update` f
 `composer show armdevstack/sharp-php` prints the installed version; [CHANGELOG.md](CHANGELOG.md) lists
 what changed. The build in `var/sharp` is redone automatically after an upgrade.
 
+**On Windows, stop the language server before upgrading.** While an editor runs it, it keeps
+`vendor/bin/sharp` open, Windows does not let Composer replace that file, and the upgrade stops half-way
+(`Failed to open stream: Permission denied`). In PhpStorm: **View → Tool Windows → Language Servers**,
+right-click **SharpPHP** → **Stop**; in VS Code: close the project's window. Upgrade, then open a `.sphp`
+file and the server starts again. After a failed upgrade, stopping the server and running
+`composer install` completes it.
+
 ## Quick start
 
 **1. Write a program** in `src/Program.sphp` (any number of `.sphp` files in any sub-directories of `src/`):
@@ -308,6 +315,7 @@ indexed: PhpStorm then completes those classes in `.php` files too. Otherwise ri
 | The **Language Servers** window shows that SharpPHP cannot start | PhpStorm did not find `php` (common on macOS, where an IDE started from the Dock does not see Homebrew). In **Settings → Languages & Frameworks → Language Servers (LSP4IJ) → SharpPHP**, set **Command:** to the full path of PHP: `/opt/homebrew/bin/php $PROJECT_DIR$/vendor/bin/sharp lsp` (`which php` in a terminal prints the path) |
 | You want to see what the server does | **View → Tool Windows → Language Servers** → SharpPHP: the **Logs** tab; for every request set **Trace:** to `verbose` on the server's **Debug** tab |
 | No completion after a dot | The file has a syntax error somewhere else: fix it first (it is underlined) |
+| `composer update` fails on Windows with `vendor\bin/sharp): Failed to open stream: Permission denied` | The running language server keeps that file open: stop it (**Language Servers** → right-click **SharpPHP** → **Stop**), run `composer install`, then open a `.sphp` file again (see [Upgrading](#upgrading)) |
 
 ## VS Code setup
 

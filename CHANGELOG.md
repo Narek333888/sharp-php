@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- README: on Windows, stop the language server before upgrading (it keeps `vendor/bin/sharp` open), and
+  how to complete an upgrade that stopped half-way
+- CI: `actions/checkout@v6` (v4 ran on the deprecated Node.js 20)
+
 ## 0.6.1
 
 - A lambda that writes an element of a captured array (`() => names[0] = "Bob"`, `i => counts[i]++`)
