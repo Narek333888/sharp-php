@@ -23,4 +23,12 @@ jobs:
 
       - run: composer install --no-interaction --no-progress
 
-      - run: composer test
+      # composer test, in steps: PHPStan, then PHPUnit with a JUnit report.
+      - run: composer analyse
+
+      - id: phpunit
+        run: vendor/bin/phpunit --log-junit junit.xml
+
+      # Each failed test becomes an annotation in the run's summary, with its message.
+      - if: failure() && steps.phpunit.outcome == 'failure'
+        run: php .github/report-test-failures.php junit.xml
