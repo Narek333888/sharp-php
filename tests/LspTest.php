@@ -159,6 +159,27 @@ final class LspTest extends TestCase
         $this->assertSame("```csharp\n(extension) string TextExtensions.Shout(this string text, int times = ...)\n```", $hover['contents']['value'] ?? null);
     }
 
+    public function testDateTimeAndNullableMembers(): void
+    {
+        $static = $this->complete('        DateTime.');
+        foreach (['Now', 'UtcNow', 'Parse', 'TryParse', 'MinValue', 'Compare'] as $name) {
+            $this->assertContains($name, $static);
+        }
+        $this->assertNotContains('op_Addition', $static, 'operator methods are internal');
+
+        $instance = $this->complete('        var d = DateTime.Now; d.');
+        foreach (['Year', 'DayOfWeek', 'AddDays', 'Subtract', 'ToString'] as $name) {
+            $this->assertContains($name, $instance);
+        }
+
+        $nullable = $this->complete('        DateTime? when = null; when.');
+        foreach (['HasValue', 'Value', 'GetValueOrDefault', 'Equals'] as $name) {
+            $this->assertContains($name, $nullable);
+        }
+        $this->assertNotContains('Year', $nullable, "DateTime?'s members are Nullable<T>'s, as in C#: when.Value.Year");
+        $this->assertContains('HasValue', $this->complete('        int? count = null; count.'));
+    }
+
     public function testDiagnosticsFollowTheOpenDocument(): void
     {
         $this->workspace->open($this->program, str_replace('string title = "x";', 'int title = "x";', self::PROGRAM));

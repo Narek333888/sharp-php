@@ -49,6 +49,11 @@ final class CodeGenTest extends TestCase
         yield 'array element read' => ['int[] a = new int[2]; var x = a[1];', "\$a = \\array_fill(0, 2, 0);\n\$x = \$a[1];"];
         yield 'lambda writing an array element' => ['int[] a = new int[1]; Action f = () => a[0] = 1;', "\$a = \\array_fill(0, 1, 0);\n\$f = function () use (&\$a) {\nreturn \$a[Op::index(\$a, 0)] = 1;\n};"];
         yield 'lambda reading an array' => ['int[] a = new int[1]; Func<int> f = () => a[0];', "\$a = \\array_fill(0, 1, 0);\n\$f = fn () => \$a[0];"];
+        yield 'operator of a runtime type' => ['var span = new DateTime(2024, 1, 2) - new DateTime(2024, 1, 1);', '$span = DateTime::op_Subtraction(new DateTime(2024, 1, 2), new DateTime(2024, 1, 1));'];
+        yield 'comparison of a runtime type' => ['bool later = DateTime.Now > DateTime.Today;', '$later = DateTime::Compare(DateTime::get_Now(), DateTime::get_Today()) > 0;'];
+        yield 'negation of a runtime type' => ['var back = -TimeSpan.FromHours(1);', '$back = TimeSpan::op_UnaryNegation(TimeSpan::FromHours(1.0));'];
+        yield 'lifted operator' => ['DateTime? d = null; var e = d == DateTime.Today;', "\$d = null;\n\$e = Op::equals(\$d, DateTime::get_Today());"];
+        yield 'nullable HasValue and Value' => ['int? n = null; var has = n.HasValue; var v = n.GetValueOrDefault(3);', "\$n = null;\n\$has = \$n !== null;\n\$v = \$n ?? 3;"];
     }
 
     #[DataProvider('expressions')]

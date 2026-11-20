@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `DateTime` and `TimeSpan`, as in .NET: `DateTime.Now`, `new DateTime(2024, 12, 31)`, the date parts,
+  `AddDays`, `AddMonths`, ..., the standard and custom formats (`ToString("yyyy-MM-dd")`,
+  `$"{date:dddd, MMMM d}"`), `Parse`, `TryParse`, `ParseExact`, UTC and local time; `TimeSpan.FromMinutes(90)`,
+  `TotalHours`, `ToString(@"hh\:mm")`, `Parse`. With their operators: `end - start` is a `TimeSpan`,
+  `date + span`, `-span`, and dates and spans compare with `<`, `>`, `==` by value. Also `DateTimeKind`
+  and `DayOfWeek`
+- **Changed:** `DateTime` now means `System.DateTime` (as `Exception` means `System.Exception`); for PHP's
+  `\DateTime` use an alias: `using PhpDateTime = DateTime;`
+- Nullable value types have `HasValue`, `Value` (`InvalidOperationException` when there is none) and
+  `GetValueOrDefault()`: `int? n`, `DateTime? due`; `==` and `<` on a `DateTime?` work as C#'s lifted
+  operators
+- `default(T)`, new arrays and `FirstOrDefault()` give C#'s default of an enum (its member of value 0), of
+  `DateTime` and `TimeSpan`, and `null` for `int?` (they gave `null`, `null` and `0`)
+- Interpolated strings apply escapes in a format, as C# does: `$"{span:hh\\:mm}"` formats with `hh\:mm`
+- New compile errors from C#: CS0019 for an operator a type does not define (`DateTime + DateTime`) and
+  CS0023 for `-` on a type that cannot be negated (`-date`, `-person`)
 - `System.Text.StringBuilder`: `Append`, `AppendLine`, `AppendFormat`, `AppendJoin`, `Insert`, `Remove`,
   `Replace`, `Clear`, `ToString`, `Length`, `Capacity` and `sb[i]`, chaining as in .NET
 - `StringComparison` for `Equals`, `Compare`, `Contains`, `StartsWith`, `EndsWith`, `IndexOf`, `LastIndexOf`

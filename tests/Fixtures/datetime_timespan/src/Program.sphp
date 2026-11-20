@@ -1,0 +1,93 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+enum Color { Red, Green }
+
+public class Program
+{
+    public static void Main()
+    {
+        // Parts and formats (en-US, as SharpPHP has no cultures).
+        var d = new DateTime(2024, 2, 29, 14, 5, 9, 250);
+        Console.WriteLine(d);
+        Console.WriteLine(d.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + d.ToString("dddd, MMMM d, yyyy h:mm tt") + " | " + d.ToString("d") + " | " + d.ToString("s") + " | " + d.ToString("o"));
+        Console.WriteLine($"{d:MMM dd} {d:yy} {d.DayOfWeek} {d.DayOfYear} {d.Year}/{d.Month}/{d.Day} {d.Hour}:{d.Minute}:{d.Second}.{d.Millisecond}");
+
+        // Calendar arithmetic: Feb 29 + 1 year is Feb 28; Jan 31 + 1 month is the end of February.
+        Console.WriteLine(d.AddYears(1).ToString("d") + " " + new DateTime(2024, 1, 31).AddMonths(1).ToString("d") + " " + d.AddDays(1.5).ToString("g"));
+
+        // Operators: DateTime - DateTime is a TimeSpan, DateTime +/- TimeSpan a DateTime, comparisons.
+        var start = new DateTime(2024, 1, 1);
+        TimeSpan span = d - start;
+        Console.WriteLine(span + " | " + span.Days + "d " + span.Hours + "h " + (int)span.TotalHours);
+        Console.WriteLine((start + TimeSpan.FromHours(36)).ToString("G") + " | " + (d - TimeSpan.FromMinutes(5)).ToString("t"));
+        Console.WriteLine((d > start) + " " + (d < start) + " " + (d == new DateTime(2024, 2, 29, 14, 5, 9, 250)) + " " + (d != start) + " " + (start <= start));
+        var later = d;
+        later += TimeSpan.FromDays(1);
+        later -= TimeSpan.FromHours(1);
+        Console.WriteLine(later.ToString("yyyy-MM-dd HH:mm") + " " + d.Date.ToString("G") + " " + d.TimeOfDay);
+        Console.WriteLine("Due: " + d.ToString("d") + " in " + TimeSpan.FromDays(2));
+
+        // Parsing
+        Console.WriteLine(DateTime.Parse("2024-03-15").ToString("D") + " | " + DateTime.Parse("3/15/2024 4:30 PM").ToString("s") + " | " + DateTime.ParseExact("15.03.2024", "dd.MM.yyyy", null).ToString("d"));
+        Console.WriteLine(DateTime.TryParse("not a date", out var bad) + " " + bad.ToString("s") + " " + DateTime.TryParse("2024-12-25 08:00", out var xmas) + " " + xmas.ToString("f"));
+        try
+        {
+            DateTime.Parse("31/31/2024");
+        }
+        catch (FormatException)
+        {
+            Console.WriteLine("FormatException");
+        }
+        try
+        {
+            var invalid = new DateTime(2023, 2, 29);
+        }
+        catch (ArgumentOutOfRangeException e)
+        {
+            Console.WriteLine(e.Message);
+        }
+
+        Console.WriteLine(DateTime.DaysInMonth(2023, 2) + " " + DateTime.IsLeapYear(2000) + " " + DateTime.IsLeapYear(1900) + " " + DateTime.MinValue.ToString("s") + " " + DateTime.MaxValue.Year);
+        var dates = new List<DateTime> { new(2024, 5, 1), new(2023, 1, 1), new(2024, 1, 1) };
+        Console.WriteLine(string.Join(", ", dates.OrderBy(x => x).Select(x => x.ToString("yyyy-MM-dd"))) + " | max " + dates.Max().ToString("yyyy-MM-dd"));
+        Console.WriteLine((DateTime.Now > new DateTime(2020, 1, 1)) + " " + ((DateTime.Now - DateTime.Now).TotalSeconds < 1) + " " + DateTime.UtcNow.Kind + " " + DateTime.Today.Hour);
+
+        // TimeSpan
+        Console.WriteLine(new TimeSpan(1, 30, 0) + " " + new TimeSpan(2, 3, 4, 5) + " " + TimeSpan.FromMilliseconds(1500) + " " + TimeSpan.FromSeconds(90).TotalMinutes + " " + TimeSpan.FromMinutes(-90));
+        Console.WriteLine(TimeSpan.FromHours(25).ToString("g") + " | " + TimeSpan.FromHours(25).ToString(@"hh\:mm") + " | " + TimeSpan.Parse("1.02:03:04.5").TotalSeconds + " | " + (TimeSpan.FromHours(1) > TimeSpan.FromMinutes(59)) + " " + (TimeSpan.FromHours(1) + TimeSpan.FromMinutes(30)) + " " + TimeSpan.FromMinutes(-5).Duration());
+        Console.WriteLine($"{TimeSpan.FromSeconds(3725):hh\\:mm\\:ss} {new DateTime(2024, 7, 4):yyyy}");
+        var hour = TimeSpan.FromHours(1);
+        Console.WriteLine(-hour + " " + -(-hour) + " " + (start - hour).ToString("s"));
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { When = new DateTime(2024, 1, 15, 9, 30, 0), Took = TimeSpan.FromSeconds(1.5) }));
+
+        // Nullable value types: HasValue, Value, GetValueOrDefault
+        int? none = null;
+        int? five = 5;
+        Color? color = null;
+        DateTime? when = null;
+        Console.WriteLine(none.HasValue + " " + five.HasValue + " " + five.Value + " " + none.GetValueOrDefault() + " " + none.GetValueOrDefault(9) + " " + color.GetValueOrDefault() + " " + when.GetValueOrDefault().ToString("s") + " " + (when == null));
+        when = new DateTime(2024, 5, 1);
+        Console.WriteLine(when.HasValue + " " + when.Value.ToString("d"));
+
+        // Lifted operators: == compares the values, < is false with a null side, + gives null.
+        DateTime? nothing = null;
+        var may1 = new DateTime(2024, 5, 1);
+        DateTime? next = when + TimeSpan.FromDays(1);
+        Console.WriteLine((when == may1) + " " + (when != may1) + " " + (nothing == may1) + " " + (when <= may1) + " " + (nothing < may1) + " " + next.Value.ToString("d") + " " + (nothing + TimeSpan.FromDays(1)).HasValue);
+
+        // default(T) of value types
+        DateTime unset = default;
+        var slots = new DateTime[2];
+        Console.WriteLine(unset.ToString("s") + " " + slots[1].Year + " " + new List<DateTime>().FirstOrDefault().Year + " " + default(Color) + " " + new Color[1][0] + " " + default(TimeSpan) + " " + (default(int?) == null));
+        try
+        {
+            Console.WriteLine(none.Value);
+        }
+        catch (InvalidOperationException e)
+        {
+            Console.WriteLine(e.Message);
+        }
+    }
+}

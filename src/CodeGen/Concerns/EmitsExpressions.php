@@ -9,8 +9,10 @@ use SharpPhp\CodeGen\Emitted;
 use SharpPhp\CodeGen\FunctionContext;
 use SharpPhp\CodeGen\LambdaContext;
 use SharpPhp\CodeGen\Prec;
+use SharpPhp\Semantics\MemberSymbol;
 use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\Type;
+use SharpPhp\Semantics\TypeSymbol;
 use SharpPhp\Syntax\AnonymousObjectExpr;
 use SharpPhp\Syntax\AwaitExpr;
 use SharpPhp\Syntax\ArrayCreationExpr;
@@ -262,6 +264,10 @@ trait EmitsExpressions
 
         $operand = $op === '!' ? $this->convert($e->operand, Type::bool()) : $this->charToInt($this->expr($e->operand));
 
+        if ($op === '-' && $operand->type->withNullable(false)->isClass() && ($negation = $this->negationMethod($operand, $e)) !== null) {
+            return $negation;
+        }
+
         return match ($op) {
             '-' => Emitted::value('-' . $this->unaryOperand($operand, '-'), $operand->type->isNumeric() ? $operand->type : Type::mixed(), Prec::UNARY),
             '+' => $operand,
@@ -306,6 +312,10 @@ trait EmitsExpressions
             && !in_array($op, ['&&', '||', '??'], true) && !($comparison && $l->type->isChar() && $r->type->isChar())) {
             $l = $this->charToInt($l);
             $r = $this->charToInt($r);
+        }
+        $defined = $this->operatorMethod($op, $l, $r, $at);
+        if ($defined !== null) {
+            return $defined;
         }
 
         $lt = $l->type;
@@ -381,6 +391,109 @@ trait EmitsExpressions
         }
 
         throw $this->error('SP1010', "Unsupported operator '$op'", $at);
+    }
+
+    /**
+     * An operator that a class of the runtime library defines with a static method tagged
+     * "@sharp-operator" (MemberSymbol::$operator): end - start is DateTime::op_Subtraction($end, $start),
+     * a TimeSpan, and a < b is DateTime::Compare($a, $b) < 0. Only for two operands of class types, so
+     * text + date stays a concatenation and date == null the default equality.
+     *
+     * With a nullable operand (DateTime?) the operator is C#'s lifted one: == and != compare the values
+     * (Op::equals), <, >, <= and >= are false when a side is null, + and - give null.
+     *
+     * Null when no class of the operands defines the operator; C#'s CS0019 when one does, but not for
+     * these operand types.
+     */
+    private function operatorMethod(string $op, Emitted $l, Emitted $r, \SharpPhp\Syntax\Node $at): ?Emitted
+    {
+        $kind = match ($op) {
+            '+', '-' => $op,
+            '<', '>', '<=', '>=', '==', '!=' => 'compare',
+            default => null,
+        };
+        $lt = $l->type->withNullable(false);
+        $rt = $r->type->withNullable(false);
+        if ($kind === null || !$lt->isClass() || !$rt->isClass()) {
+            return null;
+        }
+        $defined = false;
+        foreach ([$lt, $rt] as $operand) {
+            foreach ($this->symbolForType($operand)->members ?? [] as $member) {
+                if ($member->operator !== $kind || count($member->params) !== 2) {
+                    continue;
+                }
+                $defined = true;
+                if ($this->conversions->isImplicit($lt, $member->params[0]->type) && $this->conversions->isImplicit($rt, $member->params[1]->type)) {
+                    return $l->type->nullable || $r->type->nullable
+                        ? $this->liftedOperator($op, $member, $l, $r)
+                        : $this->operatorCall($op, $member, $l, $r);
+                }
+            }
+        }
+        if ($defined) {
+            throw $this->error('SP0019', "Operator '$op' cannot be applied to operands of type '{$l->type->describe()}' and '{$r->type->describe()}'", $at);
+        }
+
+        return null;
+    }
+
+    /** Class::op_Addition($l, $r), or Class::Compare($l, $r) <op> 0 for a comparison. */
+    private function operatorCall(string $op, MemberSymbol $member, Emitted $l, Emitted $r): Emitted
+    {
+        $call = $this->classRef($member->owner->fqn) . '::' . $member->name . "({$l->code}, {$r->code})";
+        if ($member->operator !== 'compare') {
+            return Emitted::value($call, $member->type);
+        }
+
+        return Emitted::value("$call $op 0", Type::bool(), $op === '==' || $op === '!=' ? Prec::EQ : Prec::REL);
+    }
+
+    /** The lifted operator of operatorMethod(), for operands that can be null. */
+    private function liftedOperator(string $op, MemberSymbol $member, Emitted $l, Emitted $r): Emitted
+    {
+        $op_ = $this->runtime('Op');
+        $method = $this->classRef($member->owner->fqn) . '::' . $member->name . '(...)';
+        if ($op === '==' || $op === '!=') {
+            $equals = "$op_::equals({$l->code}, {$r->code})";
+
+            return $op === '==' ? Emitted::value($equals, Type::bool()) : Emitted::value("!$equals", Type::bool(), Prec::UNARY);
+        }
+        if ($member->operator === 'compare') {
+            return Emitted::value("$op_::liftedCompare({$l->code}, {$r->code}, $method, '$op')", Type::bool());
+        }
+
+        return Emitted::value("$op_::lifted($method, {$l->code}, {$r->code})", $member->type->withNullable());
+    }
+
+    /**
+     * -span: the negation a class of the runtime library defines with a one-parameter
+     * "@sharp-operator -" method (TimeSpan::op_UnaryNegation), lifted for a nullable operand.
+     * C#'s CS0023 for a project class and for a runtime class with other operators but not this
+     * one (-date); null for other PHP classes, which may overload operators themselves (GMP).
+     */
+    private function negationMethod(Emitted $operand, UnaryExpr $e): ?Emitted
+    {
+        $symbol = $this->symbolForType($operand->type->withNullable(false));
+        if ($symbol === null) {
+            return null;
+        }
+        $hasOperators = false;
+        foreach ($symbol->members as $member) {
+            $hasOperators = $hasOperators || $member->operator !== null;
+            if ($member->operator === '-' && count($member->params) === 1) {
+                $method = $this->classRef($member->owner->fqn) . '::' . $member->name;
+
+                return $operand->type->nullable
+                    ? Emitted::value($this->runtime('Op') . "::lifted($method(...), {$operand->code})", $member->type->withNullable())
+                    : Emitted::value("$method({$operand->code})", $member->type);
+            }
+        }
+        if ($hasOperators || !$symbol->external) {
+            throw $this->error('SP0023', "Operator '-' cannot be applied to operand of type '{$operand->type->describe()}'", $e);
+        }
+
+        return null;
     }
 
     private function infix(string $op, Emitted $l, Emitted $r, int $prec, Type $type): Emitted
@@ -479,7 +592,8 @@ trait EmitsExpressions
             '+' => $type->isString() || $vt->isString() ? '.=' : ($bothNumeric ? '+=' : null),
             '/' => $bothNumeric && !$bothInt ? '/=' : null,
             '%' => $bothInt ? '%=' : null,
-            '-', '*', '<<', '>>', '&', '|', '^' => $binaryOp . '=',
+            // Objects have no PHP operators: date -= span goes through binaryOperation() (operatorMethod()).
+            '-', '*', '<<', '>>', '&', '|', '^' => $type->isClass() || $vt->isClass() ? null : $binaryOp . '=',
             default => null,
         };
         if ($compound !== null) {
@@ -743,8 +857,24 @@ trait EmitsExpressions
         return Emitted::value(self::phpString($name), Type::string());
     }
 
+    /**
+     * default(T): 0, 0.0, false, '\0'; an enum's member of value 0 (PHP enums hold only their members, so
+     * an enum without one gives null); new T() for a struct of the runtime library (DateTime.MinValue,
+     * TimeSpan.Zero); null for every other type, and for every nullable one (default(int?)).
+     */
     private function defaultValue(?Type $type): Emitted
     {
+        if ($type !== null && $type->nullable) {
+            return Emitted::value('null', $type);
+        }
+        $symbol = $type !== null && $type->isClass() ? $this->symbolForType($type) : null;
+        if ($type !== null && $symbol !== null && $symbol->isEnum() && $this->isIntBackedEnum($symbol)) {
+            return Emitted::value($this->classRef($symbol->fqn) . '::tryFrom(0)', $type);
+        }
+        if ($type !== null && $symbol !== null && $symbol->isStruct && $symbol->external) {
+            return Emitted::value('new ' . $this->classRef($symbol->fqn) . '()', $type);
+        }
+
         return match ($type?->kind) {
             'int' => Emitted::value('0', Type::int()),
             'float' => Emitted::value('0.0', Type::float()),
@@ -752,6 +882,16 @@ trait EmitsExpressions
             'char' => Emitted::value('"\\0"', Type::char()),
             default => Emitted::value('null', $type?->withNullable() ?? Type::null()),
         };
+    }
+
+    /** Project enums compile to int-backed PHP enums; a PHP library's enum may be backed by strings, or not at all. */
+    private function isIntBackedEnum(TypeSymbol $symbol): bool
+    {
+        if (!$symbol->external) {
+            return true;
+        }
+
+        return enum_exists($symbol->fqn) && (string) (new \ReflectionEnum($symbol->fqn))->getBackingType() === 'int';
     }
 
     private function thisExpr(ThisExpr $e): Emitted

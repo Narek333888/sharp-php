@@ -36,8 +36,9 @@ public record Person(string Name, int Age);
   `IndexOutOfRangeException` and `NullReferenceException`: see [Semantics that match C#](#semantics-that-match-c)
 - **The C# compiler's errors at compile time:** types, arguments, definite assignment, access rules, missing
   returns, with C#'s messages; exceptions are reported with `.sphp` lines: see [Errors](#errors)
-- **A .NET-style library:** `Console`, `Math`, `string`, `List`, `Dictionary`, `HashSet`, `Queue`, `Stack`, LINQ,
-  `Task`, `HttpClient`, `JsonSerializer`, `GC`: see [Runtime library](#runtime-library)
+- **A .NET-style library:** `Console`, `Math`, `string`, `StringBuilder`, `DateTime`, `TimeSpan`, `List`,
+  `Dictionary`, `HashSet`, `Queue`, `Stack`, LINQ, `Task`, `HttpClient`, `JsonSerializer`, `GC`: see
+  [Runtime library](#runtime-library)
 - **Web apps** in the style of ASP.NET Core minimal APIs: `app.MapGet("/users/{id:int}", ...)`, see [Web apps](#web-apps)
 - **Async and await** on PHP fibers, with HTTP requests running at the same time: see [Async and await](#async-and-await)
 - **PHP both ways:** SharpPHP calls PHP classes, functions and Composer packages; PHP calls SharpPHP classes;
@@ -380,6 +381,7 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - Finalizers `~Name() { ... }`, which run when the object is freed (see [Memory](#memory))
 - Records: `record Point(int X, int Y);` with value equality (`==`), C#-style `ToString()` (every public property) and `with` expressions (`p with { X = 5 }`)
 - Enums: `enum Color { Red, Green = 5 }`, `(int)color`, `(Color)1`, `color.ToString()`
+- Nullable value types: `int?`, `Color?`, `DateTime?` with `HasValue`, `Value` (`InvalidOperationException` when there is none) and `GetValueOrDefault()`; `default(T)`, new arrays and `FirstOrDefault()` give C#'s defaults (`0`, `false`, an enum's member of value 0, `DateTime.MinValue`, `null` for `int?`)
 
 ### Generics
 
@@ -451,6 +453,9 @@ new List<string> { "a", "b" }.Second();    // "b", a string: T comes from the re
 | `(int)'A'`, `'a' + 1`, `c - '0'` | `65`, `97 + 1`, `\mb_ord($c) - 48` (char is an integral type) |
 | `(char)66`, `c++` | `\mb_chr(66)`, `$c = \mb_chr(\mb_ord($c) + 1)` |
 | `obj.Name` when `obj` is null | `NullReferenceException` |
+| `end - start`, `date + span` (`DateTime`, `TimeSpan`) | `DateTime::op_Subtraction($end, $start)` (a `TimeSpan`), `DateTime::op_Addition($date, $span)` |
+| `a < b`, `a == b` (dates, spans) | `DateTime::Compare($a, $b) < 0`, `DateTime::Compare($a, $b) == 0` (by value) |
+| `n.HasValue`, `n.Value` (`int? n`) | `$n !== null`, `$n ?? throw new InvalidOperationException(...)` |
 
 ## Runtime library
 
@@ -468,6 +473,8 @@ below need a `using`.
 | `int`, `long`, `short`, `byte`, `sbyte`, `ushort`, `uint`, `ulong` | `Parse`, `TryParse` (`OverflowException` out of range), `MaxValue`, `MinValue`, `CompareTo`, `ToString("D3")` |
 | `double`, `float`, `decimal` | `Parse`, `TryParse`, `IsNaN`, `IsInfinity`, `NaN`, `PositiveInfinity`, `NegativeInfinity`, `Epsilon`, `MaxValue`, `MinValue`, `ToString("F2")` |
 | `bool` | `Parse`, `TryParse`; `ToString()` gives `True` / `False` |
+| `DateTime` | `Now`, `UtcNow`, `Today`, `MinValue`, `MaxValue`, `UnixEpoch`; `new DateTime(2024, 12, 31[, 18, 30, 0[, 500]][, DateTimeKind.Utc])`, `new DateTime(ticks)`; `Year`, `Month`, `Day`, `Hour`, `Minute`, `Second`, `Millisecond`, `Microsecond`, `DayOfWeek`, `DayOfYear`, `Date`, `TimeOfDay`, `Ticks`, `Kind`; `Add`, `AddYears`, `AddMonths` (Jan 31 + 1 month is the end of February), `AddDays`, `AddHours`, `AddMinutes`, `AddSeconds`, `AddMilliseconds`, `AddTicks`, `Subtract`, `ToUniversalTime`, `ToLocalTime`, `SpecifyKind`, `Compare`, `CompareTo`, `Equals`, `DaysInMonth`, `IsLeapYear`; `ToString()` with the standard formats (`d`, `D`, `f`, `F`, `g`, `G`, `M`, `o`, `R`, `s`, `t`, `T`, `u`, `U`, `Y`) and custom ones (`yyyy-MM-dd HH:mm:ss.fff`, `ddd`, `dddd`, `MMM`, `MMMM`, `h`, `tt`, `zzz`, `K`, `'literal'`), also `$"{date:yyyy-MM-dd}"`; `ToShortDateString`, `ToLongDateString`, `ToShortTimeString`, `ToLongTimeString`; `Parse`, `TryParse`, `ParseExact`; `date - date` (a `TimeSpan`), `date + span`, `date - span`, `+=`, `-=`, `<`, `>`, `<=`, `>=`, `==`, `!=`; JSON as ISO 8601 (`"2024-01-15T09:30:00"`); `DateTimeKind`, `DayOfWeek` |
+| `TimeSpan` | `new TimeSpan(h, m, s)`, `(d, h, m, s[, ms])`, `(ticks)`; `FromDays`, `FromHours`, `FromMinutes`, `FromSeconds`, `FromMilliseconds`, `FromTicks`, `Zero`, `MaxValue`, `MinValue`; `Days`, `Hours`, `Minutes`, `Seconds`, `Milliseconds`, `Microseconds`, `Ticks`, `TotalDays`, `TotalHours`, `TotalMinutes`, `TotalSeconds`, `TotalMilliseconds`; `Add`, `Subtract`, `Negate`, `Duration`, `Multiply`, `Divide`, `Compare`, `CompareTo`, `Equals`; `ToString()` (`c`, `g`, `G`, custom `hh\:mm\:ss`, `d\.hh\:mm`), `Parse`, `TryParse`; `+`, `-`, `-span`, comparisons; `OverflowException` beyond its range |
 | `Convert` | `ToBoolean`, `ToDouble`, `ToInt32`, `ToString` |
 | `Environment` | `NewLine`, `Exit`, `GetEnvironmentVariable` |
 | `Random` | `Next`, `NextDouble` |
@@ -549,9 +556,12 @@ frameworks, libraries and existing code in PHP. Each side calls the other.
 
 **SharpPHP calling PHP**
 
-- Any PHP class is visible: global classes directly (`new DateTime()`), namespaced ones through `using`:
+- Any PHP class is visible: global classes directly (`new ArrayObject()`), namespaced ones through `using`:
   `using GuzzleHttp;` then `new Client()`. PHP's types (and PHPStan-style docblocks such as
   `@return array<string, int>`) are known to the compiler.
+- Where a .NET type of the runtime library has the name of a global PHP class (`DateTime`, `Exception`),
+  the .NET type wins, as `System` is imported. Name the PHP class through an alias:
+  `using PhpDateTime = DateTime;`, then `new PhpDateTime("now").format("Y-m-d")`.
 - Global PHP functions and constants can be called directly: `strlen(s)`, `in_array(x, list)`, `PHP_EOL`.
 
 **PHP calling SharpPHP**
@@ -706,10 +716,12 @@ SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 - `ulong` is limited to `long.MaxValue` (there is no `ulong.MaxValue`); `decimal`/`float`/`double` are PHP floats
 - `char` is a one-character string at runtime (it converts to its code where C# would use it as a number)
 - Values only know their PHP type at runtime: `5L.GetType()` is `System.Int32`, while `typeof(long)` is `System.Int64`
-- The runtime library implements the common .NET APIs, not all of them (no `DateTime`, `Zip` without a result selector, which returns tuples, ...)
+- The runtime library implements the common .NET APIs, not all of them (no `DateTimeOffset`, `TimeZoneInfo`, `DateOnly`, `TimeOnly`, `Zip` without a result selector, which returns tuples, ...)
+- There are no cultures: `DateTime` and `TimeSpan` format and parse as .NET's invariant culture does (`1/15/2024 9:30:00 AM`, English names), and local time is PHP's default time zone (`date_default_timezone_get()`). `DateTime.Parse` reads what PHP's date parser reads (ISO 8601, `1/15/2024 4:30 PM`, `January 15, 2024`), except relative dates such as `tomorrow`
+- A field of a struct type without an initializer (`public DateTime Due;`) is null until it is set; C# starts it at `DateTime.MinValue`. `default`, new arrays and `GetValueOrDefault()` give C#'s defaults
 - A named argument for a `params` parameter (`string.Join(separator: ",", values: words)`) is not supported; pass it positionally
 - `async`/`await` runs on one thread (Fibers and an event loop): waiting overlaps, CPU work does not; there is no `CancellationToken`, `ConfigureAwait`, `ValueTask` or `IAsyncEnumerable`
-- Not supported: nested types, operator overloading, indexers, events/delegates declarations, LINQ query syntax, tuples, `goto`, `ref` locals and `ref` returns, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters
+- Not supported: nested types, operator overloading in your own types (`DateTime` and `TimeSpan` have their operators), indexers, events/delegates declarations, LINQ query syntax, tuples, `goto`, `ref` locals and `ref` returns, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters
 
 ## Development
 

@@ -141,8 +141,11 @@ final class Completion
     private function valueMembers(array $receiver, SymbolTable $symbols): array
     {
         $type = $receiver['type'];
+        $symbol = $receiver['symbol'];
+        $valueType = $type->isValueType() || ($symbol !== null && ($symbol->isEnum() || $symbol->isStruct));
 
         return match (true) {
+            $type->nullable && $valueType => self::nullableItems($type),
             $type->isString() => [
                 self::item('Length', self::PROPERTY, 'int string.Length'),
                 ...$this->helperMembers(Names::RUNTIME_NAMESPACE . '\\System\\String_', 'string', $symbols),
@@ -160,6 +163,25 @@ final class Completion
             $receiver['symbol'] !== null => $this->typeMembers($receiver['symbol'], false, $receiver['class'], $symbols),
             default => self::objectItems(),
         };
+    }
+
+    /**
+     * Members of a nullable value type (int?, DateTime?): Nullable<T>'s HasValue, Value and
+     * GetValueOrDefault(). As in C#, the value's own members are reached through Value.
+     *
+     * @return list<Item>
+     */
+    private static function nullableItems(Type $type): array
+    {
+        $nullable = $type->describe();
+        $value = $type->withNullable(false)->describe();
+
+        return [
+            self::item('HasValue', self::PROPERTY, "bool $nullable.HasValue"),
+            self::item('Value', self::PROPERTY, "$value $nullable.Value"),
+            self::item('GetValueOrDefault', self::METHOD, "$value $nullable.GetValueOrDefault()"),
+            ...self::objectItems(),
+        ];
     }
 
     /**

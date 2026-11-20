@@ -115,6 +115,14 @@ final class Op
         if ($value instanceof \DateTimeInterface) {
             return $value->format(self::dateFormat($format));
         }
+        // $"{date:yyyy-MM-dd}", {0:c}: a value whose ToString takes a format (DateTime, TimeSpan) gets it.
+        if (is_object($value) && method_exists($value, 'ToString')) {
+            $first = (new \ReflectionMethod($value, 'ToString'))->getParameters()[0] ?? null;
+            $type = $first?->getType();
+            if ($type instanceof \ReflectionNamedType && $type->getName() === 'string') {
+                return self::str($value->ToString($format));
+            }
+        }
         if (!is_int($value) && !is_float($value)) {
             return self::str($value);
         }
@@ -200,6 +208,37 @@ final class Op
         }
 
         return $a === $b;
+    }
+
+    /**
+     * C#'s lifted operator for a + b, a - b and -a on nullable values (DateTime? + TimeSpan): null when
+     * an operand is null, else what the operator's method gives.
+     */
+    public static function lifted(\Closure $operator, mixed ...$operands): mixed
+    {
+        return in_array(null, $operands, true) ? null : $operator(...$operands);
+    }
+
+    /**
+     * C#'s lifted comparison of nullable values (DateTime? < DateTime?): false when either side is
+     * null, else the sign of $compare($a, $b) checked with the operator.
+     *
+     * @param \Closure(mixed, mixed): int $compare
+     * @param '<'|'>'|'<='|'>=' $op
+     */
+    public static function liftedCompare(mixed $a, mixed $b, \Closure $compare, string $op): bool
+    {
+        if ($a === null || $b === null) {
+            return false;
+        }
+        $sign = $compare($a, $b);
+
+        return match ($op) {
+            '<' => $sign < 0,
+            '>' => $sign > 0,
+            '<=' => $sign <= 0,
+            '>=' => $sign >= 0,
+        };
     }
 
     /**

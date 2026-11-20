@@ -335,8 +335,62 @@ trait EmitsMembers
                 $target = $this->valueOf($target, $e->target);
                 break;
         }
+        if ($mode !== 'assign') {
+            $nullable = $this->nullableMember($target, $e);
+            if ($nullable !== null) {
+                return $nullable;
+            }
+        }
 
         return $this->instanceMember($target, $e);
+    }
+
+    /**
+     * Nullable<T>'s properties on a nullable value type (int?, bool?, an enum?, a DateTime?): PHP keeps
+     * such a value as the value or null, so x.HasValue is $x !== null, and x.Value the value, or C#'s
+     * InvalidOperationException when there is none. Null for other members and types.
+     */
+    private function nullableMember(Emitted $target, MemberAccessExpr $e): ?Emitted
+    {
+        $type = $target->type;
+        if (($e->name !== 'HasValue' && $e->name !== 'Value') || $e->nullConditional || !$type->nullable || !$this->isValueType($type->withNullable(false))) {
+            return null;
+        }
+        if ($e->name === 'HasValue') {
+            return Emitted::value($this->wrap($target, Prec::EQ + 1) . ' !== null', Type::bool(), Prec::EQ);
+        }
+        $exception = $this->runtime('System\\InvalidOperationException');
+
+        return Emitted::value('(' . $this->wrap($target, Prec::COALESCE + 1) . " ?? throw new $exception('Nullable object must have a value.'))", $type->withNullable(false));
+    }
+
+    /**
+     * nullable.GetValueOrDefault() and GetValueOrDefault(value) on a nullable value type: the value, or
+     * the type's default (0, false, DateTime.MinValue), or the given value. Null for anything else.
+     *
+     * @param list<Argument> $args
+     */
+    private function nullableGetValueOrDefault(Emitted $target, MemberAccessExpr $callee, array $args): ?Emitted
+    {
+        $type = $target->type;
+        if ($callee->name !== 'GetValueOrDefault' || count($args) > 1 || !$type->nullable || !$this->isValueType($type->withNullable(false))) {
+            return null;
+        }
+        $valueType = $type->withNullable(false);
+        $fallback = $args !== [] ? $this->convert($args[0]->value, $valueType) : $this->defaultValue($valueType);
+
+        return Emitted::value($this->wrap($target, Prec::COALESCE + 1) . ' ?? ' . $this->wrap($fallback, Prec::COALESCE), $valueType, Prec::COALESCE);
+    }
+
+    /** A C# value type: a number, bool, char, an enum, or a struct (the runtime's DateTime and TimeSpan too). */
+    private function isValueType(Type $type): bool
+    {
+        if ($type->isValueType()) {
+            return true;
+        }
+        $symbol = $type->isClass() ? $this->symbolForType($type) : null;
+
+        return $symbol !== null && ($symbol->isEnum() || $symbol->isStruct);
     }
 
     private function staticMember(Emitted $type, MemberAccessExpr $e): Emitted
@@ -584,7 +638,7 @@ trait EmitsMembers
     private function valueTypeDefault(string $method, Emitted $call, ?Type $element): Emitted
     {
         if (!in_array($method, ['FirstOrDefault', 'LastOrDefault', 'SingleOrDefault', 'ElementAtOrDefault'], true)
-            || $element === null || $element->nullable || !$element->isValueType()) {
+            || $element === null || $element->nullable || !$this->isValueType($element)) {
             return $call;
         }
 
@@ -655,6 +709,10 @@ trait EmitsMembers
         $t = $target->type;
         $recv = $this->wrap($target, Prec::ATOM);
         $arrow = $nc ? '?->' : '->';
+
+        if (!$nc && ($orDefault = $this->nullableGetValueOrDefault($target, $callee, $args)) !== null) {
+            return $orDefault;
+        }
 
         // object.GetType(), for every value (numbers and strings too).
         if ($name === 'GetType' && $args === [] && $t->kind !== 'closure') {

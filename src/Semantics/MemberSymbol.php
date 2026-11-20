@@ -27,6 +27,13 @@ final class MemberSymbol
      */
     public bool $isExtension = false;
 
+    /**
+     * A static method of the runtime library that implements a C# operator, from its "@sharp-operator"
+     * tag: "+" or "-" (date + span, end - start; a one-parameter "-" is the negation -span), or
+     * "compare" for <, >, <=, >=, == and != (the method returns negative, zero or positive).
+     */
+    public ?string $operator = null;
+
     /** Project constants: the initializer expression (const bool Verbose = true;). */
     public ?\SharpPhp\Syntax\Expr $constantValue = null;
 

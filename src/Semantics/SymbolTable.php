@@ -423,6 +423,8 @@ final class SymbolTable
         if (preg_match('/@sharp-element\s+([^\r\n*]+)/', $doc, $m)) {
             $symbol->elementType = $this->docType($m[1], $symbol);
         }
+        // A runtime class that is a struct in .NET (DateTime, TimeSpan): a value type to C# code.
+        $symbol->isStruct = str_contains($doc, '@sharp-struct');
 
         foreach ($class->getReflectionConstants() as $constant) {
             if (!$constant->isPublic()) {
@@ -456,6 +458,9 @@ final class SymbolTable
             $member = new MemberSymbol('method', $method->getName(), $method->isStatic(), $type, $symbol, $params, $this->methodTemplates);
             if ($method->getFileName() !== false) {
                 $member->location = [$method->getFileName(), (int) $method->getStartLine(), 1];
+            }
+            if ($method->isStatic() && preg_match('/@sharp-operator\s+(\S+)/', $doc, $m) === 1) {
+                $member->operator = $m[1];
             }
             $this->methodTemplates = [];
             // Properties and methods live in different PHP namespaces (List.Count vs. list.Count()).

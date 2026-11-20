@@ -427,7 +427,7 @@ final class Lexer
                     $parts[] = $text;
                     $text = '';
                 }
-                $parts[] = $this->interpolationHole();
+                $parts[] = $this->interpolationHole($verbatim);
                 continue;
             }
             $text .= $c;
@@ -442,9 +442,12 @@ final class Lexer
     }
 
     /**
+     * One {expression[:format]} of an interpolated string. As in C#, the escape sequences of a regular
+     * (not verbatim) string apply to the format too: $"{span:hh\\:mm}" formats with hh\:mm.
+     *
      * @return array{expr: string, line: int, column: int, offset: int, format: ?string}
      */
-    private function interpolationHole(): array
+    private function interpolationHole(bool $verbatim): array
     {
         $holeLine = $this->line;
         $holeColumn = $this->column;
@@ -478,11 +481,15 @@ final class Lexer
             } elseif ($c === ':' && $depth === 0 && $this->peekChar(1) !== ':') {
                 $exprEnd = $this->pos;
                 $this->advance(1);
-                $formatStart = $this->pos;
+                $format = '';
                 while ($this->pos < $this->length && $this->text[$this->pos] !== '}') {
+                    if ($this->text[$this->pos] === '\\' && !$verbatim) {
+                        $format .= $this->escape();
+                        continue;
+                    }
+                    $format .= $this->text[$this->pos];
                     $this->advance(1);
                 }
-                $format = substr($this->text, $formatStart, $this->pos - $formatStart);
                 break;
             }
             $this->advance(1);
