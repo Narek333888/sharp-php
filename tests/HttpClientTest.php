@@ -6,7 +6,7 @@ namespace SharpPhp\Tests;
 
 /**
  * HttpClient with await: requests in flight at the same time, statuses, errors and request bodies,
- * against PHP's built-in web server (which answers each request after 300 ms).
+ * against PHP's built-in web server (which answers each request after 500 ms).
  */
 final class HttpClientTest extends TestCase
 {
@@ -40,11 +40,14 @@ final class HttpClientTest extends TestCase
             using System.Linq;
 
             var http = new HttpClient { BaseAddress = "$url" };
+            await http.GetStringAsync("/warm-up");
 
+            // One after another would take at least 1500 ms; at the same time about 500 ms.
             var started = Environment.TickCount;
             var pages = await Task.WhenAll(new[] { "/a", "/b", "/c" }.Select(u => http.GetStringAsync(u)));
+            var elapsed = Environment.TickCount - started;
             Console.WriteLine(string.Join(" | ", pages));
-            Console.WriteLine(Environment.TickCount - started < 800 ? "at the same time" : "one after another");
+            Console.WriteLine(elapsed < 1200 ? "at the same time" : \$"one after another ({elapsed} ms)");
 
             var missing = await http.GetAsync("/missing");
             Console.WriteLine(\$"{missing.StatusCode} {missing.ReasonPhrase} {missing.IsSuccessStatusCode}");
@@ -78,8 +81,8 @@ final class HttpClientTest extends TestCase
         $root = $this->tempDir();
         file_put_contents("$root/router.php", <<<'PHP'
             <?php
-            usleep(300000);
             $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+            if ($path !== '/warm-up') { usleep(500000); }
             if ($path === '/missing') { http_response_code(404); echo 'nope'; return; }
             if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Content-Type: application/json');
