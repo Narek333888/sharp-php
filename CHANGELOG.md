@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - `async` / `await`: async methods and lambdas, `Task` / `Task<T>` (`Run`, `Delay`, `WhenAll`, `WhenAny`,
   `FromResult`, `CompletedTask`, `Result`, `Wait`), `static async Task Main()` and `await` in top-level

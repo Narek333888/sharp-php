@@ -13,6 +13,9 @@ final class VsCodeExtensionTest extends TestCase
 {
     public function testPackage(): void
     {
+        if (!class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('Reading the package needs ext-zip');
+        }
         $vsix = $this->tempDir() . '/sharpphp.vsix';
         VsCodeExtension::package($vsix);
 
