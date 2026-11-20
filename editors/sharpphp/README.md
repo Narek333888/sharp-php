@@ -23,8 +23,8 @@ step.
 
 ### Requirements
 
-- The project requires SharpPHP 0.3 or newer, so that `vendor/bin/sharp` exists in it
-  (`composer require armdevstack/sharp-php:^0.3`; `composer show armdevstack/sharp-php` prints the version).
+- The project requires SharpPHP, so that `vendor/bin/sharp` exists in it (`composer require armdevstack/sharp-php`;
+  `composer show armdevstack/sharp-php` prints the version; parameter info needs 0.6 or newer).
 - PHP 8.4 or newer, which VS Code can find (see `sharpphp.php.path` below).
 - The project folder (the one with `composer.json` and `vendor/`) is open in VS Code, or is a folder of a
   multi-root workspace: a language server starts for each workspace folder that has `vendor/bin/sharp`.
@@ -41,7 +41,7 @@ vendor/bin/sharp vscode
 
 It packages this folder as a `.vsix` and installs it with VS Code's `code` command. Then reload VS Code
 (Command Palette → **Developer: Reload Window**). This is done once: the extension works in every project
-with SharpPHP 0.3+ and always runs the project's own `vendor/bin/sharp`. Run it again after upgrading
+that requires SharpPHP and always runs the project's own `vendor/bin/sharp`. Run it again after upgrading
 SharpPHP to update the extension.
 
 Without the `code` command (VS Code: Command Palette → **Shell Command: Install 'code' command in PATH**),
@@ -75,7 +75,7 @@ Open a `.sphp` file and type `Console.` inside `Main`: `WriteLine`, `Write`, `Re
 - hovering a name shows what it is, e.g. `(property) string Person.Name`;
 - **F12** or ⌘-click / Ctrl-click goes to the declaration, also in another file.
 
-**View → Output**, channel **SharpPHP**, shows `Language server running (pid ..., SharpPHP 0.3.x)`.
+**View → Output**, channel **SharpPHP**, shows `Language server running (pid ..., SharpPHP 0.6.x)`.
 
 ### Troubleshooting
 
@@ -85,9 +85,9 @@ Everything the extension and the server report is in **View → Output** → **S
 | Problem | What to do |
 |---|---|
 | `.sphp` files are plain text | The extension is not installed or VS Code was not reloaded: run `vendor/bin/sharp vscode`, reload the window; the **Extensions** view lists SharpPHP under **Installed** |
-| No completion and no error marks | Look at Output → SharpPHP. `No language server: .../vendor/bin/sharp does not exist`: run `composer require armdevstack/sharp-php:^0.3` in the project (or open the project folder itself, not a folder above it), then run **SharpPHP: Restart Language Server**. `Restricted Mode`: trust the workspace |
+| No completion and no error marks | Look at Output → SharpPHP. `No language server: .../vendor/bin/sharp does not exist`: run `composer require armdevstack/sharp-php` in the project (or open the project folder itself, not a folder above it), then run **SharpPHP: Restart Language Server**. `Restricted Mode`: trust the workspace |
 | "PHP was not found" | VS Code does not see PHP on its `PATH`. Set `sharpphp.php.path` to the full path of PHP: `which php` in a terminal prints it (on Windows: `where php`) |
-| "exited while starting" | The output shows the reason: a SharpPHP older than 0.3 has no `sharp lsp` ([Upgrading](../../README.md#upgrading)); PHP older than 8.4 cannot run it (point `sharpphp.php.path` to PHP 8.4+) |
+| "exited while starting" | The output shows the reason, for example PHP older than 8.4, which cannot run it (point `sharpphp.php.path` to PHP 8.4+) |
 | "crashed 4 times" | The server is not restarted again by itself. The output shows its errors; run **SharpPHP: Restart Language Server** to try again |
 | Old results after `composer update` | The running server still has the old SharpPHP loaded: run **SharpPHP: Restart Language Server** (and `vendor/bin/sharp vscode` to update the extension) |
 | No completion after a dot | The file has a syntax error somewhere else: fix it first (it is underlined) |

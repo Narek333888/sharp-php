@@ -3,7 +3,7 @@
 An [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) template: completion, parameter info (also
 with ⌘P / Ctrl+P), errors while typing, hover and go to definition for `.sphp` files in PhpStorm and other
 JetBrains IDEs. It starts
-`php $PROJECT_DIR$/vendor/bin/sharp lsp` of the open project (SharpPHP 0.3 or newer).
+`php $PROJECT_DIR$/vendor/bin/sharp lsp` of the open project (parameter info needs SharpPHP 0.6 or newer).
 
 1. **Settings → Plugins → Marketplace**: install **LSP4IJ** (restart PhpStorm if it asks).
 2. **Settings → Languages & Frameworks → Language Servers (LSP4IJ)**, click **+**.

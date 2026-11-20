@@ -343,7 +343,7 @@ class Client {
             return;
         }
         if (state === 'starting') {
-            this.fail(`SharpPHP: the language server for "${this.folder.name}" exited while starting (${how}). It needs SharpPHP 0.3+ in the project and PHP 8.4+; the reason is in Output → SharpPHP.`, 'Show Output', 'Restart Server');
+            this.fail(`SharpPHP: the language server for "${this.folder.name}" exited while starting (${how}). It needs SharpPHP in the project and PHP 8.4+; the reason is in Output → SharpPHP.`, 'Show Output', 'Restart Server');
 
             return;
         }

@@ -74,12 +74,12 @@ composer require armdevstack/sharp-php
 ### Upgrading
 
 ```bash
-composer update armdevstack/sharp-php        # bug-fix releases: 0.3.0 → 0.3.x
-composer require armdevstack/sharp-php:^0.3  # a newer minor version: 0.1.x / 0.2.x → 0.3.x
+composer update armdevstack/sharp-php        # bug-fix releases: 0.6.0 → 0.6.x
+composer require armdevstack/sharp-php:^0.7  # a newer minor version, once there is one: 0.6.x → 0.7.x
 ```
 
 While SharpPHP is 0.x, a plain `composer update` stays within the minor version you installed: the
-constraint Composer writes for you, e.g. `^0.1.3`, means `>=0.1.3 <0.2.0`, because `^` does not cross a 0.x
+constraint Composer writes for you, e.g. `^0.6.0`, means `>=0.6.0 <0.7.0`, because `^` does not cross a 0.x
 minor version. Require the newer version once, as above, and `composer update` follows it from then on.
 `composer show armdevstack/sharp-php` prints the installed version; [CHANGELOG.md](CHANGELOG.md) lists
 what changed. The build in `var/sharp` is redone automatically after an upgrade.
@@ -250,8 +250,8 @@ a browser shows its output as plain text.
 
 PhpStorm (and every other JetBrains IDE) gets highlighting, completion, parameter info, errors while typing,
 hover and go to definition for `.sphp` files. Setting it up takes about two minutes and is done **once per IDE**: it
-then works in every project that requires `armdevstack/sharp-php` 0.3 or newer
-(`composer show armdevstack/sharp-php` prints the version; older projects: see [Upgrading](#upgrading)).
+then works in every project that requires `armdevstack/sharp-php` (parameter info needs 0.6 or newer:
+`composer show armdevstack/sharp-php` prints the version, [Upgrading](#upgrading) tells how to update).
 
 ### 1. Syntax highlighting
 
@@ -304,7 +304,7 @@ indexed: PhpStorm then completes those classes in `.php` files too. Otherwise ri
 | Problem | What to do |
 |---|---|
 | `.sphp` files are plain text | Remove `*.sphp` under **Settings → Editor → File Types → Text**, if it is there; check step 1 |
-| No completion and no error marks | Check that LSP4IJ is installed (**Settings → Plugins → Installed**) and step 2 was done. The project needs SharpPHP 0.3+: `composer require armdevstack/sharp-php:^0.3`. Restarting PhpStorm alone does not turn completion on |
+| No completion and no error marks | Check that LSP4IJ is installed (**Settings → Plugins → Installed**) and step 2 was done. The project must require SharpPHP: `composer require armdevstack/sharp-php`. Restarting PhpStorm alone does not turn completion on |
 | The **Language Servers** window shows that SharpPHP cannot start | PhpStorm did not find `php` (common on macOS, where an IDE started from the Dock does not see Homebrew). In **Settings → Languages & Frameworks → Language Servers (LSP4IJ) → SharpPHP**, set **Command:** to the full path of PHP: `/opt/homebrew/bin/php $PROJECT_DIR$/vendor/bin/sharp lsp` (`which php` in a terminal prints the path) |
 | You want to see what the server does | **View → Tool Windows → Language Servers** → SharpPHP: the **Logs** tab; for every request set **Trace:** to `verbose` on the server's **Debug** tab |
 | No completion after a dot | The file has a syntax error somewhere else: fix it first (it is underlined) |
@@ -313,7 +313,7 @@ indexed: PhpStorm then completes those classes in `.php` files too. Otherwise ri
 
 VS Code gets the same features through the SharpPHP extension, which ships with the package: highlighting,
 completion, parameter info, errors while typing (also in the **Problems** panel), hover and go to definition
-(F12). It is installed once and works in every project with SharpPHP 0.3+.
+(F12). It is installed once and works in every project that requires SharpPHP.
 
 1. In a terminal, in the project folder: `vendor/bin/sharp vscode`. It installs the extension with VS Code's
    `code` command (without it: `vendor/bin/sharp vscode --package=sharpphp.vsix`, then
@@ -328,7 +328,7 @@ completion, parameter info, errors while typing (also in the **Problems** panel)
 | Problem | What to do |
 |---|---|
 | "PHP was not found" | Set **Settings → Extensions → SharpPHP → Php: Path** (`sharpphp.php.path`) to the full path of PHP 8.4+, e.g. `/opt/homebrew/bin/php` (`which php` prints it) |
-| No completion and no error marks | **View → Output → SharpPHP** says why: no `vendor/bin/sharp` (`composer require armdevstack/sharp-php:^0.3`), an untrusted workspace, or an older SharpPHP |
+| No completion and no error marks | **View → Output → SharpPHP** says why: no `vendor/bin/sharp` (`composer require armdevstack/sharp-php`) or an untrusted workspace |
 | Anything else | Command Palette → **SharpPHP: Restart Language Server**; details in [editors/sharpphp](editors/sharpphp/README.md#troubleshooting) |
 
 After upgrading SharpPHP, run `vendor/bin/sharp vscode` again to update the extension.
