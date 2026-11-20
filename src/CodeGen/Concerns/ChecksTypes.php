@@ -40,8 +40,29 @@ trait ChecksTypes
         if ($isZero && $this->conversions->isEnum($target)) {
             return Emitted::value($this->classRef((string) $target->class) . '::from(0)', $target->withNullable(false));
         }
+        if ($this->conversions->isPhpArrayBoundary($value->type, $target)) {
+            return $this->convertedAtPhpBoundary($value, $target);
+        }
 
         return $value;
+    }
+
+    /**
+     * List / Dictionary / HashSet <=> PHP array:
+     *   PHP function taking an array  <=  Interop::toArray($list)
+     *   Dictionary<string, int> d = phpArray  =>  Interop::toDictionary($array, ['string', 'int'])
+     */
+    private function convertedAtPhpBoundary(Emitted $value, Type $target): Emitted
+    {
+        $interop = $this->runtime('Interop');
+        if ($target->isPhpArray()) {
+            return Emitted::value("$interop::toArray({$value->code})", $target->withNullable($value->type->nullable));
+        }
+        $name = (string) $this->conversions->collectionName($target, exact: true);
+        $symbol = $this->symbols->symbolForType($target);
+        $of = $symbol !== null ? $this->collectionElementSpec($target, $symbol) : null;
+
+        return Emitted::value("$interop::to$name({$value->code}" . ($of !== null ? ", $of" : '') . ')', $target->withNullable($value->type->nullable));
     }
 
     private function conversionError(Emitted $value, Type $target, Node $at, ?int $argument): \SharpPhp\Compiler\CompileError

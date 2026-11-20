@@ -20,7 +20,7 @@ use SharpPhp\Runtime\TypeName;
  * @implements \ArrayAccess<int, T>
  * @implements \IteratorAggregate<int, T>
  */
-class List_ implements \ArrayAccess, \IteratorAggregate, \Countable
+class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerializable
 {
     /** @use EnumerableMethods<T> */
     use EnumerableMethods;
@@ -264,5 +264,15 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable
         $checked = $this->of === null ? $item : TypeCheck::check($item, $this->of, 'List<' . TypeName::ofSpec($this->of) . '>');
         /** @var T $checked the generated code only stores elements of the list's type */
         return $checked;
+    }
+
+    /**
+     * json_encode() (and Laravel's JSON responses) write the items as a JSON array.
+     *
+     * @return list<mixed>
+     */
+    public function jsonSerialize(): array
+    {
+        return iterator_to_array($this, false);
     }
 }

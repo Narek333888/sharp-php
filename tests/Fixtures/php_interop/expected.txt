@@ -1,0 +1,13 @@
+True
+pear, apple, pear
+6
+3
+["pear","apple","pear"]
+{"a":1,"7":2}
+[3,1]
+2
+pear|apple
+1
+2
+21
+3

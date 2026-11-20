@@ -16,7 +16,7 @@ use SharpPhp\Runtime\TypeName;
  *
  * @implements \IteratorAggregate<int, T>
  */
-class Queue implements \IteratorAggregate, \Countable
+class Queue implements \IteratorAggregate, \Countable, \JsonSerializable
 {
     /** @use EnumerableMethods<T> */
     use EnumerableMethods;
@@ -88,5 +88,15 @@ class Queue implements \IteratorAggregate, \Countable
     public function count(): int
     {
         return count($this->items);
+    }
+
+    /**
+     * json_encode() (and Laravel's JSON responses) write the items as a JSON array.
+     *
+     * @return list<mixed>
+     */
+    public function jsonSerialize(): array
+    {
+        return iterator_to_array($this, false);
     }
 }

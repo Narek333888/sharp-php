@@ -13,6 +13,7 @@ use SharpPhp\Compiler\CompilationFailed;
 use SharpPhp\Compiler\Compiler;
 use SharpPhp\Compiler\SourceFile;
 use SharpPhp\Runtime\Host;
+use SharpPhp\Runtime\Loader;
 
 /**
  * A SharpPHP project: .sphp sources compiled into a build directory.
@@ -116,6 +117,24 @@ final class Project
         }
 
         return Host::run($manifest, $this->buildDir, $args, $this->root);
+    }
+
+    /**
+     * Builds the project if needed and makes its classes loadable, for PHP code that uses classes
+     * written in SharpPHP (a Laravel app, a script) without running Main:
+     *
+     *   require 'vendor/autoload.php';
+     *   SharpPhp\Project::fromDirectory(__DIR__)->autoload();
+     *   echo App\Pricing::Total([...], 'AM');
+     *
+     * @throws CompilationFailed
+     */
+    public function autoload(): self
+    {
+        $manifest = $this->build();
+        Loader::register($manifest['classmap'], $this->buildDir);
+
+        return $this;
     }
 
     public function clean(): void

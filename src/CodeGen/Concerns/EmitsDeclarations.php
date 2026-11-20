@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SharpPhp\CodeGen\Concerns;
 
+use SharpPhp\CodeGen\Emitted;
 use SharpPhp\CodeGen\FunctionContext;
 use SharpPhp\Compiler\Declarator;
 use SharpPhp\Semantics\Names;
@@ -463,6 +464,7 @@ trait EmitsDeclarations
                 }
 
                 $this->w->indent();
+                $this->emitParamConversions();
                 $this->emitConstructorBody($constructor, $decl, $symbol, $instanceInits);
                 $this->w->outdent();
                 $this->w->line('}');
@@ -599,6 +601,7 @@ trait EmitsDeclarations
                 $this->w->line($signature);
                 $this->w->line('{');
                 $this->w->indent();
+                $this->emitParamConversions();
                 $this->methodBody($method, $member->type);
                 $this->requireOutParamsAssigned($method);
                 if ($method->body !== null && $member->type->kind !== 'void') {
@@ -674,6 +677,7 @@ trait EmitsDeclarations
     private function parameters(array $params, ?\SharpPhp\Semantics\MemberSymbol $inherited = null): string
     {
         $parts = [];
+        $this->paramConversions = [];
         foreach ($params as $i => $param) {
             $type = $this->resolveType($param->type ?? throw new \LogicException('Method parameters are typed'));
             $localType = $type;
@@ -705,6 +709,12 @@ trait EmitsDeclarations
             }
 
             $decl = $this->typeDecl($type);
+            // PHP code may pass a plain array where a List, Dictionary or HashSet is expected.
+            if ($prefix === '' && $this->conversions->collectionName($type, exact: true) !== null) {
+                $decl = $this->typeDecl($type->withNullable(false)) . '|array' . ($type->nullable ? '|null' : '');
+                $conversion = $this->convertedAtPhpBoundary(Emitted::value('$' . $param->name, Type::phpArray()), $type->withNullable(false));
+                $this->paramConversions[] = "if (\\is_array(\${$param->name})) {\n    \${$param->name} = {$conversion->code};\n}";
+            }
             $parts[] = ($decl !== null ? $decl . ' ' : '') . $prefix . '$' . $param->name . $default;
             $this->declareLocal($param->name, $localType, $param, assigned: $param->modifier !== 'out');
             if ($param->modifier === 'out') {
@@ -713,6 +723,16 @@ trait EmitsDeclarations
         }
 
         return implode(', ', $parts);
+    }
+
+    private function emitParamConversions(): void
+    {
+        foreach ($this->paramConversions as $statement) {
+            foreach (explode("\n", $statement) as $line) {
+                $this->w->line($line);
+            }
+        }
+        $this->paramConversions = [];
     }
 
     /**

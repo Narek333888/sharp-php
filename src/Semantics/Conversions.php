@@ -40,6 +40,10 @@ final class Conversions
             return true; // IComparable<T>, IEquatable<T>: numbers and strings implement them
         }
 
+        if ($this->isPhpArrayBoundary($from, $to)) {
+            return true;
+        }
+
         return match ($from->kind) {
             'int' => in_array($to->kind, ['int', 'float'], true) || ($isZeroLiteral && $this->isEnum($to)),
             'float', 'bool' => $to->kind === $from->kind,
@@ -51,6 +55,36 @@ final class Conversions
             'class' => $this->isImplicitFromClass($from, $to),
             default => true,
         };
+    }
+
+    /**
+     * A PHP array where SharpPHP wants a List, Dictionary or HashSet, or the other way round: converted
+     * at run time (see ChecksTypes::converted()), so SharpPHP and PHP code can call each other.
+     */
+    public function isPhpArrayBoundary(Type $from, Type $to): bool
+    {
+        return ($from->isPhpArray() && $this->collectionName($to, exact: true) !== null)
+            || ($to->isPhpArray() && $this->collectionName($from) !== null);
+    }
+
+    /**
+     * "List", "Dictionary" or "HashSet" for those runtime collections, else null. Classes derived from
+     * them count too unless $exact (a PHP array can become a List, not a class derived from it).
+     */
+    public function collectionName(Type $type, bool $exact = false): ?string
+    {
+        $symbol = $type->kind === 'class' ? $this->symbols->symbolForType($type) : null;
+        if ($symbol === null) {
+            return null;
+        }
+        $prefix = Names::RUNTIME_NAMESPACE . '\\System\\Collections\\Generic\\';
+        foreach (['List_' => 'List', 'Dictionary' => 'Dictionary', 'HashSet' => 'HashSet'] as $class => $name) {
+            if (strcasecmp($symbol->fqn, $prefix . $class) === 0 || (!$exact && $this->symbols->isSubtypeOf($symbol->fqn, $prefix . $class))) {
+                return $name;
+            }
+        }
+
+        return null;
     }
 
     /** Casts C# accepts where an implicit conversion is not allowed (double -> int, Base -> Derived). */

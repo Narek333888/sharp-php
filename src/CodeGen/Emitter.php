@@ -64,6 +64,9 @@ final class Emitter
     /** @var list<string> */
     private array $staticInitCalls = [];
 
+    /** @var list<string> statements that turn PHP arrays passed to collection parameters into collections (see parameters()) */
+    private array $paramConversions = [];
+
     /**
      * @param SemanticModel|null $model analysis mode (Compiler::analyze): record what names mean and
      *        go on after errors, so the editor learns as much as possible about code being typed

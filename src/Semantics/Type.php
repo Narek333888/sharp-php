@@ -23,6 +23,9 @@ final class Type
         'SharpPhp\\Runtime\\System\\IEquatable',
     ];
 
+    /** Marks the array type of PHP code (see phpArray()). */
+    public const PHP_ARRAY = 'php';
+
     /** Start of an anonymous type's name ("<anonymous type: int Id>"); see SymbolTable::anonymousType(). */
     public const ANONYMOUS_PREFIX = '<anonymous type';
 
@@ -87,6 +90,20 @@ final class Type
     public static function array(?Type $element = null): self
     {
         return new self('array', null, [$element ?? self::mixed()]);
+    }
+
+    /**
+     * PHP's own array type, from the signatures of PHP code (functions, Composer packages): a list or a
+     * key => value map. SharpPHP converts List, Dictionary and HashSet to and from it at the boundary.
+     */
+    public static function phpArray(?Type $element = null): self
+    {
+        return new self('array', null, [$element ?? self::mixed()], false, self::PHP_ARRAY);
+    }
+
+    public function isPhpArray(): bool
+    {
+        return $this->kind === 'array' && $this->param === self::PHP_ARRAY;
     }
 
     public static function iterable(?Type $element = null): self
@@ -265,7 +282,7 @@ final class Type
             'int', 'float', 'string', 'char', 'bool', 'void' => $this->kind === 'float' ? 'double' : $this->kind,
             'mixed' => 'object',
             'null' => 'null',
-            'array' => $this->element()->describe() . '[]',
+            'array' => $this->isPhpArray() ? 'array' : $this->element()->describe() . '[]',
             'iterable' => 'IEnumerable<' . $this->element()->describe() . '>',
             'closure' => 'delegate',
             'typeparam' => (string) $this->param,

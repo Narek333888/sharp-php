@@ -486,7 +486,7 @@ trait EmitsMembers
 
             return match ($result->kind) {
                 'method' => $this->callMember($result->code, $result->member ?? throw new \LogicException('A method group has a member'), $e->args, null, $callee->typeArgs, null, $callee),
-                'function' => Emitted::value($result->code . '(' . $this->arguments($e->args, [])[0] . ')', $result->type),
+                'function' => Emitted::value($result->code . '(' . $this->arguments($e->args, $this->symbols->functionParams($callee->name), runtime: true)[0] . ')', $result->type),
                 'value' => $this->callClosure($result, $e->args, $callee),
                 default => throw $this->error('SP1955', "Non-invocable member '{$callee->name}' cannot be used like a method", $callee),
             };

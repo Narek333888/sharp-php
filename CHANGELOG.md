@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Mixing PHP and SharpPHP: `Project::autoload()` makes compiled classes loadable from PHP in one line;
+  `List`, `Dictionary` and `HashSet` become PHP arrays where PHP code takes an `array` (and PHP arrays become
+  them where SharpPHP expects one); compiled methods with collection parameters accept PHP arrays;
+  collections implement `JsonSerializable`
+- Docblock types with spaces and nesting (`array<string, List<int>>`) are read correctly
+
 ## 0.3.3
 
 - README: a complete **PhpStorm setup** guide (highlighting, completion and errors through LSP4IJ, running

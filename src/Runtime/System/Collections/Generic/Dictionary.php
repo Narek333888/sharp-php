@@ -21,7 +21,7 @@ use SharpPhp\Runtime\TypeName;
  * @implements \ArrayAccess<TKey, TValue>
  * @implements \IteratorAggregate<int, KeyValuePair<TKey, TValue>>
  */
-class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable
+class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerializable
 {
     /** @use EnumerableMethods<KeyValuePair<TKey, TValue>> */
     use EnumerableMethods;
@@ -216,5 +216,16 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable
             is_object($key) => 'o:' . spl_object_id($key),
             default => 'x:' . serialize($key),
         };
+    }
+
+    /** json_encode() (and Laravel's JSON responses) write a JSON object: {"key": value, ...}. */
+    public function jsonSerialize(): \stdClass
+    {
+        $object = new \stdClass();
+        foreach ($this as $pair) {
+            $object->{Op::str($pair->Key)} = $pair->Value;
+        }
+
+        return $object;
     }
 }

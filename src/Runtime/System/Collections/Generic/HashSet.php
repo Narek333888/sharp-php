@@ -16,7 +16,7 @@ use SharpPhp\Runtime\TypeName;
  *
  * @implements \IteratorAggregate<int, T>
  */
-class HashSet implements \IteratorAggregate, \Countable
+class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
 {
     /** @use EnumerableMethods<T> */
     use EnumerableMethods;
@@ -120,5 +120,15 @@ class HashSet implements \IteratorAggregate, \Countable
             is_object($item) => 'o:' . spl_object_id($item),
             default => get_debug_type($item) . ':' . Op::str($item),
         };
+    }
+
+    /**
+     * json_encode() (and Laravel's JSON responses) write the items as a JSON array.
+     *
+     * @return list<mixed>
+     */
+    public function jsonSerialize(): array
+    {
+        return iterator_to_array($this, false);
     }
 }

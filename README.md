@@ -365,11 +365,41 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - `System.Text.Json`: `JsonSerializer.Serialize(value, options)` with `JsonSerializerOptions` (`WriteIndented`, `PropertyNamingPolicy = JsonNamingPolicy.CamelCase`)
 - Exceptions: `Exception`, `ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`, `InvalidOperationException`, `NotImplementedException`, `NotSupportedException`, `FormatException`, `IndexOutOfRangeException`, `DivideByZeroException`, `InvalidCastException`, `NullReferenceException`, `KeyNotFoundException`, ...
 
-## Using PHP from SharpPHP
+## Mixing PHP and SharpPHP
 
-- Any PHP class is visible: global classes directly (`new DateTime()`), namespaced ones through `using`: `using GuzzleHttp;` then `new Client()`
-- Global PHP functions and constants can be called directly: `strlen(s)`, `PHP_EOL`
-- Generated classes are regular PHP classes, so PHP code can use them too
+A project can be partly PHP and partly SharpPHP: write typed business logic in `.sphp` files and keep
+frameworks, libraries and existing code in PHP. Each side calls the other.
+
+**SharpPHP calling PHP**
+
+- Any PHP class is visible: global classes directly (`new DateTime()`), namespaced ones through `using`:
+  `using GuzzleHttp;` then `new Client()`. PHP's types (and PHPStan-style docblocks such as
+  `@return array<string, int>`) are known to the compiler.
+- Global PHP functions and constants can be called directly: `strlen(s)`, `in_array(x, list)`, `PHP_EOL`.
+
+**PHP calling SharpPHP**
+
+Compiled classes are regular PHP classes. Make them loadable with one line:
+
+```php
+require 'vendor/autoload.php';
+SharpPhp\Project::fromDirectory(__DIR__)->autoload(); // builds if needed
+
+echo App\Pricing::Total([new App\Item('Book', 12.5, 2)], 'AM');
+```
+
+**Collections and PHP arrays** are converted where the two sides meet:
+
+| Where | What happens |
+|---|---|
+| A `List`, `Dictionary`, `HashSet` passed to PHP code that takes an `array` | it becomes a PHP array (a dictionary becomes `key => value`): `implode(", ", names)`, `Store.save(names)` |
+| A PHP array assigned to (or passed as) a `List<T>`, `Dictionary<K, V>`, `HashSet<T>` | it becomes that collection, with C#'s element type checks: `Dictionary<string, int> stock = Store.stock();` |
+| PHP code passing an array to a SharpPHP method with a `List<T>` / `Dictionary<K, V>` / `HashSet<T>` parameter | the method converts it on entry: `Pricing::Total([$item1, $item2])` |
+| `json_encode()` (and Laravel's JSON responses) of a SharpPHP collection | a JSON array, or a JSON object for a dictionary |
+
+A PHP array kept as it is (`var stock = Store.stock();`) can be indexed (`stock["apple"]`), iterated over
+its values and queried with LINQ. PHP turns the array key `"7"` into the integer `7`; collections of
+strings and dictionaries with string keys turn such keys back into strings.
 
 ## Errors
 

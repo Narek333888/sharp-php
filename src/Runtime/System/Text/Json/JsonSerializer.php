@@ -67,8 +67,6 @@ final class JsonSerializer
                 return $value->format('Y-m-d\TH:i:sP');
             case $value instanceof \Closure:
                 throw new NotSupportedException('Serialization and deserialization of delegates is not supported.');
-            case $value instanceof \JsonSerializable:
-                return self::toJson($value->jsonSerialize(), $naming, $depth);
             case $value instanceof KeyValuePair:
                 $object = new \stdClass();
                 $object->{JsonNamingPolicy::apply($naming, 'Key')} = self::toJson($value->Key, $naming, $depth);
@@ -83,6 +81,8 @@ final class JsonSerializer
                 }
 
                 return $object;
+            case $value instanceof \JsonSerializable && !$value instanceof \Traversable:
+                return self::toJson($value->jsonSerialize(), $naming, $depth);
             case is_array($value) && !array_is_list($value):
                 $object = new \stdClass();
                 foreach ($value as $key => $item) {

@@ -23,6 +23,12 @@ final class SymbolTable
     /** A closure type in a docblock: \Closure(int, string): bool (PHPStan syntax). */
     private const CLOSURE_DOC = '\\\\?(?:Closure|callable)\([^)\r\n]*\)\s*:\s*[^\s$]+';
 
+    /**
+     * A type in a docblock, with generics that may contain spaces and nest (array<string, List<int>>),
+     * array suffixes and unions: ?int, string[], array<string, int>|null, $this.
+     */
+    private const TYPE_DOC = '(?:\$this|\??[\\\\\w-]+(?<g><(?:[^<>]|(?&g))*>)?(?:\[\])*)(?:\|(?:\??[\\\\\w-]+(?&g)?(?:\[\])*))*';
+
     /** @var array<string, TypeSymbol> */
     private array $project = [];
 
@@ -262,6 +268,34 @@ final class SymbolTable
         return Type::class($name);
     }
 
+    /**
+     * Parameters of a global PHP function, so that arguments are converted like for methods
+     * (a List passed where the function takes an array). By-reference parameters are left untyped.
+     *
+     * @return list<ParameterSymbol>
+     */
+    public function functionParams(string $name): array
+    {
+        try {
+            $function = new \ReflectionFunction($name);
+        } catch (\ReflectionException) {
+            return [];
+        }
+        $this->docFile = null;
+        $params = [];
+        foreach ($this->reflectionParams($function, new TypeSymbol('class', 'stdClass', true)) as $param) {
+            $params[] = $param->modifier === 'ref' ? new ParameterSymbol($param->name, Type::mixed(), 'ref', $param->optional) : $param;
+        }
+
+        return $params;
+    }
+
+    /** Classes of the SharpPHP runtime library keep C# arrays; other PHP code has PHP arrays. */
+    private function isRuntime(TypeSymbol $self): bool
+    {
+        return str_starts_with($self->fqn, Names::RUNTIME_NAMESPACE . '\\');
+    }
+
     /** Return type of a global PHP function (strlen => int). */
     public function functionReturnType(string $name): Type
     {
@@ -358,15 +392,15 @@ final class SymbolTable
     }
 
     /** @return list<ParameterSymbol> */
-    private function reflectionParams(ReflectionMethod $method, TypeSymbol $symbol): array
+    private function reflectionParams(\ReflectionFunctionAbstract $method, TypeSymbol $symbol): array
     {
         // "@param T $item" refines untyped (mixed) parameters of generic runtime classes; for an out
         // parameter, "@param-out T $value" is the type of what the method stores (out var x).
         $docTypes = ['param' => [], 'param-out' => []];
         // "@param \Closure(HttpRequest): mixed $handler" types the parameters of a lambda passed to $handler.
-        if (preg_match_all('/@(param|param-out)\s+(' . self::CLOSURE_DOC . '|\S+(?:\s*<[^>\r\n]*>)?)\s+&?(?:\.\.\.)?\$(\w+)/', (string) $method->getDocComment(), $m, PREG_SET_ORDER)) {
-            foreach ($m as [, $tag, $spec, $name]) {
-                $docTypes[$tag][$name] = $spec;
+        if (preg_match_all('/@(param|param-out)\s+(?<spec>' . self::CLOSURE_DOC . '|' . self::TYPE_DOC . ')\s+&?(?:\.\.\.)?\$(?<name>\w+)/', (string) $method->getDocComment(), $m, PREG_SET_ORDER)) {
+            foreach ($m as $match) {
+                $docTypes[$match[1]][$match['name']] = $match['spec'];
             }
         }
         $params = [];
@@ -443,7 +477,7 @@ final class SymbolTable
             'string' => Type::string(),
             'char' => Type::char(),
             'bool', 'true', 'false' => Type::bool(),
-            'array' => Type::array(),
+            'array' => $this->isRuntime($self) ? Type::array() : Type::phpArray(),
             'iterable' => Type::iterable(),
             'void', 'never' => Type::void(),
             'null' => Type::null(),
@@ -461,11 +495,11 @@ final class SymbolTable
 
     private function docTag(string $doc, string $tag, TypeSymbol $self): ?Type
     {
-        if ($doc === '' || !preg_match('/@' . $tag . '\s+([^\s*]+(?:\s*<[^>\r\n]*>)?)/', $doc, $m)) {
+        if ($doc === '' || !preg_match('/@' . $tag . '\s+(?<spec>' . self::CLOSURE_DOC . '|' . self::TYPE_DOC . ')/', $doc, $m)) {
             return null;
         }
 
-        return $this->docType($m[1], $self);
+        return $this->docType($m['spec'], $self);
     }
 
     private function docType(string $spec, TypeSymbol $self): Type
@@ -492,7 +526,9 @@ final class SymbolTable
         }
 
         if (str_ends_with($s, '[]')) {
-            return Type::array($this->docType(substr($s, 0, -2), $self))->withNullable($nullable);
+            $element = $this->docType(substr($s, 0, -2), $self);
+
+            return ($this->isRuntime($self) ? Type::array($element) : Type::phpArray($element))->withNullable($nullable);
         }
 
         if (preg_match('/^\\\\?(?:closure|callable)\s*\((.*)\)\s*:\s*(.+)$/is', $s, $m)) {
@@ -506,7 +542,7 @@ final class SymbolTable
             $base = strtolower(ltrim($m[1], '\\'));
             $last = $args[array_key_last($args)] ?? Type::mixed();
             $type = match ($base) {
-                'array', 'list', 'non-empty-list', 'non-empty-array' => Type::array($last),
+                'array', 'list', 'non-empty-list', 'non-empty-array' => $this->isRuntime($self) ? Type::array($last) : Type::phpArray($last),
                 'iterable', 'iterator', 'traversable', 'generator', 'iteratoraggregate' => Type::iterable($last),
                 default => Type::class($this->docClass($m[1], $self), $args),
             };

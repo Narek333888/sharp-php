@@ -1,0 +1,42 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+class Program
+{
+    static void Main()
+    {
+        var names = new List<string> { "pear", "apple", "pear" };
+
+        // SharpPHP collections passed to PHP functions that take arrays
+        Console.WriteLine(in_array("apple", names));
+        Console.WriteLine(implode(", ", names));
+        Console.WriteLine(array_sum(new List<int> { 1, 2, 3 }));
+        Console.WriteLine(count(names));
+        Console.WriteLine(json_encode(names));
+        Console.WriteLine(json_encode(new Dictionary<string, int> { ["a"] = 1, ["7"] = 2 }));
+        Console.WriteLine(json_encode(new HashSet<int> { 3, 1, 3 }));
+
+        // PHP arrays returned by PHP functions, received as collections
+        Dictionary<string, int> counts = array_count_values(Interop(names));
+        Console.WriteLine(counts["pear"]);
+        List<string> unique = array_values(array_unique(Interop(names)));
+        Console.WriteLine(string.Join("|", unique));
+        List<string> keys = array_keys(array_flip(new List<string> { "1", "2" }));
+        Console.WriteLine(keys[0].Length);
+        HashSet<string> set = explode(",", "a,b,a");
+        Console.WriteLine(set.Count);
+
+        // A PHP array kept as it is: foreach and LINQ over its values
+        var raw = array_count_values(Interop(names));
+        foreach (var n in raw)
+        {
+            Console.Write(n);
+        }
+        Console.WriteLine();
+        Console.WriteLine(raw.Sum());
+    }
+
+    // A PHP-style helper: SharpPHP arrays are PHP arrays too
+    static string[] Interop(List<string> list) => list.ToArray();
+}
