@@ -88,8 +88,12 @@ trait EmitsDeclarations
         if ($symbol->baseClass !== null) {
             $header .= ' extends ' . $this->classRef($symbol->baseClass);
         }
-        if ($symbol->interfaces !== []) {
-            $header .= ' implements ' . implode(', ', array_map(fn (string $i): string => $this->classRef($i), $symbol->interfaces));
+        $implements = array_map(fn (string $i): string => $this->classRef($i), $symbol->interfaces);
+        if ($this->recordSerializesItself($symbol)) {
+            $implements[] = '\\JsonSerializable';
+        }
+        if ($implements !== []) {
+            $header .= ' implements ' . implode(', ', $implements);
         }
 
         $this->emitTemplateDoc($decl->typeParams);
@@ -163,6 +167,14 @@ trait EmitsDeclarations
         if ($symbol->isRecord && !isset($symbol->members['Equals'])) {
             $this->w->blank();
             $this->emitObjectMember('Equals', 'return $other instanceof self && $other::class === static::class && $this == $other;');
+        }
+        if ($this->recordSerializesItself($symbol)) {
+            // Records are data: as JSON (json_encode, a Laravel controller's result) they are their properties.
+            $this->w->blank();
+            $this->w->line('public function jsonSerialize(): \\stdClass');
+            $this->w->line('{');
+            $this->w->line('    return ' . $this->runtime('Json') . '::properties($this);');
+            $this->w->line('}');
         }
         foreach ($this->objectMembersRequiredByInterfaces($symbol) as $name) {
             $this->w->blank();
@@ -820,6 +832,20 @@ trait EmitsDeclarations
     }
 
     /** A System.Object member with the given body (signatures as in Op::str/Op::equals). */
+    /**
+     * A record implements \\JsonSerializable, unless a record it derives from already does or it
+     * declares jsonSerialize itself.
+     */
+    private function recordSerializesItself(TypeSymbol $symbol): bool
+    {
+        if (!$symbol->isRecord || isset($symbol->members['jsonSerialize'])) {
+            return false;
+        }
+        $base = $symbol->baseClass !== null ? $this->symbols->find($symbol->baseClass) : null;
+
+        return $base === null || !$base->isRecord || $base->external;
+    }
+
     private function emitObjectMember(string $name, string $body): void
     {
         $this->w->line(match ($name) {

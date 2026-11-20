@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2
+
+- Records and anonymous objects implement `JsonSerializable`: a Laravel controller that returns one sends
+  JSON (an anonymous object failed with a TypeError, a record was sent as its `ToString()` text), and
+  `json_encode()` writes their properties, computed ones too, positional properties first
+- Completion lists a class's own members before inherited ones: a facade's methods (`Log.info`,
+  `Log.error`) before `Facade`'s `spy()` and `shouldReceive()`
+
 ## 0.4.1
 
 - Class lookup on case-sensitive file systems (Linux): looking up a name such as `date` no longer hides the

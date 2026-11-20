@@ -9,10 +9,10 @@ namespace SharpPhp\Runtime;
  * The compiler checks property names and types and keeps the properties read-only; at run time
  * they are public properties, so json_encode() and get_object_vars() see them.
  * Like C#, two anonymous objects are Equal when all their properties are, and ToString()
- * prints "{ Id = 1, Name = Ann }".
+ * prints "{ Id = 1, Name = Ann }". As JSON it is an object with its properties.
  */
 #[\AllowDynamicProperties]
-final class AnonymousObject
+final class AnonymousObject implements \JsonSerializable
 {
     /** @param array<string, mixed> $properties */
     public function __construct(array $properties = [])
@@ -49,6 +49,11 @@ final class AnonymousObject
         }
 
         return true;
+    }
+
+    public function jsonSerialize(): \stdClass
+    {
+        return (object) get_object_vars($this);
     }
 
     public function GetHashCode(): int

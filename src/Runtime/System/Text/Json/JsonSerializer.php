@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SharpPhp\Runtime\System\Text\Json;
 
 use SharpPhp\Runtime\AnonymousObject;
+use SharpPhp\Runtime\Json;
 use SharpPhp\Runtime\Op;
 use SharpPhp\Runtime\System\ArgumentException;
 use SharpPhp\Runtime\System\Collections\Generic\Dictionary;
@@ -115,15 +116,8 @@ final class JsonSerializer
     private static function objectToJson(object $value, ?string $naming, int $depth): \stdClass
     {
         $object = new \stdClass();
-        foreach ((new \ReflectionObject($value))->getProperties(\ReflectionProperty::IS_PUBLIC) as $property) {
-            if ($property->isStatic()) {
-                continue;
-            }
-            // A set-only property has nothing to read; an unset typed property has no value yet.
-            if ($property->isVirtual() ? !$property->hasHook(\PropertyHookType::Get) : !$property->isInitialized($value)) {
-                continue;
-            }
-            $object->{JsonNamingPolicy::apply($naming, $property->getName())} = self::toJson($property->getValue($value), $naming, $depth);
+        foreach (get_object_vars(Json::properties($value)) as $name => $item) {
+            $object->{JsonNamingPolicy::apply($naming, $name)} = self::toJson($item, $naming, $depth);
         }
 
         return $object;

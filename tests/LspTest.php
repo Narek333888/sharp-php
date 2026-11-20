@@ -63,7 +63,7 @@ final class LspTest extends TestCase
 
     public function testMembersAfterADotInUnfinishedCode(): void
     {
-        $this->assertSame(['Name', 'Age', 'Greet', 'Peek', 'ToString', 'Equals', 'GetHashCode', 'GetType'], $this->complete('        var n = person.'), 'private members are hidden outside the class');
+        $this->assertSame(['Age', 'Greet', 'Name', 'Peek', 'Equals', 'GetHashCode', 'GetType', 'ToString'], $this->complete('        var n = person.'), "the class's members (private ones hidden outside it), then object's");
         $this->assertSame(['Create'], $this->complete('        Person.'), 'a type lists its static members');
         $this->assertContains('Where', $this->complete('        Console.WriteLine(names.'), 'LINQ inside an unclosed call');
         $this->assertContains('Add', $this->complete('        Console.WriteLine(names.'));

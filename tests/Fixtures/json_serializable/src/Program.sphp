@@ -1,0 +1,35 @@
+using System;
+using System.Collections.Generic;
+
+namespace App;
+
+public record Point(int X, int Y)
+{
+    public int Sum => X + Y;
+}
+
+public record Animal
+{
+    public string Name { get; init; } = "";
+}
+
+public record Dog : Animal
+{
+    public bool Good { get; init; } = true;
+}
+
+public record Empty();
+
+public class Program
+{
+    public static void Main()
+    {
+        // PHP's json_encode (and Laravel, which makes a JSON response of a JsonSerializable result)
+        Console.WriteLine(json_encode(new Point(1, 2)));
+        Console.WriteLine(json_encode(new Dog { Name = "Rex" }));
+        Console.WriteLine(json_encode(new Empty()));
+        Console.WriteLine(json_encode(new { Id = 1, Tags = new List<string> { "a" }, At = new Point(3, 4) }));
+        Console.WriteLine(json_encode(new { }));
+        Console.WriteLine(json_encode(new List<Point> { new(5, 6) }));
+    }
+}

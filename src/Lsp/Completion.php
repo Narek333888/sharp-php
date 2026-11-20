@@ -188,16 +188,24 @@ final class Completion
                     continue;
                 }
                 $seen[$key] = true;
-                $items[] = self::memberItem($member);
+                // The class's own members first (a facade's documented methods before Facade's spy() and
+                // shouldReceive()), then inherited ones. Reflection lists inherited PHP methods as the
+                // class's own, so the file that declares the member decides.
+                $own = $symbol === $type && ($member->location === null || $type->location === null || $member->location[0] === $type->location[0]);
+                $item = self::memberItem($member);
+                $item['sortText'] = ($own ? '0' : '1') . $member->name;
+                $items[] = $item;
             }
         }
         if (!$static) {
             foreach (self::objectItems() as $item) {
                 if (!isset($seen[strtolower($item['label'])])) {
+                    $item['sortText'] = '2' . $item['label'];
                     $items[] = $item;
                 }
             }
         }
+        usort($items, static fn (array $a, array $b): int => strcmp($a['sortText'], $b['sortText']));
 
         return $items;
     }
