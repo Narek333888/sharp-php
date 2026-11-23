@@ -876,10 +876,16 @@ Like the C# compiler, SharpPHP rejects at compile time (not at runtime):
 - classes that do not implement their interfaces (with matching parameter counts) or inherited abstract members
 - members that do not exist, also on the runtime library's types: `list.Lenght`, `text.Shout()` without an extension method
 - array initializers that do not match their size (`new int[2] { 1, 2, 3 }`), constant negative array sizes
+- operators the operand types do not have: `true + 1`, `"a" * 2`, `"a" < "b"`, `E1.A == E2.A`, `date == "x"`, `-"a"`, `!5`, `5 ?? 0` (CS0019, CS0023); `?:` whose branches have no type in common, `var v = c ? 1 : "a"` (CS0173); `i += 1.5` of an int (CS0266); a constant division by zero (CS0020)
+- names: a local used before its declaration (CS0841, CS0844), a local or parameter hidden by a nested one (`int x; { int x; }`, CS0136; lambdas and local functions may hide them, as since C# 8)
+- `const`: a value that is not constant (`const int Year = DateTime.Now.Year;`, CS0133), a missing value, `const var`; assignments to a constant (CS0131), to a `foreach` or `using` variable (CS1656, CS1657); `(int)double.NaN` and other constants out of range (CS0221)
+- statements: duplicate `case` labels (CS0152), `yield` in a method that does not return `IEnumerable<T>` or `IEnumerator<T>` (CS1624), `foreach` over a value without `GetEnumerator` (CS1579), `throw` of something that is not an exception (CS0029), a `catch` that an earlier one already catches (CS0160), `using` of something that is not `IDisposable` (CS1674)
+- `ref` and `out` written at the call as the parameter declares them (CS1620, CS1615)
+- types: deriving from a `sealed` class, a struct or a `static` class (CS0509, CS0709), instances and variables of a static class (CS0712, CS0723), invoking an event outside its class (CS0070), type arguments that do not meet `where` constraints: `class`, `struct`, `new()`, a base class (CS0452, CS0453, CS0310, CS0311, CS0315)
 
 The checks never reject valid C#, so where SharpPHP cannot be sure it accepts the code:
 
-- a conversion is only rejected when both types are known: values of type `object`, `dynamic` or unconstrained type parameters, and untyped PHP code, are checked at runtime
+- a conversion is only rejected when both types are known: values of type `object`, `dynamic` or unconstrained type parameters, and untyped PHP code, are checked at runtime; so are their members and operators (`object o; o.Length` compiles: PHP code's results are `object` too)
 - integers of PHP code and of the runtime library have no size the compiler knows (PHP's `int`), so they convert to every integral type: `byte b = byte.Parse(s)` and `byte m = Math.Max(a, b)` compile, as in C#, and so does `byte b = someList.Count`, which C# rejects; nullable-to-value assignments (`int i = maybeNull;`) are not reported
 - assignments inside `&&`, `||` and `?:` count as definite assignments
 
@@ -922,6 +928,7 @@ SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 - `decimal` is a PHP float (a 64-bit double) to the runtime: the compiler checks it as C#'s decimal (no implicit conversion from or to double, `1.5m` literals, CS0664), and it prints with up to 15 significant digits and rounds half away from zero in formats, but its arithmetic has double's precision (`0.1m + 0.2m == 0.3m` is false; compare money in cents, or round), `10m / 3` is `3.33333333333333` and `1.50m` prints `1.5`. JSON writes a decimal as a double (`0.30000000000000004` for `0.1m + 0.2m`). `float` is computed in single precision, as in C#
 - A number in a variable of type `object` (or of a generic type parameter `T`) has lost its C# type: it prints with up to 15 significant digits (`object o = 0.1 + 0.2;` prints `0.3`, `0.30000000000000004` in C#)
 - `[Flags]` enums: an enum value is a PHP enum case, so combinations such as `A | B` do not exist (a compile error, SP1010). Combine the numbers instead: `(int)A | (int)B`; `RegexOptions` parameters take such a number
+- An enum variable holds one of the enum's members: `(Color)99` and `Color.Red + 100` throw an `ArgumentException` when the enum has no member with that value (C# keeps any number)
 - `char` is a one-character string at runtime (it converts to its code where C# would use it as a number)
 - A value only knows its PHP type at run time: `GetType()` of an `object` holding a long is `System.Int32` (of a `long` variable it is `System.Int64`, which the compiler knows), and a `char` is a one-character string, so `object o = 'c'; o is string` is true; two boxed values are equal by value (`(object)1 == (object)1` is true, false in C#); a string's `Length` counts characters, not UTF-16 code units (`"😀".Length` is 1, 2 in C#); generic code erases its type arguments: `default(T)` is null for every `T`
 - The runtime library implements the common .NET APIs, not all of them (no `DateTimeOffset`, `TimeZoneInfo`, `DateOnly`, `TimeOnly`, `Zip` without a result selector, which returns tuples, ...); `MinBy` and `MaxBy` of an empty sequence give `null` (.NET throws for value types)

@@ -75,7 +75,36 @@ Fixtures `net_numbers`, `net_semantics` and `net_collections` have .NET 10's out
 - `string.Compare(a, b, StringComparison.Ordinal)` returns .NET's values (`31` for "a" and "B")
 - `x % 0` and `x / 0` of integers: "Attempted to divide by zero."
 
+**C#'s compile errors**
+
+The compiler rejects what the C# compiler rejects, checked against .NET 10 with 215 programs
+(`tests/Fixtures/csharp-rules.txt`, valid ones included):
+
+- operators the operand types do not have (CS0019, CS0023: `true + 1`, `"a" < "b"`, `E1.A == E2.A`,
+  `date == "x"`, `!5`, `5 ?? 0`), `?:` without a type (CS0173), `i += 1.5` (CS0266), `1 / 0` (CS0020)
+- a local used before its declaration (CS0841, CS0844); a local hiding an outer one or a parameter (CS0136)
+- `const`: values that are not constant (CS0133), `const int c;` (CS0145), `const var` (CS0822), assigning a
+  constant (CS0131), a `foreach` or `using` variable (CS1656, CS1657, CS1510); `(int)double.NaN` (CS0221)
+- duplicate `case` labels (CS0152), `yield` outside an iterator type (CS1624), `foreach` over an `int` or a
+  class without `GetEnumerator` (CS1579), `throw "error"` (CS0029), unreachable `catch` (CS0160)
+- `ref`/`out` missing or extra at a call (CS1620, CS1615); `Array.Sort(arr)` and `Array.Reverse(arr)` take
+  the array by value, as in C# (signature help showed `ref`)
+- deriving from `sealed`, struct and static classes (CS0509, CS0709), `new` and variables of a static
+  class (CS0712, CS0723), invoking an event outside its class (CS0070), `where` constraints (CS0452,
+  CS0453, CS0310, CS0311, CS0315)
+
+**Also fixed**
+
+- Arithmetic of enums: `e - E.A`, `e + 1`, `1 + e`, `e++` (PHP failed at run time)
+- `throw null` throws a `NullReferenceException`
+- `HttpClient`, `HttpResponseMessage`, `HttpContent` and `Task` are `IDisposable`: `using var response =
+  await client.GetAsync(url);` compiles
+- `Array.Resize(ref numbers, n)` fills an `int[]` with 0 (it was null)
+
 **Breaking, for code that was not valid C#**
+
+- Everything listed under "C#'s compile errors" above, for example a `foreach` variable named as a local of
+  the enclosing block: `Student student = ...; foreach (Student student in students)` (CS0136)
 
 - `float f = 1.5;`, `decimal m = 1.5;` (CS0664), `decimal + double` (CS0019), `(string)5` (CS0030),
   `override` without `virtual` (CS0506)

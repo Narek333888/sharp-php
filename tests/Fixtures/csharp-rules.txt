@@ -1,0 +1,217 @@
+# C# programs and what the C# compiler (.NET 10) says about them: an error code, or "compiles".
+# Each line: name<TAB>expected<TAB>statements<TAB>declarations. Checked by CSharpRulesTest.
+datetime-eq-string	SP0019	var d = DateTime.Now; var b = d == "x";	
+dict-init-mix	SP0747	var d = new Dictionary<string, int> { { "a", 1 }, ["b"] = 2 };	
+const-cast-double-long	SP0221	var x = (long)1e19;	
+const-cast-nan-int	SP0221	var x = (int)double.NaN;	
+double-to-int	SP0266	int x = 5.5;	
+int-to-string	SP0029	string s = 5;	
+unassigned-local	SP0165	int x; Console.WriteLine(x);	
+return-value-void	SP0127	static void M() { return 5; }	
+missing-return	SP0161	static int M(int a) { if (a > 0) return 1; }	
+assign-in-if	SP0029	int x = 0; if (x = 5) { }	
+var-no-init	SP0818	var x;	
+var-null	SP0815	var x = null;	
+const-non-constant	SP0133	const int c = DateTime.Now.Year;	
+readonly-assign	SP0191	var r = new RO(); r.V = 2;	class RO { public readonly int V = 1; }
+init-after-construction	SP8852	var p = new IP { V = 1 }; p.V = 2;	class IP { public int V { get; init; } }
+getter-only-assign	SP0200	var p = new GP(); p.V = 2;	class GP { public int V { get; } = 1; }
+private-access	SP0122	var p = new PA(); Console.WriteLine(p.secret);	class PA { private int secret = 1; }
+abstract-new	SP0144	var a = new AB();	abstract class AB { }
+interface-not-implemented	SP0535	I2 x = null;	interface I2 { void M(); } class C2 : I2 { }
+sealed-inherit	SP0509	var x = 1;	sealed class S1 { } class S2 : S1 { }
+override-non-virtual	SP0506	var x = 1;	class B1 { public void M() { } } class D1 : B1 { public override void M() { } }
+switch-fallthrough	SP0163	int x = 1; switch (x) { case 1: Console.WriteLine(1); case 2: break; }	
+switch-duplicate-case	SP0152	int x = 1; switch (x) { case 1: break; case 1: break; }	
+break-outside-loop	SP0139	break;	
+await-in-sync	SP4033	static void M() { await Task.Delay(1); }	
+yield-in-list	SP1624	static List<int> M() { yield return 1; }	
+string-times-int	SP0019	var s = "a" * 2;	
+null-to-int	SP0037	int x = null;	
+foreach-int	SP1579	foreach (var c in 5) { }	
+wrong-arg-count	SP1501	Console.WriteLine(Math.Abs(1, 2));	
+wrong-arg-type	SP1503	Console.WriteLine(Math.Sqrt("x"));	
+array-init-count	SP0847	int[] a = new int[3] { 1, 2 };	
+string-to-char	SP0029	char c = "a";	
+int-to-bool	SP0029	bool b = 1;	
+double-literal-to-float	SP0664	float f = 1.5;	
+double-literal-to-decimal	SP0664	decimal m = 1.5;	
+negative-to-uint	SP0031	uint u = -1;	
+enum-compare-different	SP0019	var b = E1.A == E2.A;	enum E1 { A } enum E2 { A }
+constraint-violation	SP0452	var x = M<int>(); static T M<T>() where T : class => null;	
+foreach-var-assign	SP1656	foreach (var x in new[] { 1 }) { x = 2; }	
+string-index-assign	SP0200	string s = "ab"; s[0] = 'x';	
+ref-missing-at-call	SP1620	int a = 1; M(a); static void M(ref int x) { }	
+out-unassigned	SP0177	static void M(out int x) { }	
+interface-new	SP0144	var x = new IDisposable();	
+instance-from-static	SP0120	var x = 1;	class IS { int v; static int M() => v; }
+use-before-declare	SP0841	Console.WriteLine(y); int y = 1;	
+duplicate-member	SP0102	var x = 1;	class DM { int a; int a; }
+return-from-ctor	SP0127	var x = 1;	class RC { public RC() { return 1; } }
+parse-int-arg	SP1503	var x = int.Parse(5);	
+nested-same-name	SP0136	int x = 1; { int x = 2; }	
+lambda-param-shadow-local	compiles	int x = 1; Func<int, int> f = x => x;	
+throw-non-exception	SP0029	throw "error";	
+catch-order	SP0160	try { } catch (Exception) { } catch (InvalidOperationException) { }	
+ternary-mismatch	SP0173	var v = true ? 1 : "a";	
+event-invoke-outside	SP0070	var p = new EP(); p.E();	class EP { public event Action E; }
+string-compare-op	SP0019	var b = "a" < "b";	
+bool-arith	SP0019	var b = true + 1;	
+char-plus-string-assign	SP0029	char c = 'a' + "b";	
+long-to-int-param	SP1503	long l = 5; M(l); static void M(int x) { }	
+async-void-await	SP4008	static async void M() { } await M();	
+op-bool-plus	SP0019	var b = true + 1;	
+op-string-mul	SP0019	var s = "a" * 2;	
+op-string-lt	SP0019	var b = "a" < "b";	
+op-enum-different	SP0019	var b = E1.A == E2.A;	enum E1 { A } enum E2 { A }
+op-datetime-eq-string	SP0019	var d = DateTime.Now; var b = d == "x";	
+op-string-minus	SP0019	var s = "a" - "b";	
+op-bool-lt	SP0019	var b = true < false;	
+op-bool-eq-int	SP0019	var b = true == 1;	
+op-string-eq-int	SP0019	var b = "1" == 1;	
+op-string-eq-char	SP0019	var b = "a" == 'a';	
+op-enum-eq-int	SP0019	var b = E1.A == 1;	enum E1 { A, B }
+op-enum-plus-enum	SP0019	var b = E1.A + E1.B;	enum E1 { A, B }
+op-enum-mul	SP0019	var b = E1.A * 2;	enum E1 { A, B }
+op-and-int	SP0019	var b = 1 && 2;	
+op-or-string	SP0019	var b = "a" || true;	
+op-shift-double	SP0019	var x = 1.5 << 1;	
+op-mod-bool	SP0019	var x = true % 2;	
+op-coalesce-int	SP0019	int a = 1; var x = a ?? 2;	
+op-datetime-plus-int	SP0019	var d = DateTime.Now + 1;	
+op-timespan-eq-int	SP0019	var b = TimeSpan.Zero == 0;	
+op-xor-string	SP0019	var b = "a" ^ "b";	
+op-char-mul-string	SP0019	var s = 'a' * "b";	
+op-unary-minus-string	SP0023	var s = -"a";	
+op-unary-not-int	SP0023	var b = !5;	
+op-unary-tilde-double	SP0023	var x = ~1.5;	
+op-unary-minus-bool	SP0023	var x = -true;	
+op-compound-bool	SP0019	bool b = true; b += 1;	
+op-compound-string-minus	SP0019	string s = "a"; s -= "b";	
+op-increment-string	SP0023	string s = "a"; s++;	
+op-increment-bool	SP0023	bool b = true; b++;	
+op-class-plus	SP0019	var x = new C() + 1;	class C { }
+op-class-eq-int	SP0019	var b = new C() == 1;	class C { }
+op-class-eq-string	SP0019	var b = new C() == "a";	class C { }
+op-classes-unrelated	SP0019	var b = new C() == new D();	class C { } class D { }
+op-class-lt	SP0019	var b = new C() < new C();	class C { }
+op-record-plus	SP0019	var x = new R(1) + new R(2);	record R(int X);
+op-list-plus	SP0019	var x = new List<int>() + 1;	
+op-ternary-mismatch	SP0173	var v = true ? 1 : "a";	
+op-ternary-classes	SP0173	var v = true ? new C() : new D();	class C { } class D { }
+op-ternary-int-null	SP0173	var v = true ? 1 : null;	
+ok-enum-zero	compiles	var e = E1.B; Console.WriteLine((e == 0) + " " + (0 != e) + " " + (e < E1.B) + " " + (e - E1.A) + " " + (e + 1) + " " + (1 + e) + " " + (e - 1));	enum E1 { A, B, C }
+ok-string-concat	compiles	Console.WriteLine("a" + 1 + 'c' + 2.5 + true + null + new C()); Console.WriteLine(1 + "a"); Console.WriteLine(null + "a");	class C { }
+ok-char-arith	compiles	char c = 'a'; Console.WriteLine((c + 1) + " " + ('a' + "b") + " " + (c == 97) + " " + ('a' < 'b') + " " + (c - '0')); c++; c += (char)1; Console.WriteLine(c);	
+ok-numeric-mix	compiles	byte x = 1; Console.WriteLine((1 == 1.0) + " " + (1L < 2) + " " + (1u == 1) + " " + (x + x) + " " + (2.5m * 3) + " " + (7 % 2.5) + " " + (1 << 3) + " " + (5L >> 1));	
+ok-bools	compiles	bool t = true, f = false; Console.WriteLine((t & f) + " " + (t ^ t) + " " + (t | f) + " " + !t + " " + (t == f) + " " + (t != f) + " " + (t && !f));	
+ok-coalesce	compiles	int? a = null; string s = null; object o = null; Console.WriteLine((a ?? 2) + " " + (s ?? "x") + " " + (o ?? 1) + " " + (null ?? "n"));	
+ok-null-compare	compiles	string s = null; int? n = null; Console.WriteLine((s == null) + " " + (null == s) + " " + (n == null) + " " + (5 == n) + " " + (new C() == null) + " " + (DateTime.Now == null));	class C { }
+ok-datetime	compiles	var d = DateTime.Now; var t = TimeSpan.Zero; Console.WriteLine(((d - d) == t) + " " + (d + t == d) + " " + (d < d) + " " + (t >= t) + " " + (Guid.Empty == Guid.Empty) + " " + (d - t <= d));	
+ok-class-hierarchy	compiles	B b = new D(); D d = new D(); I i = d; object o = d; Console.WriteLine((b == d) + " " + (d == b) + " " + (i == d) + " " + (o == d) + " " + (d != o) + " " + (b == i));	interface I { } class B { } class D : B, I { }
+ok-ternary	compiles	object o = true ? 1 : "a"; int? n = true ? 1 : null; var x = true ? 1 : 2.5; var s = true ? null : "a"; B b = true ? new D() : new B(); var c = false ? new D() : new B(); Console.WriteLine(o + " " + n + " " + x + " " + s + " " + b + " " + c);	class B { } class D : B { }
+ok-compound	compiles	string s = "a"; s += 1; s += 'c'; int i = 0; i += 'a'; double d = 1; d += 1; d *= 2; long l = 1; l += 1; Console.WriteLine(s + " " + i + " " + d + " " + l);	
+ok-strings-eq	compiles	string a = "x", b = "x"; object o = "x"; Console.WriteLine((a == b) + " " + (a != "y") + " " + string.Equals(a, b) + " " + (a.CompareTo(b) < 0));	
+ok-nullable-ops	compiles	int? a = 1; double? d = 2.5; bool? t = true; Console.WriteLine((a + d) + " " + (a < d) + " " + (t & false) + " " + (a == 1) + " " + (d * 2) + " " + (-a) + " " + (!t));	
+ok-delegates	compiles	Action a = () => Console.Write("a"); Action b = () => Console.Write("b"); var c = a + b; c(); c -= a; c(); Console.WriteLine();	
+ok-enum-increment	compiles	var e = E1.A; e++; Console.Write(e + " "); e += 1; Console.Write(e + " "); e--; e -= 1; Console.WriteLine(e + " " + (E1.C - e) + " " + (e + 1 - 1) + " " + (1 + e) + " " + (e + (char)1));	enum E1 { A, B, C }
+op-compound-int-double	SP0266	int i = 0; i += 1.5;	
+op-compound-int-long	SP0266	int i = 0; long l = 1; i += l;	
+ok-compound-byte	compiles	byte b = 1; b += 1; b *= 2; short s = 1; s -= 1; Console.WriteLine(b + " " + s);	
+use-before-declare-lambda	SP0841	Action a = () => Console.WriteLine(y); int y = 1; a();	
+use-before-declare-field	SP0844	new C().M();	class C { int x = 5; public void M() { Console.WriteLine(x); int x = 1; } }
+use-before-declare-nested	SP0841	{ Console.WriteLine(y); } int y = 1;	
+nested-same-name-later	SP0136	{ int x = 2; } int x = 1;	
+nested-same-name-param	SP0136	new C().M(1);	class C { public void M(int x) { int x = 2; } }
+nested-same-name-foreach	SP0136	int x = 1; foreach (var x in new[] { 1 }) { }	
+nested-same-name-for	SP0136	int i = 0; for (int i = 0; i < 1; i++) { }	
+nested-same-name-catch	SP0136	var e = 1; try { } catch (Exception e) { }	
+nested-same-name-out	SP0136	int n = 1; { int.TryParse("2", out var n); }	
+const-field-non-constant	SP0133	Console.WriteLine(C.X);	class C { public const int X = DateTime.Now.Year; }
+const-assign	SP0131	const int c = 1; c = 2;	
+const-no-value	SP0145	const int c;	
+const-var	SP0822	const var c = 1;	
+const-from-variable	SP0133	int a = 1; const int c = a;	
+const-typeof	SP0133	const Type t = typeof(int);	
+const-new	SP0133	const object o = new object();	
+const-string-empty	SP0133	const string s = string.Empty;	
+const-cast-maxvalue	SP0221	var x = (long)double.MaxValue;	
+const-cast-infinity	SP0221	var x = (int)double.PositiveInfinity;	
+const-cast-float-max	SP0221	var x = (int)float.MaxValue;	
+const-div-zero	SP0020	const int c = 1 / 0;	
+foreach-var-increment	SP1656	foreach (var x in new[] { 1 }) { x++; }	
+foreach-var-compound	SP1656	foreach (var x in new[] { 1 }) { x += 1; }	
+foreach-var-out	SP1657	foreach (var x in new[] { 1 }) { int.TryParse("1", out x); }	
+using-var-assign	SP1656	using (var s = new System.IO.StringReader("a")) { s = null; }	
+ok-shadow-in-lambda	compiles	int x = 1; Func<int, int> f = x => x * 2; Action g = () => { int x = 5; Console.Write(x); }; g(); Console.WriteLine(f(3) + x);	
+ok-shadow-in-localfn	compiles	int x = 1; int F(int x) => x + 1; int G() { int x = 7; return x; } Console.WriteLine(F(5) + G() + x);	
+ok-sibling-blocks	compiles	{ int x = 1; Console.Write(x); } { int x = 2; Console.Write(x); } for (int i = 0; i < 1; i++) { } for (int i = 0; i < 1; i++) { } foreach (var y in new[] { 3 }) Console.Write(y); foreach (var y in new[] { 4 }) Console.Write(y); Console.WriteLine();	
+ok-field-shadow	compiles	new C().M();	class C { int x = 5; public void M() { int x = 1; Console.WriteLine(x + this.x); } }
+ok-later-in-other-method	compiles	new C().M();	class C { public void M() => Console.WriteLine(N()); int N() { int y = 2; return y; } }
+ok-out-var-leak	compiles	if (!int.TryParse("5", out var n)) return; Console.WriteLine(n);	
+ok-const-local	compiles	const int A = 2; const int B = A * 3 + 1; const string S = "x" + "y"; const double D = 1.5 / 2; const bool T = A > 1; const char C = 'c'; const long L = A; const string N = null; const int H = (int)2.9; const E1 Q = E1.B; Console.WriteLine(A + B + S + D + T + C + L + N + H + Q + nameof(A) + (B % 3) + (-A) + (~A) + (A << 2) + (true ? A : B));	enum E1 { A, B }
+ok-const-in-switch	compiles	const int Max = 3; int v = 3; switch (v) { case Max: Console.WriteLine("max"); break; default: break; }	
+ok-const-field	compiles	Console.WriteLine(C.X + C.Y + C.Z);	class C { public const int X = 2; public const int Y = X * 2; public const string Z = "z" + nameof(X); }
+ok-const-cast	compiles	const int c = (int)3.9; const byte b = (byte)200; const int m = int.MaxValue; const double nan = double.NaN; Console.WriteLine(c + " " + b + " " + m + " " + nan + " " + (int)c);	
+ok-foreach-var-member	compiles	var list = new[] { new P() }; foreach (var p in list) { p.X = 5; Console.WriteLine(p.X); }	class P { public int X; }
+ok-assign-loop-var	compiles	for (int i = 0; i < 3; i++) { i += 1; Console.Write(i); } Console.WriteLine();	
+div-zero-var	compiles	int a = 5; int b = a / 0;	
+div-zero-mod	compiles	int a = 5; int b = a % 0;	
+ok-div-zero-double	compiles	double a = 5; Console.WriteLine(a / 0 + " " + 1.0 / 0 + " " + 5 / 0.0);	
+const-var-type-named-var	compiles	const int var = 1; Console.WriteLine(var);	
+ok-const-epsilon	compiles	Console.WriteLine((int)double.Epsilon + " " + (long)1e18 + " " + (int)-2.5);	
+nested-same-name-lambda-param	compiles	int x = 1; Action<int> a = (int y) => { int x = 2; }; a(1);	
+ok-catch-twice	compiles	try { throw new Exception(); } catch (Exception e) { Console.Write(e.GetType().Name); } try { } catch (Exception e) { } Console.WriteLine();	
+ok-pattern-twice	compiles	object o = 1; if (o is int a) Console.Write(a); if (o is string b) Console.Write(b); switch (o) { case int c: Console.Write(c); break; case string c: break; } Console.WriteLine();	
+ok-using-var	compiles	using (var r = new System.IO.StringReader("hi")) { Console.WriteLine(r.ReadToEnd()); } using var w = new System.IO.StringWriter(); w.Write("x"); Console.WriteLine(w.ToString());	
+switch-duplicate-string	SP0152	string s = "a"; switch (s) { case "a": break; case "b": break; case "a": break; }	
+switch-duplicate-enum	SP0152	var e = E1.A; switch (e) { case E1.A: break; case E1.A: break; }	enum E1 { A, B }
+switch-duplicate-default	SP0152	int x = 1; switch (x) { default: break; case 1: break; default: break; }	
+switch-duplicate-const-expr	SP0152	int x = 1; switch (x) { case 2: break; case 1 + 1: break; }	
+switch-duplicate-same-section	SP0152	int x = 1; switch (x) { case 1: case 1: break; }	
+ok-switch-cases	compiles	int x = 2; switch (x) { case 1: case 2: Console.Write("12"); break; case 3: break; default: break; } object o = 5; switch (o) { case int i when i > 9: break; case int i: Console.Write(i); break; case string s: break; } Console.WriteLine();	
+using-int	SP1674	using (var x = 5) { }	
+using-stringbuilder	SP1674	using (var sb = new System.Text.StringBuilder()) { }	
+using-decl-non-disposable	SP1674	using var c = new C();	class C { }
+using-dispose-no-interface	SP1674	using (var c = new C()) { }	class C { public void Dispose() { } }
+ok-using-kinds	compiles	using (var r = new System.IO.StringReader("a")) { } using (var w = new System.IO.StringWriter()) { } using (var c = new C()) { } using (var cts = new System.Threading.CancellationTokenSource()) { } using (var h = new System.Net.Http.HttpClient()) { } using (C n = null) { } Console.WriteLine("ok");	class C : IDisposable { public void Dispose() => Console.Write("disposed "); }
+ok-using-file	compiles	var path = System.IO.Path.GetTempFileName(); using (var sw = new System.IO.StreamWriter(path)) { sw.Write("x"); } using (var sr = new System.IO.StreamReader(path)) { Console.WriteLine(sr.ReadToEnd()); } System.IO.File.Delete(path);	
+yield-in-int	SP1624	static int M() { yield return 1; }	
+yield-in-array	SP1624	static int[] M() { yield return 1; }	
+ok-yield-kinds	compiles	foreach (var x in A()) Console.Write(x); foreach (var x in B()) Console.Write(x); Console.WriteLine(); static IEnumerable<int> A() { yield return 1; } static IEnumerable<string> B() { yield return "2"; }	
+foreach-bool	SP1579	foreach (var c in true) { }	
+foreach-double	SP1579	foreach (var c in 1.5) { }	
+foreach-class	SP1579	foreach (var c in new C()) { }	class C { }
+foreach-datetime	SP1579	foreach (var c in DateTime.Now) { }	
+foreach-enum	SP1579	foreach (var c in E1.A) { }	enum E1 { A }
+throw-int	SP0029	throw 5;	
+throw-class	SP0029	throw new C();	class C { }
+throw-expression-string	SP0029	string s = null; var t = s ?? throw "x";	
+ok-throw-kinds	compiles	try { throw new MyEx("m"); } catch (MyEx e) { Console.Write(e.Message); } try { try { throw new InvalidOperationException("io"); } catch (Exception e) { throw; } } catch (Exception e) { Console.Write(e.Message); } try { Exception ex = new ArgumentException("a"); throw ex; } catch (ArgumentException e) { Console.Write(e.Message); } try { string s = null; var t = s ?? throw new FormatException("f"); } catch (FormatException e) { Console.WriteLine(e.Message); }	class MyEx : Exception { public MyEx(string m) : base(m) { } }
+ok-throw-null	compiles	try { throw null; } catch (NullReferenceException) { Console.WriteLine("nre"); }	
+catch-order-same	SP0160	try { } catch (FormatException) { } catch (FormatException) { }	
+catch-order-user	SP0160	try { } catch (Base) { } catch (Derived) { }	class Base : Exception { } class Derived : Base { }
+catch-order-filtered-later	SP0160	try { } catch (Exception) { } catch (ArgumentException e) when (e.Message == "") { }	
+ok-catch-order	compiles	try { } catch (ArgumentNullException) { } catch (ArgumentException) { } catch (Exception) { } try { } catch (Exception e) when (e.Message == "x") { } catch (Exception) { } try { } catch (FormatException) { } catch (InvalidOperationException) { } catch { } Console.WriteLine("ok");	
+ref-extra-at-call	SP1615	int a = 1; M(ref a); static void M(int x) { }	
+out-for-ref	SP1620	int a = 1; M(out a); static void M(ref int x) { }	
+ok-ref-out	compiles	int a = 1; R(ref a); O(out var b); int.TryParse("5", out var n); var d = new Dictionary<int, int> { { 1, 2 } }; d.TryGetValue(1, out var v); Console.WriteLine(a + " " + b + " " + n + " " + v); static void R(ref int x) { x++; } static void O(out int x) { x = 7; }	
+static-class-inherit	SP0709	var x = 1;	static class S1 { } class S2 : S1 { }
+struct-inherit	SP0509	var x = 1;	struct S1 { } class S2 : S1 { }
+ok-inherit	compiles	Console.WriteLine(new S2().Who());	class S1 { public virtual string Who() => "1"; } sealed class S2 : S1 { public override string Who() => "2"; }
+static-class-variable	SP0723	SC s = null;	static class SC { }
+ok-static-class	compiles	Console.WriteLine(SC.M());	static class SC { public static int M() => 4; }
+event-assign-outside	SP0070	var p = new EP(); p.E = null;	class EP { public event Action E; }
+event-read-outside	SP0070	var p = new EP(); var h = p.E;	class EP { public event Action E; }
+ok-event	compiles	var p = new EP(); p.E += () => Console.Write("fired "); p.Raise(); p.E -= null; Console.WriteLine();	class EP { public event Action E; public void Raise() { E?.Invoke(); E(); } }
+constraint-class	SP0452	var x = M<int>(); static T M<T>() where T : class => null;	
+constraint-struct	SP0453	var x = M<string>(); static T M<T>() where T : struct => default;	
+constraint-new	SP0310	var x = M<C>(); static T M<T>() where T : new() => new T();	class C { public C(int a) { } }
+constraint-base	SP0311	var x = M<C>(); static T M<T>(T t = default) where T : Base => t;	class Base { } class C { }
+constraint-class-generic-type	SP0452	var b = new Box<int>();	class Box<T> where T : class { }
+ok-constraints	compiles	Console.WriteLine(M<string>() + " " + N<int>(4) + " " + P<C>() + P<int>() + " " + Q<D>(new D()).GetType().Name + " " + R<int>(5) + " " + new Box<string>().GetType().Name);  static T M<T>() where T : class => null; static T N<T>(T t) where T : struct => t; static string P<T>() where T : new() => "n"; static T Q<T>(T t) where T : Base => t; static T R<T>(T t) where T : IComparable<T> => t;	class C { } class Base { } class D : Base { } class Box<T> where T : class { }
+ok-object-members	compiles	object o = "x"; Console.WriteLine(o.ToString() + o.Equals("x") + (o.GetHashCode() != 0) + o.GetType().Name + object.Equals(o, "x") + object.ReferenceEquals(o, o));	
+sort-ref	SP1615	var a = new[] { 2, 1 }; Array.Sort(ref a);	
+interlocked-no-ref	SP1620	int x = 0; System.Threading.Interlocked.Increment(x);	
+resize-no-ref	SP1620	var a = new[] { 1 }; Array.Resize(a, 2);	
+ok-runtime-ref-out	compiles	var a = new[] { 3, 1, 2 }; Array.Sort(a); Array.Reverse(a); Array.Resize(ref a, 4); int x = 0; System.Threading.Interlocked.Increment(ref x); var q = new Queue<int>(new[] { 9 }); q.TryDequeue(out var v); var d = new Dictionary<string, int> { ["k"] = 5 }; d.TryGetValue("k", out var w); double.TryParse("1.5", out var f); Console.WriteLine(string.Join(",", a) + " " + x + " " + v + " " + w + " " + f);	
