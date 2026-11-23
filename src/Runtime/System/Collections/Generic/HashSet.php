@@ -22,6 +22,7 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
     /** @use EnumerableMethods<T> */
     use EnumerableMethods;
     use EqualityKeys;
+    use SlotOrder;
 
     /** @var array<string, T> */
     private array $items = [];
@@ -46,7 +47,14 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
             return false;
         }
         $this->items[$key] = $this->of === null ? $item : TypeCheck::check($item, $this->of);
-        $this->keyAdded($key);
+        // (Inlined: this runs for every new item.)
+        $this->version++;
+        if ($key[0] === 'h') {
+            $this->keyAdded($key);
+        }
+        if ($this->slots !== null) {
+            $this->slotAdded($key);
+        }
 
         return true;
     }
@@ -58,6 +66,7 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
         if (!array_key_exists($key, $this->items)) {
             return false;
         }
+        $this->slotRemoved($key, $this->items);
         unset($this->items[$key]);
         $this->keyRemoved($key);
 
@@ -74,6 +83,7 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
     {
         $this->items = [];
         $this->hashBuckets = [];
+        $this->slotsCleared();
     }
 
     /** @param iterable<T> $other */
@@ -90,8 +100,9 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
         $keep = new self($other);
         foreach ($this->items as $key => $item) {
             if (!$keep->Contains($item)) {
+                $this->slotRemoved((string) $key, $this->items);
                 unset($this->items[$key]);
-                $this->keyRemoved($key);
+                $this->keyRemoved((string) $key);
             }
         }
     }
@@ -109,10 +120,35 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
         return 'System.Collections.Generic.HashSet`1[' . TypeName::ofSpec($this->of ?? 'mixed') . ']';
     }
 
-    /** @return \Iterator<int, T> */
-    public function getIterator(): \Iterator
+    /** @return \Generator<int, T> */
+    public function getIterator(): \Generator
     {
-        return new \ArrayIterator(array_values($this->items));
+        $version = $this->version;
+        $removals = $this->removals;
+        if ($this->slots === null) {
+            // Insertion order is the slot order. Items removed while enumerating (which .NET
+            // allows) are skipped.
+            foreach ($this->items as $key => $item) {
+                if ($removals !== $this->removals && !array_key_exists($key, $this->items)) {
+                    continue;
+                }
+                yield $item;
+                if ($version !== $this->version) {
+                    $this->assertVersion($version);
+                }
+            }
+
+            return;
+        }
+        foreach ($this->orderedHashes($this->items) as $key) {
+            if (!array_key_exists($key, $this->items)) {
+                continue;
+            }
+            yield $this->items[$key];
+            if ($version !== $this->version) {
+                $this->assertVersion($version);
+            }
+        }
     }
 
     /**
@@ -127,6 +163,17 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
     private function storedAt(string $key): mixed
     {
         return $this->items[$key];
+    }
+
+    /**
+     * The items in enumeration order, for LINQ (an array is faster to walk).
+     *
+     * @internal
+     * @return list<T>
+     */
+    public function sequence(): array
+    {
+        return $this->slots === null ? array_values($this->items) : array_map(fn (string $key): mixed => $this->items[$key], $this->orderedHashes($this->items));
     }
 
     /**

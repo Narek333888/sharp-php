@@ -27,6 +27,7 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
     /** @use EnumerableMethods<KeyValuePair<TKey, TValue>> */
     use EnumerableMethods;
     use EqualityKeys;
+    use SlotOrder;
 
     /** @var array<string, TKey> */
     private array $keys = [];
@@ -43,12 +44,12 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
 
     /** @var List_<TKey> */
     public List_ $Keys {
-        get => new List_(array_values($this->keys));
+        get => new List_(array_map(fn (string $h): mixed => $this->keys[$h], $this->orderedHashes($this->keys)));
     }
 
     /** @var List_<TValue> */
     public List_ $Values {
-        get => new List_(array_values($this->values));
+        get => new List_(array_map(fn (string $h): mixed => $this->values[$h], $this->orderedHashes($this->keys)));
     }
 
     /**
@@ -117,6 +118,7 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
         if (!array_key_exists($hash, $this->keys)) {
             return false;
         }
+        $this->slotRemoved($hash, $this->keys);
         unset($this->keys[$hash], $this->values[$hash]);
         $this->keyRemoved($hash);
 
@@ -153,6 +155,7 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
         $this->keys = [];
         $this->values = [];
         $this->hashBuckets = [];
+        $this->slotsCleared();
     }
 
     public function ToString(): string
@@ -165,8 +168,31 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
     /** @return \Iterator<int, KeyValuePair<TKey, TValue>> */
     public function getIterator(): \Iterator
     {
-        foreach ($this->keys as $hash => $key) {
-            yield new KeyValuePair($key, $this->values[$hash]);
+        $version = $this->version;
+        $removals = $this->removals;
+        if ($this->slots === null) {
+            // Insertion order is the slot order. Entries removed while enumerating (which .NET
+            // allows) are skipped.
+            foreach ($this->keys as $hash => $key) {
+                if ($removals !== $this->removals && !array_key_exists($hash, $this->keys)) {
+                    continue;
+                }
+                yield new KeyValuePair($key, $this->values[$hash]);
+                if ($version !== $this->version) {
+                    $this->assertVersion($version);
+                }
+            }
+
+            return;
+        }
+        foreach ($this->orderedHashes($this->keys) as $hash) {
+            if (!array_key_exists($hash, $this->keys)) {
+                continue;
+            }
+            yield new KeyValuePair($this->keys[$hash], $this->values[$hash]);
+            if ($version !== $this->version) {
+                $this->assertVersion($version);
+            }
         }
     }
 
@@ -214,7 +240,14 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
         }
         $this->values[$hash] = $this->valueType === null ? $value : TypeCheck::check($value, $this->valueType);
         if ($new) {
-            $this->keyAdded($hash);
+            // (Inlined: this runs for every new key.)
+            $this->version++;
+            if ($hash[0] === 'h') {
+                $this->keyAdded($hash);
+            }
+            if ($this->slots !== null) {
+                $this->slotAdded($hash);
+            }
         }
     }
 

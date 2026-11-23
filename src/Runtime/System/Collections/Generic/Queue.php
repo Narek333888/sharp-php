@@ -24,6 +24,8 @@ class Queue implements \IteratorAggregate, \Countable, \JsonSerializable
     /** @var list<T> */
     private array $items = [];
 
+    private int $version = 0;
+
     public int $Count {
         get => count($this->items);
     }
@@ -40,6 +42,7 @@ class Queue implements \IteratorAggregate, \Countable, \JsonSerializable
     public function Enqueue(mixed $item): void
     {
         $this->items[] = $this->of === null ? $item : TypeCheck::check($item, $this->of);
+        $this->version++;
     }
 
     /** @return T */
@@ -48,6 +51,8 @@ class Queue implements \IteratorAggregate, \Countable, \JsonSerializable
         if ($this->items === []) {
             throw new InvalidOperationException('Queue empty.');
         }
+
+        $this->version++;
 
         return array_shift($this->items);
     }
@@ -70,6 +75,7 @@ class Queue implements \IteratorAggregate, \Countable, \JsonSerializable
             return false;
         }
         $result = array_shift($this->items);
+        $this->version++;
 
         return true;
     }
@@ -77,12 +83,19 @@ class Queue implements \IteratorAggregate, \Countable, \JsonSerializable
     public function Clear(): void
     {
         $this->items = [];
+        $this->version++;
     }
 
-    /** @return \Iterator<int, T> */
-    public function getIterator(): \Iterator
+    /** @return \Generator<int, T> */
+    public function getIterator(): \Generator
     {
-        return new \ArrayIterator($this->items);
+        $version = $this->version;
+        foreach ($this->items as $item) {
+            yield $item;
+            if ($version !== $this->version) {
+                throw new \SharpPhp\Runtime\System\InvalidOperationException('Collection was modified; enumeration operation may not execute.');
+            }
+        }
     }
 
     /**
