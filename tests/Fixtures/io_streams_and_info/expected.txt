@@ -1,0 +1,12 @@
+True True
+[1:first][2:second 1+2][3:third] True
+first|third
+notes.txt .txt 23 True True True
+2 3 1 copy.txt,notes.txt
+6 Héllo H?llo
+async ok
+FileNotFoundException
+a/42/True
+../c/d.txt a/b/c.txt / /a/b
+True
+False

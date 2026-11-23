@@ -36,6 +36,84 @@ final class Path
         return $result;
     }
 
+    /** Joins the parts with a separator between them (unlike Combine, a rooted part does not start over). */
+    public static function Join(?string ...$paths): string
+    {
+        $result = '';
+        foreach ($paths as $path) {
+            if ($path === null || $path === '') {
+                continue;
+            }
+            $result .= $result === '' || self::EndsInDirectorySeparator($result) || str_starts_with($path, '/') || str_starts_with($path, DIRECTORY_SEPARATOR)
+                ? $path
+                : DIRECTORY_SEPARATOR . $path;
+        }
+
+        return $result;
+    }
+
+    public static function EndsInDirectorySeparator(?string $path): bool
+    {
+        return $path !== null && $path !== '' && (str_ends_with($path, '/') || str_ends_with($path, DIRECTORY_SEPARATOR));
+    }
+
+    /** "/a/b" for "/a/b/" (a root keeps its separator). */
+    public static function TrimEndingDirectorySeparator(string $path): string
+    {
+        $trimmed = rtrim($path, '/' . DIRECTORY_SEPARATOR);
+
+        return $trimmed === '' && $path !== '' ? substr($path, 0, 1) : $trimmed;
+    }
+
+    /** "/" for an absolute path ("C:\\" on Windows), "" for a relative one. */
+    public static function GetPathRoot(?string $path): ?string
+    {
+        if ($path === null) {
+            return null;
+        }
+        if (preg_match('#^[A-Za-z]:[\\\\/]?#', $path, $m) === 1) {
+            return $m[0];
+        }
+
+        return self::IsPathRooted($path) ? substr($path, 0, 1) : '';
+    }
+
+    /** The path of $path from $relativeTo: GetRelativePath("/a/b", "/a/c/d.txt") is "../c/d.txt". */
+    public static function GetRelativePath(string $relativeTo, string $path): string
+    {
+        $from = array_values(array_filter(explode('/', str_replace('\\', '/', self::GetFullPath($relativeTo))), static fn (string $p): bool => $p !== ''));
+        $to = array_values(array_filter(explode('/', str_replace('\\', '/', self::GetFullPath($path))), static fn (string $p): bool => $p !== ''));
+        $common = 0;
+        while ($common < count($from) && $common < count($to) && $from[$common] === $to[$common]) {
+            $common++;
+        }
+        $parts = [...array_fill(0, count($from) - $common, '..'), ...array_slice($to, $common)];
+
+        return $parts === [] ? '.' : implode(DIRECTORY_SEPARATOR, $parts);
+    }
+
+    /** Creates an empty file with a unique name in the temporary directory and returns its path. */
+    public static function GetTempFileName(): string
+    {
+        $file = tempnam(sys_get_temp_dir(), 'tmp');
+        if ($file === false) {
+            throw new IOException('The temporary file could not be created.');
+        }
+
+        return $file;
+    }
+
+    /**
+     * Characters a file name may not contain (on Linux and macOS: "/" and NUL).
+     *
+     * @return list<string>
+     * @sharp-return char[]
+     */
+    public static function GetInvalidFileNameChars(): array
+    {
+        return DIRECTORY_SEPARATOR === '\\' ? ['"', '<', '>', '|', "\0", ':', '*', '?', '\\', '/'] : ["\0", '/'];
+    }
+
     /** "b.txt" for "/a/b.txt"; "" for a path that ends with a separator. */
     public static function GetFileName(?string $path): ?string
     {

@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace SharpPhp\Runtime\System\IO;
 
+use SharpPhp\Runtime\System\DateTime;
+
 /**
- * System.IO.Directory: creating, listing and deleting directories.
+ * System.IO.Directory: creating, listing, moving and deleting directories.
  *
- *   Directory.CreateDirectory("logs")     Directory.Exists("logs")
- *   Directory.GetFiles("logs", "*.log")   Directory.Delete("logs", recursive: true)
+ *   Directory.CreateDirectory("logs")                     Directory.Exists("logs")
+ *   Directory.GetFiles("logs", "*.log")                   Directory.GetFiles("src", "*.sphp", SearchOption.AllDirectories)
+ *   Directory.Delete("logs", recursive: true)
  */
 final class Directory
 {
@@ -18,27 +21,48 @@ final class Directory
     }
 
     /** Creates the directory and any missing parents; nothing happens when it exists. */
-    public static function CreateDirectory(string $path): void
+    public static function CreateDirectory(string $path): DirectoryInfo
     {
         if (!is_dir($path) && !@mkdir($path, 0777, true) && !is_dir($path)) {
             throw new IOException("Could not create the directory '$path'.");
         }
+
+        return new DirectoryInfo($path);
     }
 
     /**
-     * The files of the directory (full paths, sorted), matching a pattern with * and ?.
+     * The files of the directory (paths starting with $path, sorted by name), matching a pattern with *
+     * and ?; with SearchOption.AllDirectories also those of its subdirectories.
      *
      * @return list<string>
      */
-    public static function GetFiles(string $path, string $searchPattern = '*'): array
+    public static function GetFiles(string $path, string $searchPattern = '*', SearchOption $searchOption = SearchOption::TopDirectoryOnly): array
     {
-        return self::entries($path, $searchPattern, files: true);
+        return self::entries($path, $searchPattern, $searchOption, files: true, directories: false);
     }
 
     /** @return list<string> */
-    public static function GetDirectories(string $path, string $searchPattern = '*'): array
+    public static function GetDirectories(string $path, string $searchPattern = '*', SearchOption $searchOption = SearchOption::TopDirectoryOnly): array
     {
-        return self::entries($path, $searchPattern, files: false);
+        return self::entries($path, $searchPattern, $searchOption, files: false, directories: true);
+    }
+
+    /** @return list<string> files and directories */
+    public static function GetFileSystemEntries(string $path, string $searchPattern = '*', SearchOption $searchOption = SearchOption::TopDirectoryOnly): array
+    {
+        return self::entries($path, $searchPattern, $searchOption, files: true, directories: true);
+    }
+
+    /** @return list<string> */
+    public static function EnumerateFiles(string $path, string $searchPattern = '*', SearchOption $searchOption = SearchOption::TopDirectoryOnly): array
+    {
+        return self::GetFiles($path, $searchPattern, $searchOption);
+    }
+
+    /** @return list<string> */
+    public static function EnumerateDirectories(string $path, string $searchPattern = '*', SearchOption $searchOption = SearchOption::TopDirectoryOnly): array
+    {
+        return self::GetDirectories($path, $searchPattern, $searchOption);
     }
 
     /** IOException when the directory is not empty, unless $recursive. */
@@ -60,24 +84,68 @@ final class Directory
         }
     }
 
+    /** IOException when the destination exists. */
+    public static function Move(string $sourceDirName, string $destDirName): void
+    {
+        if (!is_dir($sourceDirName)) {
+            throw new DirectoryNotFoundException("Could not find a part of the path '$sourceDirName'.");
+        }
+        if (file_exists($destDirName)) {
+            throw new IOException("Cannot create '$destDirName' because a file or directory with the same name already exists.");
+        }
+        if (!@rename($sourceDirName, $destDirName)) {
+            throw new IOException("Could not move '$sourceDirName' to '$destDirName'.");
+        }
+    }
+
+    public static function GetParent(string $path): ?DirectoryInfo
+    {
+        $parent = Path::GetDirectoryName(Path::GetFullPath($path));
+
+        return $parent === null ? null : new DirectoryInfo($parent);
+    }
+
     public static function GetCurrentDirectory(): string
     {
         return (string) getcwd();
     }
 
+    public static function SetCurrentDirectory(string $path): void
+    {
+        if (!@chdir($path)) {
+            throw new DirectoryNotFoundException("Could not find a part of the path '$path'.");
+        }
+    }
+
+    public static function GetLastWriteTime(string $path): DateTime
+    {
+        if (!is_dir($path)) {
+            throw new DirectoryNotFoundException("Could not find a part of the path '$path'.");
+        }
+
+        return DateTime::$UnixEpoch->AddSeconds((float) filemtime($path))->ToLocalTime();
+    }
+
     /** @return list<string> */
-    private static function entries(string $path, string $pattern, bool $files): array
+    private static function entries(string $path, string $pattern, SearchOption $option, bool $files, bool $directories): array
     {
         if (!is_dir($path)) {
             throw new DirectoryNotFoundException("Could not find a part of the path '$path'.");
         }
         $result = [];
+        $base = rtrim($path, '/' . DIRECTORY_SEPARATOR);
         foreach (scandir($path) ?: [] as $entry) {
-            $full = rtrim($path, '/' . DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $entry;
-            if ($entry === '.' || $entry === '..' || is_dir($full) === $files || !fnmatch($pattern, $entry)) {
+            if ($entry === '.' || $entry === '..') {
                 continue;
             }
-            $result[] = $full;
+            $full = $base . DIRECTORY_SEPARATOR . $entry;
+            $isDir = is_dir($full);
+            if (($isDir ? $directories : $files) && fnmatch($pattern, $entry)) {
+                $result[] = $full;
+            }
+            if ($isDir && !is_link($full) && $option === SearchOption::AllDirectories) {
+                array_push($result, ...self::entries($full, $pattern, $option, $files, $directories));
+            }
         }
 
         return $result;

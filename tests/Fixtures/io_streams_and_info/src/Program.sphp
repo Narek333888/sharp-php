@@ -1,0 +1,56 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+var root = Path.Join(Path.GetTempPath(), "sharpphp_io_" + Guid.NewGuid().ToString("N"));
+var dir = Directory.CreateDirectory(root);
+Console.WriteLine(dir.Exists + " " + (dir.Name.Length > 0));
+
+var path = Path.Combine(root, "notes.txt");
+using (var writer = new StreamWriter(path))
+{
+    writer.WriteLine("first");
+    writer.Write("second ");
+    writer.WriteLine("{0}+{1}", 1, 2);
+}
+using (var writer = File.AppendText(path))
+{
+    writer.WriteLine("third");
+}
+using (var reader = new StreamReader(path))
+{
+    string? line;
+    int n = 0;
+    while ((line = reader.ReadLine()) != null) Console.Write($"[{++n}:{line}]");
+    Console.WriteLine(" " + reader.EndOfStream);
+}
+Console.WriteLine(string.Join("|", File.ReadLines(path).Where(l => l.Contains("i"))));
+
+var info = new FileInfo(path);
+Console.WriteLine($"{info.Name} {info.Extension} {info.Length} {info.Exists} {info.Directory!.Name == dir.Name} {info.LastWriteTime.Year > 2000}");
+var copy = info.CopyTo(Path.Combine(root, "copy.txt"));
+Directory.CreateDirectory(Path.Combine(root, "sub", "deep"));
+File.WriteAllText(Path.Combine(root, "sub", "deep", "x.txt"), "x");
+Console.WriteLine(Directory.GetFiles(root, "*.txt").Length + " " + Directory.GetFiles(root, "*.txt", SearchOption.AllDirectories).Length + " " + dir.GetDirectories().Length + " " + string.Join(",", dir.GetFiles("*.txt").Select(f => f.Name).OrderBy(x => x)));
+
+byte[] bytes = Encoding.UTF8.GetBytes("Héllo");
+File.WriteAllBytes(Path.Combine(root, "b.bin"), bytes);
+Console.WriteLine(bytes.Length + " " + Encoding.UTF8.GetString(File.ReadAllBytes(Path.Combine(root, "b.bin"))) + " " + Encoding.ASCII.GetString(Encoding.ASCII.GetBytes("Héllo")));
+
+await File.WriteAllTextAsync(Path.Combine(root, "async.txt"), "async ok");
+Console.WriteLine(await File.ReadAllTextAsync(Path.Combine(root, "async.txt")));
+try { await File.ReadAllTextAsync(Path.Combine(root, "missing.txt")); } catch (FileNotFoundException) { Console.WriteLine("FileNotFoundException"); }
+
+var sw = new StringWriter();
+sw.WriteLine("a");
+sw.Write(42);
+var sr = new StringReader(sw.ToString());
+Console.WriteLine(sr.ReadLine() + "/" + sr.ReadLine() + "/" + (sr.ReadLine() == null));
+
+Console.WriteLine(Path.GetRelativePath("/a/b", "/a/c/d.txt") + " " + Path.Join("a", "b", "c.txt") + " " + Path.GetPathRoot("/usr/bin") + " " + Path.TrimEndingDirectorySeparator("/a/b/"));
+Directory.Move(Path.Combine(root, "sub"), Path.Combine(root, "moved"));
+Console.WriteLine(Directory.Exists(Path.Combine(root, "moved", "deep")));
+Directory.Delete(root, recursive: true);
+Console.WriteLine(Directory.Exists(root));
