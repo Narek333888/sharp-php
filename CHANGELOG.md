@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0 (unreleased)
+## 0.10.0
 
 Checked against .NET 10 itself: the same programs run in .NET and in SharpPHP, and their output is compared.
 Fixtures `net_numbers`, `net_semantics` and `net_collections` have .NET 10's output as their expected output.
