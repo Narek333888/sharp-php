@@ -541,6 +541,29 @@ final class Op
     }
 
     /**
+     * C#'s lifted <, >, <= and >= of nullable numbers: false when either is null.
+     *
+     * @internal
+     * @param \Closure(mixed, mixed): bool $test
+     */
+    public static function liftedTest(\Closure $test, mixed $a, mixed $b): bool
+    {
+        return $a !== null && $b !== null && $test($a, $b);
+    }
+
+    /** bool? & bool?: false when either is false, else null when either is null. @internal */
+    public static function boolAnd(?bool $a, ?bool $b): ?bool
+    {
+        return $a === false || $b === false ? false : ($a === null || $b === null ? null : true);
+    }
+
+    /** bool? | bool?: true when either is true, else null when either is null. @internal */
+    public static function boolOr(?bool $a, ?bool $b): ?bool
+    {
+        return $a === true || $b === true ? true : ($a === null || $b === null ? null : false);
+    }
+
+    /**
      * C#'s lifted comparison of nullable values (DateTime? < DateTime?): false when either side is
      * null, else the sign of $compare($a, $b) checked with the operator.
      *

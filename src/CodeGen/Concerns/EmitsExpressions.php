@@ -187,6 +187,44 @@ trait EmitsExpressions
         return Type::float();
     }
 
+    /**
+     * C#'s lifted operators: with a nullable operand (int?, double?, bool?), arithmetic gives null when an
+     * operand is null, and <, >, <=, >= give false (PHP's null + 5 is 5, null < 5 is true). bool?'s & and
+     * | are three-valued: null & false is false, null | true is true, else null with a null operand.
+     * Null when the operands are not nullable numbers.
+     */
+    private function liftedOperation(string $op, Emitted $l, Emitted $r, \SharpPhp\Syntax\Node $at): ?Emitted
+    {
+        $liftable = static fn (Type $t): bool => $t->nullable && ($t->isNumeric() || $t->isBool() || $t->isChar());
+        if (!in_array($op, ['+', '-', '*', '/', '%', '&', '|', '^', '<<', '>>', '<', '>', '<=', '>='], true)
+            || !($liftable($l->type) || $liftable($r->type)) || $l->type->isString() || $r->type->isString()
+            || $l->type->isNull() || $r->type->isNull()) {
+            return null;
+        }
+        $op_ = $this->runtime('Op');
+        if (($op === '&' || $op === '|') && $l->type->isBool() && $r->type->isBool()) {
+            return Emitted::value("$op_::" . ($op === '&' ? 'boolAnd' : 'boolOr') . "({$l->code}, {$r->code})", Type::bool()->withNullable());
+        }
+        $comparison = in_array($op, ['<', '>', '<=', '>='], true);
+        $simple = static fn (Emitted $e): bool => preg_match('/^(\$[A-Za-z_]\w*|-?\d[\d.eE+-]*)$/', $e->code) === 1;
+        if ($simple($l) && $simple($r)) {
+            // Inline for variables: ($a === null || $b === null ? null : $a + $b).
+            $inner = $this->binaryOperation($op, new Emitted($l->code, $l->type->withNullable(false), Prec::ATOM, intValue: $l->intValue), new Emitted($r->code, $r->type->withNullable(false), Prec::ATOM, intValue: $r->intValue), $at);
+            $tests = array_values(array_filter([$l->type->nullable ? $l->code : null, $r->type->nullable ? $r->code : null]));
+            if ($comparison) {
+                return Emitted::value('(' . implode(' && ', array_map(static fn (string $c): string => "$c !== null", $tests)) . ' && ' . $this->wrap($inner, Prec::AND) . ')', Type::bool());
+            }
+
+            return Emitted::value('(' . implode(' || ', array_map(static fn (string $c): string => "$c === null", $tests)) . ' ? null : ' . $this->wrap($inner, Prec::TERNARY + 1) . ')', $inner->type->withNullable());
+        }
+        $inner = $this->binaryOperation($op, Emitted::value('$__l', $l->type->withNullable(false)), Emitted::value('$__r', $r->type->withNullable(false)), $at);
+        $closure = "static fn (\$__l, \$__r) => {$inner->code}";
+
+        return $comparison
+            ? Emitted::value("$op_::liftedTest($closure, {$l->code}, {$r->code})", Type::bool())
+            : Emitted::value("$op_::lifted($closure, {$l->code}, {$r->code})", $inner->type->withNullable());
+    }
+
     /** A float (System.Single) result is rounded to single precision, as C# computes float arithmetic. */
     private function singleRounded(Emitted $value): Emitted
     {
@@ -368,6 +406,21 @@ trait EmitsExpressions
                 return Emitted::value("\\mb_chr(\\mb_ord($assign) $back 1)", Type::char());
             }
 
+            // An int? that is null stays null (C#'s lifted ++); a float keeps single precision.
+            $single = $target->type->kind === 'float' && $target->type->floatingName() === 'float';
+            if (($target->type->nullable && $target->type->isNumeric()) || $single) {
+                $step = $op === '++' ? '+' : '-';
+                $one = new Emitted('1', Type::int(), Prec::ATOM, intValue: 1);
+                $next = $this->binaryOperation($step, new Emitted($target->code, $target->type, Prec::ATOM), $one, $e);
+                $assign = "{$target->code} = " . $this->wrap($next, Prec::ASSIGN);
+                if (!$e->postfix || $this->discarded === $e) {
+                    return Emitted::value($assign, $target->type, Prec::ASSIGN);
+                }
+                $temp = $this->temp($e);
+
+                return Emitted::value("(($temp = {$target->code}) === null ? null : (($assign) !== null ? $temp : $temp))", $target->type);
+            }
+
             $narrow = $target->type->isInt() ? $target->type->withNullable(false)->integralName() : null;
             if ($narrow !== null && in_array($narrow, self::NARROW_INTEGRALS, true)) {
                 // byte 255 + 1 is 0 in C#: the variable keeps its type's range.
@@ -400,6 +453,19 @@ trait EmitsExpressions
             $literal = $operand->type->integralName() === 'long' || $operand->type->integralName() === 'ulong' ? $negated : Type::int();
 
             return new Emitted('-' . $this->unaryOperand($operand, '-'), $literal, Prec::UNARY, intValue: -$operand->intValue);
+        }
+
+        // -x, +x, ~x of an int? (and !b of a bool?) are null when x is null, as in C#.
+        if (in_array($op, ['-', '~', '!'], true) && $operand->type->nullable && ($operand->type->isNumeric() || $operand->type->isBool())) {
+            $plain = new Emitted('$__x', $operand->type->withNullable(false), Prec::ATOM);
+            $inner = match ($op) {
+                '-' => Emitted::value('-$__x', $negated->withNullable(false), Prec::UNARY),
+                '~' => Emitted::value('~$__x', $negated->withNullable(false), Prec::UNARY),
+                default => Emitted::value('!$__x', Type::bool(), Prec::NOT),
+            };
+            unset($plain);
+
+            return Emitted::value($this->runtime('Op') . "::lifted(static fn (\$__x) => {$inner->code}, {$operand->code})", $inner->type->withNullable());
         }
 
         return match ($op) {
@@ -494,6 +560,11 @@ trait EmitsExpressions
             $type = $l->type->kind === 'closure' ? $l->type : $r->type;
 
             return Emitted::value("$delegate::" . ($op === '+' ? 'Combine' : 'Remove') . "({$l->code}, {$r->code})", $type->withNullable());
+        }
+
+        $lifted = $this->liftedOperation($op, $l, $r, $at);
+        if ($lifted !== null) {
+            return $lifted;
         }
 
         $lt = $l->type;
@@ -804,6 +875,13 @@ trait EmitsExpressions
         }
         $bothNumeric = $type->isNumeric() && $vt->isNumeric();
         $bothInt = $type->isInt() && $vt->isInt();
+        // n += 5 of an int? that is null stays null (lifted); f += x of a float keeps single precision.
+        if ((($type->nullable || $vt->nullable) && $bothNumeric) || ($type->nullable && $type->isBool())
+            || ($type->kind === 'float' && $type->floatingName() === 'float' && $bothNumeric)) {
+            $combined = $this->binaryOperation($binaryOp, $target, $value, $e);
+
+            return Emitted::value($target->code . ' = ' . $this->wrap($combined, Prec::ASSIGN), $type, Prec::ASSIGN);
+        }
 
         // Use PHP's compound operator when it has the same meaning as the C# one.
         $compound = match ($binaryOp) {
