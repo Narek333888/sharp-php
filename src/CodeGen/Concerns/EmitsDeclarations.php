@@ -246,10 +246,84 @@ trait EmitsDeclarations
                 continue;
             }
 
-            [$phpType, $default] = $this->storageFor($type, $declarator->init, $readonly, $static, '$this->' . $declarator->name, 'self::$' . $declarator->name, $instanceInits, $staticInits, $declarator->line);
-            $line = $visibility . ($static ? ' static' : '') . ($readonly ? ' readonly' : '') . " $phpType \${$declarator->name}";
+            $inherited = $this->inheritedPhpProperty($declarator->name);
+            $fieldReadonly = $readonly && ($inherited === null || $inherited->isReadOnly());
+            [$phpType, $default] = $this->storageFor($type, $declarator->init, $fieldReadonly, $static, '$this->' . $declarator->name, 'self::$' . $declarator->name, $instanceInits, $staticInits, $declarator->line);
+            if ($inherited !== null) {
+                // A field that redeclares a PHP base class's property (Laravel's Model::$fillable,
+                // Command::$signature) must keep its PHP type: none for Laravel's properties.
+                $this->checkRedeclaredProperty($inherited, $visibility, $static, $declarator);
+                $phpType = $inherited->hasType() ? self::phpTypeOf($inherited->getType()) : '';
+                $fieldReadonly = $fieldReadonly && $phpType !== '';
+            }
+            $line = $visibility . ($static ? ' static' : '') . ($fieldReadonly ? ' readonly' : '') . ($phpType !== '' ? " $phpType" : '') . " \${$declarator->name}";
             $this->w->line($line . ($default !== null ? " = $default" : '') . ';');
         }
+    }
+
+    /**
+     * The non-private property of the nearest PHP base class that a field named $name redeclares
+     * (Laravel's Model::$fillable, Command::$signature), or null.
+     */
+    private function inheritedPhpProperty(string $name): ?\ReflectionProperty
+    {
+        $base = $this->currentClass()->baseClass;
+        while ($base !== null) {
+            $symbol = $this->symbols->find($base);
+            if ($symbol === null) {
+                return null;
+            }
+            if ($symbol->external) {
+                if (!class_exists($symbol->fqn)) {
+                    return null;
+                }
+                $class = new \ReflectionClass($symbol->fqn);
+                if (!$class->hasProperty($name)) {
+                    return null;
+                }
+                $property = $class->getProperty($name);
+
+                return $property->isPrivate() ? null : $property;
+            }
+            $base = $symbol->baseClass;
+        }
+
+        return null;
+    }
+
+    /** PHP's rules for redeclaring an inherited property: the same static-ness, no stricter visibility. */
+    private function checkRedeclaredProperty(\ReflectionProperty $inherited, string $visibility, bool $static, Node $at): void
+    {
+        $owner = \SharpPhp\Runtime\TypeName::ofClass($inherited->getDeclaringClass()->getName()) . '.' . $inherited->getName();
+        $theirs = $inherited->isPublic() ? 'public' : 'protected';
+        if ($inherited->isStatic() !== $static) {
+            throw $this->error('SP0108', "'{$this->currentClass()->csharpName()}.{$inherited->getName()}' must be " . ($inherited->isStatic() ? 'static' : 'an instance field') . " like the inherited member '$owner'", $at);
+        }
+        if ($visibility === 'private' || ($visibility === 'protected' && $theirs === 'public')) {
+            throw $this->error('SP0507', "'{$this->currentClass()->csharpName()}.{$inherited->getName()}': cannot change access modifiers of the inherited '$theirs' member '$owner'", $at);
+        }
+    }
+
+    /** A PHP type declaration as written in code: "?string", "array", "\\Foo\\Bar", "int|string". */
+    private static function phpTypeOf(\ReflectionType $type, bool $inUnion = false): string
+    {
+        if ($type instanceof \ReflectionNamedType) {
+            $name = $type->getName();
+            $code = $type->isBuiltin() || in_array(strtolower($name), ['self', 'static', 'parent'], true) ? $name : '\\' . $name;
+
+            return !$inUnion && $type->allowsNull() && !in_array($name, ['mixed', 'null'], true) ? '?' . $code : $code;
+        }
+        if ($type instanceof \ReflectionUnionType) {
+            return implode('|', array_map(
+                static fn (\ReflectionType $t): string => $t instanceof \ReflectionIntersectionType ? '(' . self::phpTypeOf($t, true) . ')' : self::phpTypeOf($t, true),
+                $type->getTypes(),
+            ));
+        }
+        if ($type instanceof \ReflectionIntersectionType) {
+            return implode('&', array_map(static fn (\ReflectionType $t): string => self::phpTypeOf($t, true), $type->getTypes()));
+        }
+
+        return '';
     }
 
     /**

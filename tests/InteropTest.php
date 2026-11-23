@@ -70,6 +70,97 @@ final class InteropTest extends TestCase
         $pricing::Total([1, 2]); // not Items: rejected like in C#
     }
 
+    /**
+     * A SharpPHP class derived from a PHP class that works like Laravel's Model: untyped properties to
+     * redeclare ($fillable), and names answered by __callStatic, __call and __get.
+     */
+    public function testClassDerivedFromAMagicPhpClass(): void
+    {
+        $root = $this->tempDir();
+        $ns = 'InteropM' . bin2hex(random_bytes(4));
+        mkdir("$root/src");
+        file_put_contents("$root/src/Model.php", <<<PHP
+            <?php
+            namespace $ns;
+            abstract class Model
+            {
+                protected \$fillable = [];
+                protected \$table;
+                protected static \$booted = false;
+                /** @var array<string, mixed> */
+                private array \$attributes = [];
+                public static function __callStatic(string \$name, array \$args): mixed
+                {
+                    \$model = new static();
+                    if (\$name === 'create') {
+                        foreach (\$args[0] as \$key => \$value) {
+                            if (in_array(\$key, \$model->fillable, true)) {
+                                \$model->attributes[\$key] = \$value;
+                            }
+                        }
+                        return \$model;
+                    }
+                    return \$name . ' on ' . \$model->table;
+                }
+                public function __call(string \$name, array \$args): mixed { return "\$name()"; }
+                public function __get(string \$name): mixed { return \$this->attributes[\$name] ?? null; }
+                public function __set(string \$name, mixed \$value): void { \$this->attributes[\$name] = \$value; }
+            }
+            PHP);
+        file_put_contents("$root/src/Post.sphp", <<<CS
+            using System.Collections.Generic;
+
+            namespace $ns;
+
+            public class Post : Model
+            {
+                protected string[] fillable = new[] { "title" };
+                protected string table = "posts";
+
+                public string Shout() => ((string)this.title).ToUpper() + "!";
+
+                public static string Demo()
+                {
+                    var post = (Post)Post.create(new Dictionary<string, object> { ["title"] = "hello", ["secret"] = "no" });
+                    post.views = 3;
+                    return post.Shout() + " " + post.views + " " + post.secret + "|" + Post.where("x") + "|" + post.save();
+                }
+            }
+            CS);
+        require "$root/src/Model.php";
+
+        Project::fromDirectory($root)->autoload();
+
+        $post = "$ns\\Post";
+        $this->assertSame('HELLO! 3 |where on posts|save()', $post::Demo(), 'static, instance and property magic; $fillable and $table redeclared');
+        $code = (string) file_get_contents("$root/var/sharp/classes/Post.php");
+        $this->assertStringContainsString('protected $fillable = [\'title\'];', $code, 'untyped, like the PHP property it redeclares');
+        $this->assertStringContainsString('protected $table = \'posts\';', $code);
+    }
+
+    public function testRedeclaringAPhpPropertyFollowsPhpRules(): void
+    {
+        $root = $this->tempDir();
+        $ns = 'InteropR' . bin2hex(random_bytes(4));
+        mkdir("$root/src");
+        file_put_contents("$root/src/Base.php", "<?php\nnamespace $ns;\nclass Base { protected \$name; public \$size = 0; protected static \$count = 0; }\n");
+        require "$root/src/Base.php";
+
+        $private = $this->compileError("namespace $ns;\nclass Derived : Base { private string name = \"x\"; }\nclass P { static void Main() {} }");
+        $this->assertSame('SP0507', $private->code);
+        $this->assertSame("'$ns.Derived.name': cannot change access modifiers of the inherited 'protected' member '$ns.Base.name'", $private->message);
+
+        $static = $this->compileError("namespace $ns;\nclass Derived : Base { protected int count = 1; }\nclass P { static void Main() {} }");
+        $this->assertSame('SP0108', $static->code);
+
+        $narrower = $this->compileError("namespace $ns;\nclass Derived : Base { protected int size = 1; }\nclass P { static void Main() {} }");
+        $this->assertSame('SP0507', $narrower->code, 'public in PHP, protected here');
+
+        $code = $this->compile("namespace $ns;\nclass Derived : Base { public int size = 5; protected string name = \"x\"; }\nclass P { static void Main() {} }");
+        $this->assertStringContainsString('public $size = 5;', $code);
+        $this->assertStringContainsString('protected $name = \'x\';', $code);
+    }
+
     public function testConversions(): void
     {
         $dictionary = Interop::toDictionary(['7' => 'x', 'a' => 'y'], ['string', 'string']);

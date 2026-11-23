@@ -637,6 +637,43 @@ Route::get('/users', [UserController::class, 'Index']);
   `response()`. The compiler knows the facades' methods from their docblocks (`@method static ...`), so
   arguments and results are checked, and the language server completes them. Calls it knows nothing about
   (Eloquent's `User.where(...)`, other `__callStatic`/`__call` magic) are passed through to PHP.
+- **Models** in SharpPHP extend `Model` and redeclare its properties as fields; Eloquent's static and
+  instance magic works on them, and on their attributes (`post.title`), as in PHP:
+
+  ```csharp
+  // app/Models/Post.sphp
+  using Illuminate.Database.Eloquent;
+
+  namespace App.Models;
+
+  public class Post : Model
+  {
+      protected string[] fillable = new[] { "title" };
+      protected string table = "posts";
+
+      public string Headline() => ((string)this.title).ToUpper();
+  }
+
+  // in a controller
+  var post = (Post)Post.create(request.validate(new Dictionary<string, string> { ["title"] = "required|min:3" }));
+  Post? first = Post.where("title", "Hello").first();
+  ```
+
+  A field that redeclares a property of a PHP base class (`fillable`, `table`, `casts`, a command's
+  `signature`) keeps the PHP declaration (Laravel's are untyped) and may not be more private than it
+  (SP0507). Eloquent's magic calls are not checked by the compiler; their results are `object`. A `List` or
+  `Dictionary` passed to such a call goes as a PHP array.
+- **Artisan commands** in `app/Console/Commands/*.sphp` are registered automatically, like PHP ones:
+
+  ```csharp
+  public class Hello : Command
+  {
+      protected string signature = "app:hello {name}";
+      protected string description = "Says hello";
+
+      public void handle() => this.info($"Hello, {this.argument("name")}!");
+  }
+  ```
 - **Name clashes:** `Request` is both `Illuminate.Http.Request` and the `Request` facade; with both
   namespaces imported the compiler reports the ambiguity, as C# does. Use an alias
   (`using HttpRequest = Illuminate.Http.Request;`) or the full name.

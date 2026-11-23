@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.1
+
+- Laravel models and Artisan commands written in SharpPHP work:
+  - a field that redeclares a property of a PHP base class (`Model::$fillable`, `$table`, `$casts`,
+    `Command::$signature`) keeps the PHP declaration; it was emitted with a type
+    (`protected array $fillable`), which PHP refuses for Laravel's untyped properties, so loading the class
+    failed. A redeclaration that is more private (SP0507) or static where PHP's is not (SP0108) is a compile
+    error now instead of a PHP fatal error
+  - a SharpPHP class derived from a PHP class with `__callStatic`, `__call`, `__get` or `__set` answers names
+    it does not declare, as the PHP class does: `Post.create(...)`, `Post.where(...)`, `post.title`
+    (SP0117/SP1061 before)
+  - `List`, `Dictionary` and `HashSet` arguments of such magic calls go as PHP arrays
+    (`Post.create(new Dictionary<string, object> { ... })`)
+  - Artisan commands in `app/Console/Commands/*.sphp` are registered (Laravel only finds `.php` files there)
+
 ## 0.7.0
 
 - `DateTime` and `TimeSpan`, as in .NET: `DateTime.Now`, `new DateTime(2024, 12, 31)`, the date parts,

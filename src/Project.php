@@ -26,6 +26,9 @@ use SharpPhp\Runtime\Loader;
  */
 final class Project
 {
+    /** @var array<string, string> class (lowercase) => source file, after autoload() */
+    private array $loaded = [];
+
     public const DEFAULT_SOURCE = 'src';
     public const DEFAULT_OUTPUT = 'var/sharp';
 
@@ -161,8 +164,27 @@ final class Project
         /** @var array<string, string> $classmap */
         $classmap = $manifest['classmap'];
         Loader::register($classmap, $this->buildDir);
+        $sources = [];
+        $sourcemap = is_array($manifest['sourcemap'] ?? null) ? $manifest['sourcemap'] : [];
+        foreach ($classmap as $class => $file) {
+            $entry = $sourcemap[$file] ?? null;
+            $source = is_array($entry) ? ($entry['source'] ?? null) : null;
+            $sources[$class] = is_string($source) ? $source : $file;
+        }
+        $this->loaded = $sources;
 
         return $this;
+    }
+
+    /**
+     * The classes autoload() made loadable (lowercase names, as PHP compares them) and the .sphp file
+     * each comes from.
+     *
+     * @return array<string, string>
+     */
+    public function loadedClasses(): array
+    {
+        return $this->loaded;
     }
 
     public function clean(): void

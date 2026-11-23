@@ -393,6 +393,40 @@ trait EmitsMembers
         return $symbol !== null && ($symbol->isEnum() || $symbol->isStruct);
     }
 
+    /**
+     * Arguments of a call PHP answers through __call / __callStatic, whose parameters nobody declares:
+     * a List, Dictionary or HashSet goes as a PHP array, what PHP code expects
+     * (Post.create(new Dictionary<string, object> { ["title"] = t }) is Post::create(['title' => $t])).
+     *
+     * @param list<Argument> $args
+     */
+    private function untypedPhpArguments(array $args): string
+    {
+        [, $values] = $this->arguments($args, [], runtime: true);
+        $codes = [];
+        foreach ($args as $i => $arg) {
+            $value = $values[$i] ?? null;
+            if ($value === null) {
+                continue;
+            }
+            $code = $arg->modifier === null && $this->conversions->collectionName($value->type) !== null
+                ? $this->runtime('Interop') . '::toArray(' . $value->code . ')'
+                : $value->code;
+            $codes[] = ($arg->name !== null ? $arg->name . ': ' : '') . $code;
+        }
+
+        return implode(', ', $codes);
+    }
+
+    /**
+     * The class has, or inherits from a PHP class, the magic method $magic (__call, __callStatic,
+     * __get, __set) that answers names it does not declare: Eloquent's Model, Laravel's facades.
+     */
+    private function answersAnyName(TypeSymbol $symbol, string $magic): bool
+    {
+        return $this->symbols->findMember($symbol, $magic) !== null;
+    }
+
     private function staticMember(Emitted $type, MemberAccessExpr $e): Emitted
     {
         $symbol = $type->symbol ?? throw new \LogicException('A type result has a symbol');
@@ -467,7 +501,9 @@ trait EmitsMembers
             if ($member !== null) {
                 throw $this->error('SP0176', "Member '{$symbol->csharpName()}.$name' cannot be accessed with an instance reference; qualify it with a type name instead", $e);
             }
-            if (!$symbol->external) {
+            // A PHP class may answer any name (__get); so does a SharpPHP class derived from one that
+            // does, such as a model's attributes: post.title.
+            if (!$symbol->external && !$this->answersAnyName($symbol, '__get') && !$this->answersAnyName($symbol, '__set')) {
                 throw $this->error('SP1061', "'{$symbol->csharpName()}' does not contain a definition for '$name'", $e);
             }
 
@@ -562,10 +598,11 @@ trait EmitsMembers
                 $symbol = $target->symbol ?? throw new \LogicException('A type result has a symbol');
                 $member = $this->findMethod($symbol, $callee->name);
                 // PHP classes with __callStatic (Laravel's facades and models: Route::get, User::where)
-                // answer static calls to any name.
-                $magic = $symbol->external && $this->symbols->findMember($symbol, '__callStatic') !== null;
+                // answer static calls to any name, and so do SharpPHP classes derived from them
+                // (a model written in SharpPHP: Post.create(...), Post.where(...)).
+                $magic = $this->answersAnyName($symbol, '__callStatic');
                 if ($member === null && $magic) {
-                    [$code] = $this->arguments($e->args, [], runtime: true);
+                    $code = $this->untypedPhpArguments($e->args);
 
                     return Emitted::value("{$target->code}::{$callee->name}($code)", Type::mixed());
                 }
@@ -781,11 +818,11 @@ trait EmitsMembers
             if ($fallback !== null) {
                 return $fallback;
             }
-            if (!$symbol->external) {
+            if (!$symbol->external && !$this->answersAnyName($symbol, '__call')) {
                 throw $this->error('SP1061', "'{$symbol->csharpName()}' does not contain a definition for '$name'", $callee);
             }
-            // A PHP class answers any name through __call.
-            [$code] = $this->arguments($args, []);
+            // A PHP class answers any name through __call (a SharpPHP class too when it inherits __call).
+            $code = $this->untypedPhpArguments($args);
 
             return Emitted::value("$recv$arrow$name($code)", Type::mixed());
         }

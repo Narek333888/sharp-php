@@ -52,8 +52,27 @@ final class SharpServiceProvider extends ServiceProvider
     public function boot(): void
     {
         if ($this->app->runningInConsole()) {
-            $this->commands([BuildCommand::class]);
+            $this->commands([BuildCommand::class, ...$this->sharpCommands()]);
         }
+    }
+
+    /**
+     * Artisan commands written in SharpPHP: Laravel finds the app's commands by their .php files in
+     * app/Console/Commands, which .sphp ones are not, so they are registered here.
+     *
+     * @return list<class-string>
+     */
+    private function sharpCommands(): array
+    {
+        $commands = [];
+        foreach ($this->app->make(Project::class)->loadedClasses() as $class => $source) {
+            if (str_contains(str_replace('\\', '/', $source), '/Console/Commands/')
+                && class_exists($class) && is_subclass_of($class, \Illuminate\Console\Command::class)) {
+                $commands[] = (new \ReflectionClass($class))->getName();
+            }
+        }
+
+        return $commands;
     }
 
     public static function project(string $basePath): Project

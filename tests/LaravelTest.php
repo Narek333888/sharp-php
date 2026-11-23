@@ -106,6 +106,26 @@ final class LaravelTest extends TestCase
         $this->assertFileExists("$this->root/storage/framework/sharp/manifest.php");
     }
 
+    public function testArtisanCommandsWrittenInSharpPhpAreRegistered(): void
+    {
+        mkdir("$this->root/app/Console/Commands", 0777, true);
+        file_put_contents("$this->root/app/Console/Commands/Greet.sphp", "using Illuminate.Console;\n\nnamespace {$this->ns}.Console.Commands;\n\npublic class Greet : Command\n{\n    protected string signature = \"greet {name}\";\n    protected string description = \"Says hello\";\n\n    public void handle() => this.info(\$\"Hello, {this.argument(\"name\")}!\");\n}\n");
+        $app = $this->app('local', console: true);
+        $provider = new SharpServiceProvider($app);
+        $provider->register();
+        \Illuminate\Console\Application::forgetBootstrappers();
+        $provider->boot();
+
+        $artisan = new \Illuminate\Console\Application($app, new \Illuminate\Events\Dispatcher($app), 'test');
+        $this->assertTrue($artisan->has('greet'), 'found without a .php file in app/Console/Commands');
+        $this->assertTrue($artisan->has('sharp:build'));
+        $this->assertFalse($artisan->has('services:greeter'), 'only classes under Console/Commands that are commands');
+
+        $output = new BufferedOutput();
+        $this->assertSame(0, $artisan->find('greet')->run(new ArrayInput(['name' => 'Ann']), $output));
+        $this->assertSame("Hello, Ann!\n", $output->fetch());
+    }
+
     private function app(string $env, bool $console = true): Container
     {
         $root = $this->root;
