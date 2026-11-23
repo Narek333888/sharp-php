@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.1
 
 - Faster collections (measured on PHP 8.4, 1M elements): `List.Add` 2.2× faster than 0.8.0 (and 0.7.1),
   `list[i]` 1.6×, `Dictionary` writes and reads 1.9×; LINQ on a `List` back to 0.7.1's speed (0.8.0 was
