@@ -915,7 +915,15 @@ trait EmitsExpressions
             case 'char':
                 return $source->isChar() ? $value : $this->intToChar($this->charToInt($value));
             case 'string':
-                return $this->asString($value);
+                // A reference conversion, as in C#: null stays null, an object must hold a string
+                // (InvalidCastException otherwise); numbers and other types have none (CS0030).
+                if ($source->isString() || $source->isNull()) {
+                    return new Emitted($value->code, $target, $value->prec);
+                }
+                if ($source->isUnknown() || $source->kind === 'typeparam' || ($sourceSymbol !== null && $sourceSymbol->external && !self::isRuntimeLibrary($sourceSymbol))) {
+                    return Emitted::value($this->runtime('Op') . '::cast(' . $value->code . ", 'string')", $target);
+                }
+                throw $this->error('SP0030', "Cannot convert type '{$source->describe()}' to 'string'", $e);
             case 'class':
                 $symbol = $this->symbols->find((string) $target->class);
                 if ($symbol !== null && $symbol->isEnum() && $source->isNumeric()) {

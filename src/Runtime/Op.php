@@ -109,7 +109,8 @@ final class Op
      * printed doubles. It also suits decimal, which is a PHP float here too: 0.07m * 100 prints 7,
      * not 7.000000000000001. "R" (null $precision) gives the shortest digits that read back as the
      * same double, as .NET Core's ToString() does (0.1 + 0.2 is 0.30000000000000004).
-     * Scientific notation when the exponent reaches the precision (15 for R) or is below -4.
+     * Scientific notation when the exponent reaches the precision (17 for the shortest digits, as .NET:
+     * 1E+16 is 10000000000000000, 1E+17 is 1E+17) or is below -4.
      */
     private static function general(float $value, ?int $precision): string
     {
@@ -127,7 +128,7 @@ final class Op
         }
         // Exponent of the first significant digit: 1234.5 has 3, 0.05 has -2.
         $exponent = strlen($int) + $exp - (strlen($all) - strlen($significant)) - 1;
-        if ($exponent >= ($precision ?? 15) || $exponent < -4) {
+        if ($exponent >= ($precision ?? 17) || $exponent < -4) {
             $mantissa = $digits[0] . (strlen($digits) > 1 ? '.' . substr($digits, 1) : '');
 
             return $sign . $mantissa . 'E' . ($exponent < 0 ? '-' : '+') . str_pad((string) abs($exponent), 2, '0', STR_PAD_LEFT);
@@ -139,6 +140,17 @@ final class Op
         $fraction = substr($padded, $exponent + 1);
 
         return $sign . substr($padded, 0, $exponent + 1) . ($fraction !== '' ? '.' . $fraction : '');
+    }
+
+    /**
+     * A double as .NET's ToString() writes it: the shortest digits that read back as the same double
+     * (0.30000000000000004, 1E+21, 5E-324).
+     *
+     * @internal
+     */
+    public static function shortest(float $value): string
+    {
+        return is_nan($value) ? 'NaN' : (is_infinite($value) ? ($value > 0 ? '∞' : '-∞') : self::general($value, null));
     }
 
     /**

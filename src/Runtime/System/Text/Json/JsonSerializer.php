@@ -29,18 +29,58 @@ final class JsonSerializer
     public static function Serialize(mixed $value, ?JsonSerializerOptions $options = null): string
     {
         $options ??= new JsonSerializerOptions();
-        $flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR;
-        if ($options->WriteIndented) {
-            $flags |= JSON_PRETTY_PRINT;
-        }
-        try {
-            $json = json_encode(self::toJson($value, $options->PropertyNamingPolicy, 0), $flags);
-        } catch (\JsonException $e) {
-            throw new InvalidOperationException('The value cannot be written as JSON: ' . $e->getMessage(), $e);
+
+        return self::write(self::toJson($value, $options->PropertyNamingPolicy, 0), $options->WriteIndented, 0);
+    }
+
+    /**
+     * The JSON text, as System.Text.Json writes it: numbers as .NET formats them, strings escaped as
+     * its default encoder does, indented by 2 spaces.
+     */
+    private static function write(mixed $data, bool $indented, int $level): string
+    {
+        $newline = $indented ? "\n" . str_repeat('  ', $level + 1) : '';
+        $close = $indented ? "\n" . str_repeat('  ', $level) : '';
+
+        return match (true) {
+            $data === null => 'null',
+            is_bool($data) => $data ? 'true' : 'false',
+            is_int($data) => (string) $data,
+            is_float($data) => Op::shortest($data),
+            is_string($data) => self::quote($data),
+            is_array($data) => $data === [] ? '[]' : '[' . $newline . implode(',' . $newline, array_map(static fn (mixed $item): string => self::write($item, $indented, $level + 1), $data)) . $close . ']',
+            $data instanceof \stdClass => ($members = get_object_vars($data)) === [] ? '{}' : '{' . $newline . implode(',' . $newline, array_map(
+                static fn (int|string $key, mixed $item): string => self::quote((string) $key) . ($indented ? ': ' : ':') . self::write($item, $indented, $level + 1),
+                array_keys($members),
+                $members,
+            )) . $close . '}',
+            default => throw new NotSupportedException('The value cannot be written as JSON.'),
+        };
+    }
+
+    /**
+     * A JSON string as System.Text.Json's default encoder writes it: quotes, HTML-sensitive characters
+     * (< > & ' + `) and everything outside ASCII as \uXXXX (in UTF-16), control characters as \n, \t, ...
+     */
+    private static function quote(string $s): string
+    {
+        $out = '"';
+        foreach (mb_str_split($s) as $char) {
+            $code = mb_ord($char);
+            $out .= match (true) {
+                $char === '\\' => '\\\\',
+                $char === "\n" => '\\n',
+                $char === "\r" => '\\r',
+                $char === "\t" => '\\t',
+                $char === "\x08" => '\\b',
+                $char === "\x0C" => '\\f',
+                $code >= 0x20 && $code < 0x7F && !str_contains('"<>&\'+`', $char) => $char,
+                $code > 0xFFFF => sprintf('\\u%04X\\u%04X', 0xD800 + (($code - 0x10000) >> 10), 0xDC00 + (($code - 0x10000) & 0x3FF)),
+                default => sprintf('\\u%04X', $code),
+            };
         }
 
-        // PHP indents with 4 spaces, System.Text.Json with 2.
-        return $options->WriteIndented ? (preg_replace_callback('/^(?: {4})+/m', static fn (array $m): string => str_repeat(' ', intdiv(strlen($m[0]), 2)), $json) ?? $json) : $json;
+        return $out . '"';
     }
 
     /** The value as plain PHP data that json_encode() writes the way System.Text.Json does. */
