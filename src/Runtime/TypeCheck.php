@@ -48,8 +48,18 @@ final class TypeCheck
         return $value;
     }
 
-    public static function check(mixed $value, ?string $spec, string $collection): mixed
+    public static function check(mixed $value, ?string $spec, string $collection = ''): mixed
     {
+        // The common case first, without function calls: a value of exactly the element type.
+        if (match ($spec) {
+            'int' => is_int($value),
+            'string' => is_string($value),
+            'bool' => is_bool($value),
+            'float' => is_float($value),
+            default => false,
+        }) {
+            return $value;
+        }
         if (!self::matches($value, $spec)) {
             throw new System\ArgumentException(sprintf(
                 'The value "%s" is not of type "%s" and cannot be used in this generic collection.',

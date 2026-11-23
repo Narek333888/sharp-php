@@ -44,7 +44,7 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
         if (array_key_exists($key, $this->items)) {
             return false;
         }
-        $this->items[$key] = $this->of === null ? $item : TypeCheck::check($item, $this->of, 'HashSet<' . TypeName::ofSpec($this->of) . '>');
+        $this->items[$key] = $this->of === null ? $item : TypeCheck::check($item, $this->of);
 
         return true;
     }

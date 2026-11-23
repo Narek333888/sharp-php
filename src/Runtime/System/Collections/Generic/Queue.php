@@ -7,7 +7,6 @@ namespace SharpPhp\Runtime\System\Collections\Generic;
 use SharpPhp\Runtime\System\InvalidOperationException;
 use SharpPhp\Runtime\System\Linq\Enumerable;
 use SharpPhp\Runtime\TypeCheck;
-use SharpPhp\Runtime\TypeName;
 
 /**
  * System.Collections.Generic.Queue<T> (first in, first out)
@@ -40,7 +39,7 @@ class Queue implements \IteratorAggregate, \Countable, \JsonSerializable
     /** @param T $item */
     public function Enqueue(mixed $item): void
     {
-        $this->items[] = $this->of === null ? $item : TypeCheck::check($item, $this->of, 'Queue<' . TypeName::ofSpec($this->of) . '>');
+        $this->items[] = $this->of === null ? $item : TypeCheck::check($item, $this->of);
     }
 
     /** @return T */

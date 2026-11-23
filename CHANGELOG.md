@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Faster collections (measured on PHP 8.4, 1M elements): `List.Add` 2.2× faster than 0.8.0 (and 0.7.1),
+  `list[i]` 1.6×, `Dictionary` writes and reads 1.9×; LINQ on a `List` back to 0.7.1's speed (0.8.0 was
+  1.7× slower). The element type check no longer builds a message for every element, and LINQ walks a
+  list's array instead of its iterator
+- `foreach` over a `List` checks for changes ("Collection was modified") with less work per element
+
 ## 0.8.0
 
 New in the language:

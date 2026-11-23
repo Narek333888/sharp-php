@@ -204,9 +204,8 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
 
     private function store(string $hash, mixed $key, mixed $value): void
     {
-        $name = 'Dictionary<' . TypeName::ofSpec($this->keyType ?? 'mixed') . ', ' . TypeName::ofSpec($this->valueType ?? 'mixed') . '>';
-        $this->keys[$hash] = $this->keyType === null ? $key : TypeCheck::check($key, $this->keyType, $name);
-        $this->values[$hash] = $this->valueType === null ? $value : TypeCheck::check($value, $this->valueType, $name);
+        $this->keys[$hash] = $this->keyType === null ? $key : TypeCheck::check($key, $this->keyType);
+        $this->values[$hash] = $this->valueType === null ? $value : TypeCheck::check($value, $this->valueType);
     }
 
     private function hash(mixed $key): string

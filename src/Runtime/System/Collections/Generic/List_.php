@@ -77,9 +77,22 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
     /** @param T $item */
     public function Add(mixed $item): void
     {
-        $this->items[] = $this->checked($item);
-        $this->grow(count($this->items));
+        $this->items[] = $this->of === null ? $item : $this->checked($item);
+        // grow(), inlined: Add is the hot path of every list.
+        $count = count($this->items);
+        if ($count > $this->capacity) {
+            $this->capacity = max($this->capacity === 0 ? 4 : $this->capacity * 2, $count);
+        }
         $this->version++;
+    }
+
+    /**
+     * @internal
+     * @return list<T>
+     */
+    public function sequence(): array
+    {
+        return $this->items;
     }
 
     /** @param iterable<T> $collection */
@@ -306,7 +319,9 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
         $version = $this->version;
         foreach ($this->items as $index => $item) {
             yield $index => $item;
-            $this->assertUnchanged($version);
+            if ($version !== $this->version) {
+                $this->assertUnchanged($version);
+            }
         }
     }
 
@@ -323,7 +338,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
      */
     public function Count(?\Closure $predicate = null): int
     {
-        return $predicate === null ? count($this->items) : Enumerable::Count($this, $predicate);
+        return $predicate === null ? count($this->items) : Enumerable::Count($this->items, $predicate);
     }
 
     /** @param mixed $offset any value: only valid indexes exist */
@@ -335,7 +350,11 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
     /** @return T */
     public function offsetGet(mixed $offset): mixed
     {
-        $this->assertIndex($offset);
+        // list[i] is a hot path: an index that holds a value needs no further check; anything else
+        // (a null element, or an index out of range) goes through assertIndex().
+        if (!isset($this->items[$offset])) {
+            $this->assertIndex($offset);
+        }
 
         return $this->items[$offset];
     }
@@ -374,7 +393,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
      */
     private function checked(mixed $item): mixed
     {
-        $checked = $this->of === null ? $item : TypeCheck::check($item, $this->of, 'List<' . TypeName::ofSpec($this->of) . '>');
+        $checked = $this->of === null ? $item : TypeCheck::check($item, $this->of);
         /** @var T $checked the generated code only stores elements of the list's type */
         return $checked;
     }
