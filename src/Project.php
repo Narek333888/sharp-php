@@ -96,7 +96,7 @@ final class Project
         $sourcemap = [];
         foreach ($result->files as $file) {
             $relative = 'classes/' . self::relativePath($file->sourcePath, $this->sourceDir);
-            $relative = preg_replace('/\.' . Compiler::EXTENSION . '$/i', '.php', $relative) ?? $relative;
+            $relative = preg_replace('/\.' . Compiler::EXTENSION . '$/i', ($file->part !== '' ? '.' . $file->part : '') . '.php', $relative) ?? $relative;
             self::write($this->buildDir . '/' . $relative, $file->code);
             foreach ($file->classes as $class) {
                 $classmap[strtolower($class)] = $relative;

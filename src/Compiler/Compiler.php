@@ -71,7 +71,7 @@ final class Compiler
         $generated = [];
         foreach ($units as $unit) {
             try {
-                $generated[] = (new Emitter($symbols, $resolver, $declarator))->emit($unit);
+                array_push($generated, ...(new Emitter($symbols, $resolver, $declarator))->emit($unit));
             } catch (CompileError $e) {
                 $diagnostics[] = $e->diagnostic;
             }

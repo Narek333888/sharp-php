@@ -154,7 +154,9 @@ TXT;
             return $this->fail('Usage: sharp compile <file.sphp>');
         }
         $result = (new Compiler())->compile([SourceFile::fromPath($path)]);
-        fwrite(STDOUT, $result->files[0]->code);
+        foreach ($result->files as $file) {
+            fwrite(STDOUT, $file->code);
+        }
 
         return 0;
     }

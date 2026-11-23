@@ -90,11 +90,19 @@ final class Emitter
         $this->flow = new FlowState();
     }
 
-    public function emit(CompilationUnit $unit): GeneratedFile
+    /**
+     * The PHP code of a source file: one file, and one more for each class with static initialization
+     * (a static constructor or static fields with initializers), which runs when that class is first
+     * used, as in C#.
+     *
+     * @return non-empty-list<GeneratedFile>
+     */
+    public function emit(CompilationUnit $unit): array
     {
         $this->file = $unit->file;
         $blocks = [];
         $classes = [];
+        $separate = [];
 
         $namespaces = $unit->namespaces;
         $hasProgram = $unit->topLevelStatements !== [];
@@ -109,16 +117,28 @@ final class Emitter
                 $declared[] = Declarator::TOP_LEVEL_CLASS;
             }
             $this->imports = new Imports($phpNs, $declared);
-            $this->w = new CodeWriter();
+            $main = new CodeWriter();
             $this->staticInitCalls = [];
 
-            foreach ($types as $i => $decl) {
-                if ($i > 0) {
-                    $this->w->blank();
-                }
+            foreach ($types as $decl) {
+                $this->w = new CodeWriter();
                 $this->tolerating(fn () => $this->emitType($decl));
-                $classes[] = $this->declarator->symbolOf($decl)->fqn;
+                $fqn = $this->declarator->symbolOf($decl)->fqn;
+                if ($this->staticInitCalls !== []) {
+                    // Its own file: the autoloader includes it, and runs the static initialization, at
+                    // the class's first use.
+                    $this->appendStaticInitCalls();
+                    $this->staticInitCalls = [];
+                    $separate[] = [$fqn, [[$phpNs, $this->imports, $this->w]]];
+                    continue;
+                }
+                if ($main->code() !== '') {
+                    $main->blank();
+                }
+                $main->append($this->w);
+                $classes[] = $fqn;
             }
+            $this->w = $main;
             if ($hasProgram && $phpNs === '') {
                 $this->w->blank();
                 $this->emitTopLevelProgram($unit);
@@ -140,7 +160,12 @@ final class Emitter
             $blocks[] = ['', $this->imports, $this->w];
         }
 
-        return new GeneratedFile($unit->file->path, ...$this->assemble($blocks, $unit->file), classes: $classes);
+        $files = [new GeneratedFile($unit->file->path, ...$this->assemble($blocks, $unit->file), classes: $classes)];
+        foreach ($separate as [$fqn, $parts]) {
+            $files[] = new GeneratedFile($unit->file->path, ...$this->assemble($parts, $unit->file), classes: [$fqn], part: Names::shortName($fqn));
+        }
+
+        return $files;
     }
 
     /**
