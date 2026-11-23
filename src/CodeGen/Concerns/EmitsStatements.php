@@ -612,7 +612,13 @@ trait EmitsStatements
         }
         $outcomes = [$this->flow->save()];
 
-        foreach ($s->catches as $catch) {
+        // With an exception filter (catch (E e) when (...)), a clause whose filter is false lets the
+        // next clauses try, as in C#: one PHP catch, then the clauses in order.
+        $filtered = array_filter($s->catches, static fn ($c): bool => $c->when !== null) !== [];
+        if ($filtered) {
+            $this->filteredCatches($s, $before, $outcomes);
+        }
+        foreach ($filtered ? [] : $s->catches as $catch) {
             $this->w->sourceLine = $catch->line;
             $type = $catch->type !== null
                 ? $this->resolveType($catch->type)
@@ -658,6 +664,59 @@ trait EmitsStatements
             $this->flow->applyFinally($before, $afterTry);
         }
         $this->w->line('}');
+    }
+
+    /**
+     * The catch clauses of a try with an exception filter: one PHP catch of every Throwable, then each
+     * clause in order, by its type and filter; none matching throws the exception on.
+     *
+     * @param array<string, true>|null $before the flow state before the try block
+     * @param list<array<string, true>|null> $outcomes
+     */
+    private function filteredCatches(TryStmt $s, ?array $before, array &$outcomes): void
+    {
+        $caught = $this->currentFunction()->temp('caught');
+        $this->w->line("} catch (\\Throwable $caught) {");
+        $this->w->indent();
+        $this->w->line("$caught = " . $this->runtime('ErrorHandler') . "::translate($caught);");
+        foreach ($s->catches as $i => $catch) {
+            $this->w->sourceLine = $catch->line;
+            $type = $catch->type !== null
+                ? $this->resolveType($catch->type)
+                : Type::class(Names::RUNTIME_NAMESPACE . '\\System\\Exception');
+            if (!$type->isClass() || !$this->symbols->isThrowable((string) $type->class)) {
+                throw $this->error('SP0155', "The type caught or thrown must be derived from System.Exception", $catch->type ?? $catch);
+            }
+            $this->flow->restore($before);
+            $variable = $catch->variable !== null ? '$' . $catch->variable : $caught;
+            $this->inScope(function () use ($catch, $type, $variable, $caught, $i): void {
+                $classes = $this->catchTypes((string) $type->class);
+                $test = $classes === '\\Throwable' ? 'true' : implode(' || ', array_map(static fn (string $c): string => "$caught instanceof " . trim($c), explode('|', $classes)));
+                $condition = $classes === '\\Throwable' ? '' : "($test)";
+                if ($catch->variable !== null) {
+                    $this->declareLocal($catch->variable, $type, $catch);
+                    $condition .= ($condition !== '' ? ' && ' : '') . "(($variable = $caught) || true)";
+                }
+                if ($catch->when !== null) {
+                    $filter = $this->wrap($this->expr($catch->when, Type::bool()), \SharpPhp\CodeGen\Prec::AND);
+                    $condition .= ($condition !== '' ? ' && ' : '') . $filter;
+                }
+                $this->w->line(($i === 0 ? 'if' : '} elseif') . ' (' . ($condition !== '' ? $condition : 'true') . ') {');
+                $this->w->indent();
+                $this->currentFunction()->catchVariables[] = $variable;
+                try {
+                    $this->statements($catch->body->statements);
+                } finally {
+                    array_pop($this->currentFunction()->catchVariables);
+                }
+                $this->w->outdent();
+            });
+            $outcomes[] = $this->flow->save();
+        }
+        $this->w->line('} else {');
+        $this->w->line("    throw $caught;");
+        $this->w->line('}');
+        $this->w->outdent();
     }
 
     /** Whether a catch clause names an exception type other than System.Exception (which catches everything). */
