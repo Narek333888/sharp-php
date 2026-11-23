@@ -14,6 +14,8 @@ final class LiteralExpr extends Expr
         public readonly mixed $value,
         /** An integer literal's C# type: int, uint, long or ulong (from its suffix and its size). */
         public readonly string $integral = 'int',
+        /** A real literal's C# type: double, float (1.5f) or decimal (1.5m). */
+        public readonly string $floating = 'double',
     ) {
     }
 

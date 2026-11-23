@@ -38,8 +38,8 @@ final class TypeResolver
     public const KEYWORD_RUNTIME_CLASSES = [
         'string' => 'System.String', 'char' => 'System.Char', 'int' => 'System.Int32', 'long' => 'System.Int64',
         'short' => 'System.Int16', 'byte' => 'System.Byte', 'sbyte' => 'System.SByte', 'uint' => 'System.UInt32',
-        'ulong' => 'System.UInt64', 'ushort' => 'System.UInt16', 'double' => 'System.Double', 'float' => 'System.Double',
-        'decimal' => 'System.Double', 'bool' => 'System.Boolean', 'object' => 'System.Object',
+        'ulong' => 'System.UInt64', 'ushort' => 'System.UInt16', 'double' => 'System.Double', 'float' => 'System.Single',
+        'decimal' => 'System.Decimal', 'bool' => 'System.Boolean', 'object' => 'System.Object',
     ];
 
     private const DELEGATES = ['Func', 'Action', 'Predicate', 'Comparison', 'Converter', 'EventHandler'];
@@ -67,6 +67,9 @@ final class TypeResolver
             if (isset(Type::INTEGRAL_RANGES[$ref->name])) {
                 return Type::integral($ref->name)->withNullable($ref->nullable);
             }
+            if (in_array($ref->name, ['float', 'decimal'], true)) {
+                return Type::floating($ref->name)->withNullable($ref->nullable);
+            }
 
             return $this->primitive(self::KEYWORDS[$ref->name])->withNullable($ref->nullable);
         }
@@ -80,6 +83,9 @@ final class TypeResolver
         if (isset(self::SYSTEM_PRIMITIVES[$simple]) && $args === [] && !$this->isProjectType($ref->name, $ctx)) {
             if (isset(self::SYSTEM_INTEGRALS[$simple])) {
                 return Type::integral(self::SYSTEM_INTEGRALS[$simple])->withNullable($ref->nullable);
+            }
+            if ($simple === 'Single' || $simple === 'Decimal') {
+                return Type::floating($simple === 'Single' ? 'float' : 'decimal')->withNullable($ref->nullable);
             }
 
             return $this->primitive(self::SYSTEM_PRIMITIVES[$simple])->withNullable($ref->nullable);

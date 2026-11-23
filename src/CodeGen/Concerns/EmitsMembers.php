@@ -767,6 +767,12 @@ trait EmitsMembers
                 ? "\\implode('', {$values[0]->code} ?? [])"
                 : $this->runtime('Op') . "::arrayName({$values[0]->code}, " . self::phpString($this->netTypeName($values[0]->type)) . ')';
         }
+        // Console.WriteLine(x) of a double or a float: written as its type writes it (see asString()).
+        if (count($values) === 1 && in_array($member->name, ['Write', 'WriteLine'], true) && isset($values[0])
+            && strcasecmp($member->owner->fqn, Names::RUNTIME_NAMESPACE . '\\System\\Console') === 0
+            && $values[0]->type->kind === 'float' && $values[0]->type->floatingName() !== 'decimal') {
+            $code = $this->asString($values[0])->code;
+        }
 
         foreach ($member->params as $i => $param) {
             if (isset($values[$i])) {
@@ -952,7 +958,12 @@ trait EmitsMembers
             if ($name === 'ToString') {
                 [$code] = $this->arguments($args, []);
 
-                return Emitted::value($code === '' ? "$op::str({$target->code})" : "$op::format({$target->code}, $code)", Type::string());
+                if ($code !== '') {
+                    return Emitted::value("$op::format({$target->code}, $code)", Type::string());
+                }
+                $text = $this->asString(new Emitted($target->code, $t->withNullable(false), $target->prec));
+
+                return $text->type->isString() ? $text : Emitted::value("$op::str({$target->code})", Type::string());
             }
             $extension = $this->callExtension($target, $callee, $call);
             if ($extension !== null) {

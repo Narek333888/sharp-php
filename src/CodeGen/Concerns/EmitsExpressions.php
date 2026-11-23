@@ -112,9 +112,11 @@ trait EmitsExpressions
     {
         return match ($e->kind) {
             'int' => $expected !== null && $expected->isFloat()
-                ? Emitted::value(self::phpFloat($e->floatValue()), Type::float())
+                // An int constant where a float type is wanted: that type's value (16777217 as a float is 16777216).
+                ? Emitted::value(self::phpFloat($expected->floatingName() === 'float' ? (float) \SharpPhp\Runtime\Op::single($e->floatValue()) : $e->floatValue()), $expected->floatingName() === Type::UNSIZED ? Type::float() : Type::floating($expected->floatingName()))
                 : new Emitted((string) $e->intValue(), Type::integral($e->integral), intValue: $e->intValue()),
-            'float' => Emitted::value(self::phpFloat($e->floatValue()), Type::float()),
+            // 1.5 is a double, 1.5f a float (single precision), 1.5m a decimal.
+            'float' => Emitted::value(self::phpFloat($e->floating === 'float' ? (float) \SharpPhp\Runtime\Op::single($e->floatValue()) : $e->floatValue()), Type::floating($e->floating)),
             'string' => Emitted::value(self::phpString($e->stringValue()), Type::string()),
             'char' => new Emitted(self::phpString($e->stringValue()), Type::char(), intValue: mb_ord($e->stringValue())),
             'bool' => Emitted::value($e->value ? 'true' : 'false', Type::bool()),
@@ -164,6 +166,35 @@ trait EmitsExpressions
     }
 
     /** Converts a value to a string the way C# would (true => "True", objects => ToString()). */
+    /**
+     * The type of arithmetic with a double, float or decimal operand, as C#'s numeric promotion: double
+     * when one is a double, else float when one is a float, decimal with integers. A decimal with a double
+     * or a float is CS0019 (there is no implicit conversion between them).
+     */
+    private function promotedFloating(Type $l, Type $r, string $op, \SharpPhp\Syntax\Node $at): Type
+    {
+        $names = [$l->isFloat() ? $l->floatingName() : 'integral', $r->isFloat() ? $r->floatingName() : 'integral'];
+        if (in_array('decimal', $names, true) && (in_array('double', $names, true) || in_array('float', $names, true))
+            && $l->isNumeric() && $r->isNumeric()) {
+            throw $this->error('SP0019', "Operator '$op' cannot be applied to operands of type '{$l->describe()}' and '{$r->describe()}'", $at);
+        }
+        foreach (['decimal', 'double', Type::UNSIZED, 'float'] as $name) {
+            if (in_array($name, $names, true)) {
+                return $name === Type::UNSIZED ? Type::float() : Type::floating($name);
+            }
+        }
+
+        return Type::float();
+    }
+
+    /** A float (System.Single) result is rounded to single precision, as C# computes float arithmetic. */
+    private function singleRounded(Emitted $value): Emitted
+    {
+        return $value->type->kind === 'float' && $value->type->floatingName() === 'float'
+            ? Emitted::value($this->runtime('Op') . "::single({$value->code})", $value->type)
+            : $value;
+    }
+
     /** A method named without a call (list.Count where Count() is meant): PHP's first-class callable syntax. */
     private static function isMethodGroup(Emitted $value): bool
     {
@@ -177,6 +208,18 @@ trait EmitsExpressions
         }
         if ($value->type->isInt() && !$value->type->nullable) {
             return $value;
+        }
+        // A double as .NET Core writes it (0.30000000000000004), a float with its single-precision digits.
+        // A decimal (a PHP float too) keeps 15 significant digits: 0.1m + 0.2m is 0.3.
+        if ($value->type->kind === 'float') {
+            $helper = match ($value->type->floatingName()) {
+                'double', Type::UNSIZED => 'doubleText',
+                'float' => 'singleText',
+                default => null,
+            };
+            if ($helper !== null) {
+                return Emitted::value($this->runtime('Op') . "::$helper({$value->code})", Type::string());
+            }
         }
         // An array as text is its type's name, as in .NET ("System.Int32[]"); PHP knows no element type.
         if ($value->type->kind === 'array' && !$value->type->isPhpArray()) {
@@ -228,7 +271,11 @@ trait EmitsExpressions
             $type->isChar() => 'System.Char',
             $type->isString() => 'System.String',
             $type->isBool() => 'System.Boolean',
-            $type->kind === 'float' => 'System.Double',
+            $type->kind === 'float' => match ($type->floatingName()) {
+                'float' => 'System.Single',
+                'decimal' => 'System.Decimal',
+                default => 'System.Double',
+            },
             $type->isClass() => \SharpPhp\Runtime\TypeName::ofClass((string) $type->class),
             default => 'System.Object',
         } . ($type->nullable && $this->conversions->isValueType($type) && $type->kind !== 'array' ? '' : '');
@@ -452,7 +499,7 @@ trait EmitsExpressions
         $lt = $l->type;
         $rt = $r->type;
         // C#'s numeric promotion: byte + byte is an int, int + long a long, uint + int a long.
-        $numericType = $lt->isFloat() || $rt->isFloat() ? Type::float() : self::promotedIntegral($lt, $rt);
+        $numericType = $lt->isFloat() || $rt->isFloat() ? $this->promotedFloating($lt, $rt, $op, $at) : self::promotedIntegral($lt, $rt);
         $bothNumeric = $lt->isNumeric() && $rt->isNumeric();
         $bothInt = $lt->isInt() && $rt->isInt();
         $op_ = $this->runtime('Op');
@@ -469,20 +516,22 @@ trait EmitsExpressions
                     return $this->infix('.', $this->asString($l), $this->asString($r), Prec::CONCAT, Type::string());
                 }
                 if ($bothNumeric) {
-                    return $this->infix('+', $l, $r, Prec::ADD, $numericType);
+                    return $this->singleRounded($this->infix('+', $l, $r, Prec::ADD, $numericType));
                 }
 
                 return Emitted::value("$op_::add({$l->code}, {$r->code})", Type::mixed());
             case '-':
             case '*':
-                return $this->infix($op, $l, $r, $op === '*' ? Prec::MUL : Prec::ADD, $bothNumeric ? $numericType : Type::mixed());
+                return $bothNumeric
+                    ? $this->singleRounded($this->infix($op, $l, $r, $op === '*' ? Prec::MUL : Prec::ADD, $numericType))
+                    : $this->infix($op, $l, $r, $op === '*' ? Prec::MUL : Prec::ADD, Type::mixed());
             case '/':
                 if ($bothInt) {
                     return Emitted::value("\\intdiv({$l->code}, {$r->code})", $numericType);
                 }
                 if ($bothNumeric) {
                     // fdiv: 1.0 / 0 is Infinity (and 0.0 / 0 NaN) as in C#; PHP's "/" throws there.
-                    return Emitted::value("\\fdiv({$l->code}, {$r->code})", Type::float());
+                    return $this->singleRounded(Emitted::value("\\fdiv({$l->code}, {$r->code})", $numericType));
                 }
 
                 return Emitted::value("$op_::div({$l->code}, {$r->code})", Type::mixed());
@@ -491,7 +540,7 @@ trait EmitsExpressions
                     return $this->infix('%', $l, $r, Prec::MUL, $numericType);
                 }
                 if ($bothNumeric) {
-                    return Emitted::value("\\fmod({$l->code}, {$r->code})", Type::float());
+                    return $this->singleRounded(Emitted::value("\\fmod({$l->code}, {$r->code})", $numericType));
                 }
 
                 return Emitted::value("$op_::mod({$l->code}, {$r->code})", Type::mixed());
@@ -976,7 +1025,16 @@ trait EmitsExpressions
                 return in_array($name, self::NARROW_INTEGRALS, true) && $name !== 'uint'
                     ? $this->narrowed($truncated, $plain) : $truncated;
             case 'float':
-                return $source->isFloat() ? $value : Emitted::value('(float) ' . $this->wrap($value, Prec::UNARY), Type::float(), Prec::UNARY);
+                // (float)x is rounded to single precision; (double)f and (decimal)d keep the value.
+                $plainTarget = $target->withNullable(false);
+                if ($source->isFloat() && $source->floatingName() === $plainTarget->floatingName()) {
+                    return new Emitted($value->code, $target, $value->prec);
+                }
+                $double = $source->isFloat() ? $value : Emitted::value('(float) ' . $this->wrap($this->charToInt($value), Prec::UNARY), Type::float(), Prec::UNARY);
+
+                return $plainTarget->floatingName() === 'float'
+                    ? Emitted::value($this->runtime('Op') . "::single({$double->code})", $target)
+                    : new Emitted($double->code, $target, $double->prec);
             case 'bool':
                 return $source->isBool() ? $value : Emitted::value('(bool) ' . $this->wrap($value, Prec::UNARY), Type::bool(), Prec::UNARY);
             case 'char':

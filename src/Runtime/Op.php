@@ -112,7 +112,7 @@ final class Op
      * Scientific notation when the exponent reaches the precision (17 for the shortest digits, as .NET:
      * 1E+16 is 10000000000000000, 1E+17 is 1E+17) or is below -4.
      */
-    private static function general(float $value, ?int $precision): string
+    private static function general(float $value, ?int $precision, int $shortestLimit = 17): string
     {
         // var_export() writes the shortest round-trip digits (serialize_precision -1).
         $repr = $precision === null ? var_export($value, true) : sprintf('%.' . (max($precision, 1) - 1) . 'E', $value);
@@ -128,7 +128,7 @@ final class Op
         }
         // Exponent of the first significant digit: 1234.5 has 3, 0.05 has -2.
         $exponent = strlen($int) + $exp - (strlen($all) - strlen($significant)) - 1;
-        if ($exponent >= ($precision ?? 17) || $exponent < -4) {
+        if ($exponent >= ($precision ?? $shortestLimit) || $exponent < -4) {
             $mantissa = $digits[0] . (strlen($digits) > 1 ? '.' . substr($digits, 1) : '');
 
             return $sign . $mantissa . 'E' . ($exponent < 0 ? '-' : '+') . str_pad((string) abs($exponent), 2, '0', STR_PAD_LEFT);
@@ -206,6 +206,55 @@ final class Op
     public static function arrayName(?array $array, string $name): string
     {
         return $array === null ? '' : $name;
+    }
+
+    /**
+     * A float (System.Single) value: the double rounded to single precision, as float arithmetic gives it.
+     *
+     * @internal
+     */
+    public static function single(int|float|null $value): ?float
+    {
+        if ($value === null) {
+            return null;
+        }
+        $rounded = unpack('g', pack('g', $value));
+
+        return is_array($rounded) && is_float($rounded[1]) ? $rounded[1] : (float) $value;
+    }
+
+    /**
+     * A float (System.Single) as .NET's ToString() writes it: the shortest digits that read back as the
+     * same float (0.33333334, 3.4028235E+38), in scientific notation from an exponent of 9.
+     *
+     * @internal
+     */
+    public static function singleText(?float $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+        if (is_nan($value) || is_infinite($value)) {
+            return self::shortest($value);
+        }
+        for ($digits = 1; $digits <= 9; $digits++) {
+            $candidate = (float) sprintf('%.' . ($digits - 1) . 'e', $value);
+            if (self::single($candidate) === self::single($value)) {
+                return self::general($candidate, null, 9);
+            }
+        }
+
+        return self::general($value, null, 9);
+    }
+
+    /**
+     * A double as .NET's ToString() writes it, for a value of static type double (null is "").
+     *
+     * @internal
+     */
+    public static function doubleText(?float $value): string
+    {
+        return $value === null ? '' : self::shortest($value);
     }
 
     /**

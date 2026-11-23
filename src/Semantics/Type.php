@@ -82,9 +82,25 @@ final class Type
         return $this->kind === 'int' ? ($this->param ?? 'int') : 'int';
     }
 
+    /** double. */
     public static function float(): self
     {
         return self::$cache['float'] ??= new self('float');
+    }
+
+    /**
+     * double, float or decimal (all PHP floats), or Type::UNSIZED: a float of PHP code or the runtime
+     * library, which converts to and from all three (Math.Round takes and gives any of them).
+     */
+    public static function floating(string $name): self
+    {
+        return $name === 'double' ? self::float() : (self::$cache["float:$name"] ??= new self('float', null, [], false, $name));
+    }
+
+    /** "double", "float", "decimal" or Type::UNSIZED, for a float type. */
+    public function floatingName(): string
+    {
+        return $this->kind === 'float' ? ($this->param ?? 'double') : 'double';
     }
 
     public static function string(): self
@@ -352,7 +368,8 @@ final class Type
     {
         $text = match ($this->kind) {
             'int' => $this->param === null || $this->param === self::UNSIZED ? 'int' : $this->param,
-            'float', 'string', 'char', 'bool', 'void' => $this->kind === 'float' ? 'double' : $this->kind,
+            'float' => $this->param === null || $this->param === self::UNSIZED ? 'double' : $this->param,
+            'string', 'char', 'bool', 'void' => $this->kind,
             'mixed' => 'object',
             'null' => 'null',
             'array' => $this->isPhpArray() ? 'array' : $this->element()->describe() . '[]',

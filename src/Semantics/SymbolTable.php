@@ -20,6 +20,12 @@ use ReflectionUnionType;
  */
 final class SymbolTable
 {
+    /** The runtime classes of the floating-point types: their constants have the type. */
+    private const FLOATING_CLASSES = [
+        'SharpPhp\\Runtime\\System\\Double' => 'double', 'SharpPhp\\Runtime\\System\\Single' => 'float',
+        'SharpPhp\\Runtime\\System\\Decimal' => 'decimal',
+    ];
+
     /** The runtime classes of the integral types: their constants have the type. */
     private const INTEGRAL_CLASSES = [
         'SharpPhp\\Runtime\\System\\Int32' => 'int', 'SharpPhp\\Runtime\\System\\Int64' => 'long',
@@ -469,6 +475,11 @@ final class SymbolTable
             if ($integral !== null && $type->isInt()) {
                 $type = Type::integral($integral);
             }
+            // float.MaxValue is a float, double.Epsilon a double, decimal.One a decimal.
+            $floating = self::FLOATING_CLASSES[$symbol->fqn] ?? null;
+            if ($floating !== null && $type->isFloat()) {
+                $type = Type::floating($floating);
+            }
             $symbol->addMember(new MemberSymbol($isCase ? 'case' : 'const', $constant->getName(), true, $type, $symbol));
         }
 
@@ -665,7 +676,7 @@ final class SymbolTable
     {
         return match (true) {
             is_int($value) => Type::integral(Type::UNSIZED),
-            is_float($value) => Type::float(),
+            is_float($value) => Type::floating(Type::UNSIZED),
             is_string($value) => Type::string(),
             is_bool($value) => Type::bool(),
             is_array($value) => Type::array(),
@@ -701,7 +712,10 @@ final class SymbolTable
             'int' => Type::integral(Type::UNSIZED),
             // C#'s integral types in docblocks of the runtime library (@sharp-return byte).
             'byte', 'sbyte', 'short', 'ushort', 'uint', 'long', 'ulong' => Type::integral(strtolower($name)),
-            'float' => Type::float(),
+            // PHP's float is double, float and decimal alike (Math.Round(x) for each), as int is every integer.
+            'float' => Type::floating(Type::UNSIZED),
+            'double' => Type::float(),
+            'decimal' => Type::floating('decimal'),
             'string' => Type::string(),
             'char' => Type::char(),
             'bool', 'true', 'false' => Type::bool(),
@@ -765,7 +779,7 @@ final class SymbolTable
             $base === 'int' && str_contains($s, '<'), str_ends_with($base, '-int'), $base === 'int-mask', $base === 'int-mask-of' => Type::integral(Type::UNSIZED),
             str_ends_with($base, '-string') => Type::string(),
             $base === 'array-key', $base === 'scalar', $base === 'mixed' && str_contains($s, '<') => Type::mixed(),
-            str_ends_with($base, '-float') => Type::float(),
+            str_ends_with($base, '-float') => Type::floating(Type::UNSIZED),
             default => null,
         };
         if ($scalar !== null) {

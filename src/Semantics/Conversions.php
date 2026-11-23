@@ -47,7 +47,8 @@ final class Conversions
         return match ($from->kind) {
             'int' => ($to->kind === 'int' && self::integralConverts($from->integralName(), $to->integralName()))
                 || $to->kind === 'float' || ($isZeroLiteral && $this->isEnum($to)),
-            'float', 'bool' => $to->kind === $from->kind,
+            'float' => $to->kind === 'float' && self::floatingConverts($from->floatingName(), $to->floatingName()),
+            'bool' => $to->kind === 'bool',
             // Arrays are covariant: Dog[] is an Animal[], an IEnumerable<Animal> and an IList<Animal>.
             'array' => in_array($to->kind, ['array', 'iterable'], true) && $this->argumentConverts($from->element(), $to->element(), 'out'),
             'char' => in_array($to->kind, ['char', 'float'], true) || ($to->kind === 'int' && self::integralConverts('ushort', $to->integralName()))
@@ -60,6 +61,15 @@ final class Conversions
             'class' => $this->isImplicitFromClass($from, $to),
             default => true,
         };
+    }
+
+    /**
+     * C#'s implicit conversions between double, float and decimal: float to double only (double to float,
+     * and either to decimal or back, need a cast). A float of PHP code converts to and from all.
+     */
+    public static function floatingConverts(string $from, string $to): bool
+    {
+        return $from === $to || $from === Type::UNSIZED || $to === Type::UNSIZED || ($from === 'float' && $to === 'double');
     }
 
     /**

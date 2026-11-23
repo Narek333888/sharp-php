@@ -1879,8 +1879,13 @@ final class Parser
                 return (new LiteralExpr('int', $token->value, $this->integerLiteralType($token)))->at($token);
             case TokenType::Float:
                 $this->advance();
+                $suffix = strtolower(substr($this->file->text, $token->offset + $token->length - 1, 1));
 
-                return (new LiteralExpr('float', $token->value))->at($token);
+                return (new LiteralExpr('float', $token->value, floating: match ($suffix) {
+                    'f' => 'float',
+                    'm' => 'decimal',
+                    default => 'double',
+                }))->at($token);
             case TokenType::String:
                 $this->advance();
 

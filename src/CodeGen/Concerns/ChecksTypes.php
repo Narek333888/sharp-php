@@ -43,8 +43,19 @@ trait ChecksTypes
 
             return new Emitted($value->code, $target, $value->prec, intValue: $value->intValue);
         }
+        // float f = 1.5: a double literal does not convert to float or decimal (CS0664: 1.5f, 1.5m).
+        if ($value->type->kind === 'float' && $value->type->floatingName() === 'double' && is_numeric($value->code)
+            && $target->kind === 'float' && in_array($target->floatingName(), ['float', 'decimal'], true)) {
+            $suffix = $target->floatingName() === 'float' ? 'F' : 'M';
+            throw $this->error('SP0664', "Literal of type double cannot be implicitly converted to type '{$target->withNullable(false)->describe()}'; use an '$suffix' suffix to create a literal of this type", $at);
+        }
         if (!$this->conversions->isImplicit($value->type, $target, $isZero, $runtimeParameter)) {
             throw $this->conversionError($value, $target, $at, $argument);
+        }
+        // float f = n: an integer (or a PHP float) becomes a float of single precision.
+        if ($target->kind === 'float' && $target->floatingName() === 'float' && !($value->type->kind === 'float' && $value->type->floatingName() === 'float')
+            && $value->type->isNumeric() && !is_numeric($value->code)) {
+            return Emitted::value($this->runtime('Op') . "::single({$value->code})", $target);
         }
         // Color c = 0;  =>  Color::from(0)
         if ($isZero && $this->conversions->isEnum($target)) {

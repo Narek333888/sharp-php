@@ -1054,10 +1054,12 @@ trait EmitsDeclarations
             array_unshift($chain, $symbol);
         }
         $names = [];
+        $types = [];
         foreach ($chain as $symbol) {
             foreach ($symbol->members as $member) {
                 if ($member->isValue() && !$member->isStatic && $member->visibility === 'public' && !in_array($member->name, $names, true)) {
                     $names[] = $member->name;
+                    $types[$member->name] = $member->type;
                 }
             }
         }
@@ -1068,7 +1070,8 @@ trait EmitsDeclarations
             $text = $decl->name . ' { ';
             foreach ($names as $i => $name) {
                 $text .= ($i > 0 ? ', ' : '') . $name . ' = ';
-                $code .= self::phpString($text) . " . $op::str(\$this->$name) . ";
+                // Each member as its type writes itself (a double: 0.30000000000000004).
+                $code .= self::phpString($text) . ' . ' . $this->wrap($this->asString(Emitted::value("\$this->$name", $types[$name])), \SharpPhp\CodeGen\Prec::CONCAT) . ' . ';
                 $text = '';
             }
             $code .= self::phpString(' }');
