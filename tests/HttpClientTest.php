@@ -10,22 +10,22 @@ namespace SharpPhp\Tests;
  */
 final class HttpClientTest extends TestCase
 {
-    /** @var resource|null */
-    private $server = null;
+    /** @var list<resource> */
+    private array $servers = [];
 
     protected function tearDown(): void
     {
-        if ($this->server !== null) {
+        foreach ($this->servers as $server) {
             // The workers of "php -S" outlive their master's SIGTERM: stop them first (Windows has
-            // no workers, see testRequestsRunAtTheSameTime()).
-            $status = proc_get_status($this->server);
+            // no workers).
+            $status = proc_get_status($server);
             if ($status['running'] && PHP_OS_FAMILY !== 'Windows') {
                 exec('pkill -TERM -P ' . (int) $status['pid']);
             }
-            proc_terminate($this->server);
-            proc_close($this->server);
-            $this->server = null;
+            proc_terminate($server);
+            proc_close($server);
         }
+        $this->servers = [];
         parent::tearDown();
     }
 
@@ -35,11 +35,14 @@ final class HttpClientTest extends TestCase
             self::markTestSkipped('HttpClient needs ext-curl');
         }
         if (PHP_OS_FAMILY === 'Windows') {
-            // The test server answers requests in parallel only with PHP_CLI_SERVER_WORKERS, which PHP's
-            // built-in server does not support on Windows, so the requests could not overlap there.
-            self::markTestSkipped("PHP's built-in web server answers one request at a time on Windows");
+            // Starting and stopping the test servers (php -S) is not set up for Windows.
+            self::markTestSkipped('The test servers are not set up for Windows');
         }
         $url = $this->startServer();
+        // One server per parallel request: a single "php -S" may hand all three connections to one of its
+        // workers, which then answers them one after another (seen on GitHub's runners), so the overlap
+        // would depend on the server, not on HttpClient.
+        [$a, $b, $c] = [$this->startServer(), $this->startServer(), $this->startServer()];
 
         $result = $this->runProject(['Program.sphp' => <<<CS
             using System;
@@ -48,16 +51,12 @@ final class HttpClientTest extends TestCase
             var http = new HttpClient { BaseAddress = "$url" };
             await http.GetStringAsync("/warm-up");
 
-            // One after another would take at least 1500 ms; at the same time about 500 ms. A busy CI
-            // machine sometimes gives the built-in server's workers no time to accept: measure twice.
-            string[] pages = [];
-            var elapsed = int.MaxValue;
-            for (var attempt = 0; attempt < 2 && elapsed >= 1200; attempt++)
-            {
-                var started = Environment.TickCount;
-                pages = await Task.WhenAll(new[] { "/a", "/b", "/c" }.Select(u => http.GetStringAsync(u)));
-                elapsed = Environment.TickCount - started;
-            }
+            foreach (var server in new[] { "$a", "$b", "$c" }) await http.GetStringAsync(server + "/warm-up");
+
+            // One after another would take at least 1500 ms; at the same time about 500 ms.
+            var started = Environment.TickCount;
+            var pages = await Task.WhenAll(new[] { "$a/a", "$b/b", "$c/c" }.Select(u => http.GetStringAsync(u)));
+            var elapsed = Environment.TickCount - started;
             Console.WriteLine(string.Join(" | ", pages));
             Console.WriteLine(elapsed < 1200 ? "at the same time" : \$"one after another ({elapsed} ms)");
 
@@ -112,7 +111,7 @@ final class HttpClientTest extends TestCase
         $env['PHP_CLI_SERVER_WORKERS'] = '8'; // answer requests in parallel
         $server = proc_open([PHP_BINARY, '-S', "127.0.0.1:$port", "$root/router.php"], [1 => ['file', self::nullDevice(), 'w'], 2 => ['file', self::nullDevice(), 'w']], $pipes, $root, $env);
         self::assertIsResource($server);
-        $this->server = $server;
+        $this->servers[] = $server;
         for ($i = 0; $i < 100; $i++) {
             $connection = @fsockopen('127.0.0.1', $port);
             if ($connection !== false) {
