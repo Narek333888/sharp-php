@@ -1,0 +1,14 @@
+2 True True 1
+1 again True False
+Point { X = 1, Y = 1 }=2, Point { X = 2, Y = 2 }=1
+1 False
+True 1 True
+2 7 1
+2 2
+False False False True
+True
+False
+2 2 2 2
+3 True 3
+5 True True
+0 5 True

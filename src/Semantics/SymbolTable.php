@@ -425,10 +425,6 @@ final class SymbolTable
         $symbol->interfaces = $class->getInterfaceNames();
         $symbol->isAbstract = $class->isAbstract() && !$class->isInterface();
         $symbol->hasConstructor = $class->getConstructor() !== null;
-        if ($class->getConstructor()?->isPublic()) {
-            $this->docFile = $class->getConstructor()->getFileName() ?: null;
-            $symbol->constructorParams = $this->reflectionParams($class->getConstructor(), $symbol);
-        }
 
         $this->docFile = $class->getFileName() ?: null;
         $doc = (string) $class->getDocComment();
@@ -440,6 +436,13 @@ final class SymbolTable
         }
         if (preg_match('/@sharp-element\s+([^\r\n*]+)/', $doc, $m)) {
             $symbol->elementType = $this->docType($m[1], $symbol);
+        }
+        // After the class's @template tags: "@param iterable<T> $collection" means the class's T.
+        if ($class->getConstructor()?->isPublic()) {
+            $this->docFile = $class->getConstructor()->getFileName() ?: null;
+            $this->methodTemplates = preg_match_all('/@(?:sharp-)?template\s+(\w+)/', (string) $class->getConstructor()->getDocComment(), $cm) > 0 ? $cm[1] : [];
+            $symbol->constructorParams = $this->reflectionParams($class->getConstructor(), $symbol);
+            $this->methodTemplates = [];
         }
         // A runtime class that is a struct in .NET (DateTime, TimeSpan): a value type to C# code.
         $symbol->isStruct = str_contains($doc, '@sharp-struct');
@@ -615,7 +618,9 @@ final class SymbolTable
                 ? $docTypes['param-out'][$name] ?? $docTypes['param'][$name] ?? null
                 : $docTypes['param'][$name] ?? null;
             $untypedClosure = $type->kind === 'closure' && $type->args === [];
-            if ($spec !== null && ($type->isUnknown() || $untypedClosure || $parameter->isPassedByReference())) {
+            // "@param iterable<TSource> $source": the element type, which binds TSource from the receiver.
+            $untypedSequence = $type->kind === 'iterable' && $type->element()->isUnknown();
+            if ($spec !== null && ($type->isUnknown() || $untypedClosure || $untypedSequence || $parameter->isPassedByReference())) {
                 $type = $this->docType($spec, $symbol);
             }
             $params[] = new ParameterSymbol(

@@ -1,0 +1,63 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+// An iterator method runs again on every enumeration, and only when it is enumerated.
+var numbers = Numbers();
+Console.WriteLine("created");
+foreach (var n in numbers) Console.Write(n);
+Console.WriteLine();
+Console.WriteLine(numbers.Count() + " " + numbers.Sum());
+
+// LINQ is deferred: a query reads its source when it is enumerated, and sees later changes.
+var list = new List<int> { 1, 2, 3 };
+var big = list.Where(x => { Console.Write($"?{x}"); return x > 1; });
+Console.WriteLine("query written");
+list.Add(4);
+Console.WriteLine(" -> " + big.Count());
+Console.WriteLine(" -> " + big.First());
+
+// Endless sequences work, as far as they are read.
+Console.WriteLine(string.Join(",", Naturals().Take(5)));
+Console.WriteLine(string.Join(",", Naturals().Where(n => n % 2 == 0).Select(n => n * 10).Skip(1).Take(3)));
+Console.WriteLine(Naturals().First(n => n > 100) + " " + Naturals().Any(n => n == 7) + " " + Naturals().TakeWhile(n => n < 4).Count());
+Console.WriteLine(string.Join(",", new[] { "a", "b", "c" }.Zip(Naturals(), (s, i) => s + i)));
+
+// Operators keep LINQ's results.
+var words = new[] { "apple", "bob", "cherry", "avocado", "Bob" };
+foreach (var g in words.GroupBy(w => char.ToLower(w[0]))) Console.Write($"{g.Key}:{g.Count()} ");
+Console.WriteLine();
+Console.WriteLine(string.Join("|", words.SelectMany(w => w.Take(2)).Distinct()));
+Console.WriteLine(string.Join(",", Enumerable.Range(1, 5).Reverse()) + " " + string.Join(",", Enumerable.Range(1, 7).Chunk(3).Select(c => c.Length)));
+var ordered = words.OrderBy(w => w.Length).ThenBy(w => w);
+Console.WriteLine(string.Join(",", ordered) + " " + ordered.Count() + " " + ordered.First());
+Console.WriteLine(string.Join(",", new[] { 10, 9, 100 }.OrderBy(n => n)) + " " + string.Join(",", new[] { "10", "9", "100" }.OrderBy(s => s)));
+Console.WriteLine(new[] { 1, 2, 3 }.Single(n => n == 2) + " " + Enumerable.Repeat("x", 3).Count());
+try { new[] { 1, 2, 3 }.Single(n => n > 1); } catch (InvalidOperationException e) { Console.WriteLine(e.Message); }
+try { new int[0].Single(); } catch (InvalidOperationException e) { Console.WriteLine(e.Message); }
+try { Naturals().Single(n => n < 2); } catch (InvalidOperationException e) { Console.WriteLine(e.Message); }
+
+// A query is a value of its own: (List<int>) of it is an InvalidCastException, ToList() makes a list.
+IEnumerable<int> query = list.Select(x => x * 2);
+List<int> copy = query.ToList();
+copy.Add(100);
+Console.WriteLine(copy.Count + " " + query.Count());
+try { var l = (List<int>)query; } catch (InvalidCastException) { Console.WriteLine("InvalidCastException"); }
+
+// PHP code gets a query as an array (or counts it), as it gets a List.
+var people = new List<string> { "Ann", "Bob", "Cid" };
+Console.WriteLine(implode(", ", people.Where(n => n != "Bob")) + " " + count(people.Select(n => n.Length)) + " " + json_encode(people.OrderByDescending(n => n)));
+
+static IEnumerable<int> Numbers()
+{
+    Console.Write("[start]");
+    yield return 1;
+    yield return 2;
+    yield return 3;
+}
+
+static IEnumerable<int> Naturals()
+{
+    int i = 0;
+    while (true) yield return i++;
+}

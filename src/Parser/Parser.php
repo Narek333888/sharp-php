@@ -2353,7 +2353,9 @@ final class Parser
             if ($type !== null) {
                 $next = $this->current();
                 $hasDesignation = $next->isIdentifier() && !in_array($next->value, ['and', 'or', 'when'], true);
-                if ($hasDesignation || $isKeywordType) {
+                // A generic or array type (x is IList<int>, x is Point[]) cannot be a constant.
+                $onlyAType = $type->args !== [] || $type->name === '[]';
+                if ($hasDesignation || $isKeywordType || $onlyAType) {
                     $designation = $hasDesignation ? $this->advance()->text() : null;
 
                     return (new Pattern('type', null, $type, $designation, null, []))->at($token);

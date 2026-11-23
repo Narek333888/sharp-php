@@ -59,7 +59,7 @@ final class Dyn
             'ToString' => $args === [] ? Op::str($target) : Op::format($target, Op::str($args[0])),
             'Equals' => Op::equals($target, $args[0] ?? null),
             'CompareTo' => $target <=> ($args[0] ?? null),
-            'GetHashCode' => is_object($target) ? spl_object_id($target) : crc32(serialize($target)),
+            'GetHashCode' => Op::hashCode($target),
             default => throw new System\InvalidOperationException(sprintf("'%s' does not contain a definition for '%s'", TypeName::of($target), $name)),
         };
     }

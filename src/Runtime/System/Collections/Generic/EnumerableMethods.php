@@ -17,7 +17,9 @@ trait EnumerableMethods
 {
     /**
      * What the LINQ methods read: the collection itself, or (List) its array, which is faster to
-     * walk than an iterator and needs no copy (PHP copies arrays only when one is changed).
+     * walk than an iterator and needs no copy (PHP copies arrays only when one is changed). The
+     * deferred operators (Where, Select, ...) get the collection and read this when they are
+     * enumerated, so that a query sees the elements the collection has then, as in LINQ.
      *
      * @internal
      * @return iterable<T>
@@ -27,10 +29,10 @@ trait EnumerableMethods
         return $this;
     }
 
-    /** @return List_<T> */
-    public function Where(\Closure $predicate): List_
+    /** @return iterable<T> */
+    public function Where(\Closure $predicate): iterable
     {
-        return Enumerable::Where($this->sequence(), $predicate);
+        return Enumerable::Where($this, $predicate);
     }
 
     /** @return T|null */
@@ -45,28 +47,28 @@ trait EnumerableMethods
         return Enumerable::MaxBy($this->sequence(), $keySelector);
     }
 
-    /** @return List_<T> */
-    public function DistinctBy(\Closure $keySelector): List_
+    /** @return iterable<T> */
+    public function DistinctBy(\Closure $keySelector): iterable
     {
-        return Enumerable::DistinctBy($this->sequence(), $keySelector);
+        return Enumerable::DistinctBy($this, $keySelector);
     }
 
-    /** @return List_<T[]> */
-    public function Chunk(int $size): List_
+    /** @return iterable<T[]> */
+    public function Chunk(int $size): iterable
     {
-        return Enumerable::Chunk($this->sequence(), $size);
+        return Enumerable::Chunk($this, $size);
     }
 
-    /** @return List_<mixed> */
-    public function Select(\Closure $selector): List_
+    /** @return iterable<mixed> */
+    public function Select(\Closure $selector): iterable
     {
-        return Enumerable::Select($this->sequence(), $selector);
+        return Enumerable::Select($this, $selector);
     }
 
-    /** @return List_<mixed> */
-    public function SelectMany(\Closure $selector): List_
+    /** @return iterable<mixed> */
+    public function SelectMany(\Closure $selector): iterable
     {
-        return Enumerable::SelectMany($this->sequence(), $selector);
+        return Enumerable::SelectMany($this, $selector);
     }
 
     public function Any(?\Closure $predicate = null): bool
@@ -141,13 +143,13 @@ trait EnumerableMethods
     /** @return IOrderedEnumerable<T> */
     public function OrderBy(?\Closure $keySelector = null): IOrderedEnumerable
     {
-        return Enumerable::OrderBy($this->sequence(), $keySelector);
+        return Enumerable::OrderBy($this, $keySelector);
     }
 
     /** @return IOrderedEnumerable<T> */
     public function OrderByDescending(?\Closure $keySelector = null): IOrderedEnumerable
     {
-        return Enumerable::OrderByDescending($this->sequence(), $keySelector);
+        return Enumerable::OrderByDescending($this, $keySelector);
     }
 
     /**
@@ -155,50 +157,50 @@ trait EnumerableMethods
      * @template TResult
      * @param iterable<TSecond> $second
      * @param \Closure(T, TSecond): TResult $resultSelector
-     * @return List_<TResult>
+     * @return iterable<TResult>
      */
-    public function Zip(iterable $second, \Closure $resultSelector): List_
+    public function Zip(iterable $second, \Closure $resultSelector): iterable
     {
-        return Enumerable::Zip($this->sequence(), $second, $resultSelector);
+        return Enumerable::Zip($this, $second, $resultSelector);
     }
 
-    /** @return List_<T> */
-    public function Take(int $count): List_
+    /** @return iterable<T> */
+    public function Take(int $count): iterable
     {
-        return Enumerable::Take($this->sequence(), $count);
+        return Enumerable::Take($this, $count);
     }
 
-    /** @return List_<T> */
-    public function Skip(int $count): List_
+    /** @return iterable<T> */
+    public function Skip(int $count): iterable
     {
-        return Enumerable::Skip($this->sequence(), $count);
+        return Enumerable::Skip($this, $count);
     }
 
-    /** @return List_<T> */
-    public function TakeWhile(\Closure $predicate): List_
+    /** @return iterable<T> */
+    public function TakeWhile(\Closure $predicate): iterable
     {
-        return Enumerable::TakeWhile($this->sequence(), $predicate);
+        return Enumerable::TakeWhile($this, $predicate);
     }
 
-    /** @return List_<T> */
-    public function SkipWhile(\Closure $predicate): List_
+    /** @return iterable<T> */
+    public function SkipWhile(\Closure $predicate): iterable
     {
-        return Enumerable::SkipWhile($this->sequence(), $predicate);
+        return Enumerable::SkipWhile($this, $predicate);
     }
 
-    /** @return List_<T> */
-    public function Distinct(): List_
+    /** @return iterable<T> */
+    public function Distinct(): iterable
     {
-        return Enumerable::Distinct($this->sequence());
+        return Enumerable::Distinct($this);
     }
 
     /**
      * @param iterable<T> $second
-     * @return List_<T>
+     * @return iterable<T>
      */
-    public function Concat(iterable $second): List_
+    public function Concat(iterable $second): iterable
     {
-        return Enumerable::Concat($this->sequence(), $second);
+        return Enumerable::Concat($this, $second);
     }
 
     /** @return List_<T> */
@@ -219,10 +221,10 @@ trait EnumerableMethods
         return Enumerable::ToDictionary($this->sequence(), $keySelector, $elementSelector);
     }
 
-    /** @return List_<\SharpPhp\Runtime\System\Linq\Grouping> */
-    public function GroupBy(\Closure $keySelector): List_
+    /** @return iterable<\SharpPhp\Runtime\System\Linq\Grouping> */
+    public function GroupBy(\Closure $keySelector): iterable
     {
-        return Enumerable::GroupBy($this->sequence(), $keySelector);
+        return Enumerable::GroupBy($this, $keySelector);
     }
 
     public function Aggregate(mixed $seedOrFunc, ?\Closure $func = null): mixed

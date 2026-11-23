@@ -269,6 +269,146 @@ final class Op
     }
 
     /**
+     * The key HashSet, Dictionary, Distinct and GroupBy file a value under, agreeing with equals(): 1 and
+     * 1.0 share one, 0.1 + 0.2 and 0.3 do not. Null for an object with its own GetHashCode() (a record,
+     * a struct, DateTime, a class overriding it): such values are equal by Equals(), which the
+     * collection asks among the values of the same hash code (see EqualityKeys).
+     *
+     * @internal
+     */
+    public static function key(mixed $value): ?string
+    {
+        return match (true) {
+            is_int($value) => 'i:' . $value,
+            is_string($value) => 's:' . $value,
+            $value === null => 'n',
+            is_bool($value) => $value ? 'b:1' : 'b:0',
+            is_float($value) => is_finite($value) && floor($value) === $value && abs($value) < 9.2e18
+                ? 'i:' . (int) $value
+                : 'f:' . (is_nan($value) ? 'NaN' : sprintf('%.17g', $value)),
+            $value instanceof \UnitEnum => 'e:' . $value::class . '::' . $value->name,
+            is_object($value) => !$value instanceof \Closure && method_exists($value, 'GetHashCode') ? null : 'o:' . spl_object_id($value),
+            is_array($value) => 'a:' . self::arrayKey($value),
+            default => 'x:' . get_debug_type($value),
+        };
+    }
+
+    /**
+     * "x is IList<T>" (ICollection, IReadOnlyList, IReadOnlyCollection): what the value's .NET type
+     * implements; an array implements all of them.
+     *
+     * @internal
+     */
+    public static function isCollection(mixed $value, string $interface): bool
+    {
+        if (is_array($value)) {
+            return true;
+        }
+        $implements = match (true) {
+            $value instanceof \SharpPhp\Runtime\System\Collections\Generic\List_ => ['IList', 'ICollection', 'IReadOnlyList', 'IReadOnlyCollection'],
+            $value instanceof \SharpPhp\Runtime\System\Collections\Generic\HashSet, $value instanceof \SharpPhp\Runtime\System\Collections\Generic\Dictionary => ['ICollection', 'IReadOnlyCollection'],
+            $value instanceof \SharpPhp\Runtime\System\Collections\Generic\Queue, $value instanceof \SharpPhp\Runtime\System\Collections\Generic\Stack => ['IReadOnlyCollection'],
+            is_object($value) && str_starts_with($value::class, 'SharpPhp\\Runtime\\') => [],
+            $value instanceof \Traversable && $value instanceof \Countable => $value instanceof \ArrayAccess ? ['IList', 'ICollection', 'IReadOnlyList', 'IReadOnlyCollection'] : ['ICollection', 'IReadOnlyCollection'],
+            default => [],
+        };
+
+        return in_array($interface, $implements, true);
+    }
+
+    /**
+     * C#'s GetHashCode() of any value: an int is itself, equal values (by equals()) have equal codes, an
+     * object without its own GetHashCode() has one of its identity.
+     *
+     * @internal
+     */
+    public static function hashCode(mixed $value): int
+    {
+        return match (true) {
+            is_int($value) => $value >= -2147483648 && $value <= 2147483647 ? $value : self::int32($value ^ ($value >> 32)),
+            $value === null => 0,
+            is_bool($value) => $value ? 1 : 0,
+            is_float($value) => is_finite($value) && floor($value) === $value && abs($value) < 9.2e18
+                ? self::hashCode((int) $value)
+                : self::int32(crc32(is_nan($value) ? 'NaN' : pack('e', $value))),
+            is_string($value) => self::int32(crc32($value)),
+            $value instanceof \BackedEnum => self::hashCode($value->value),
+            $value instanceof \UnitEnum => self::int32(crc32($value::class . '::' . $value->name)),
+            is_object($value) => !$value instanceof \Closure && method_exists($value, 'GetHashCode') ? self::int32(self::intOf($value->GetHashCode())) : spl_object_id($value),
+            is_array($value) => self::combine($value),
+            default => 0,
+        };
+    }
+
+    /**
+     * The Equals() of a record and a struct: every field equal by equals() (C# compares each field with
+     * its type's Equals: strings exactly, nested records by value, classes by reference), private ones
+     * and those of base records included.
+     *
+     * @internal
+     */
+    public static function fieldsEqual(object $a, object $b): bool
+    {
+        $left = (array) $a;
+        $right = (array) $b;
+        if (count($left) !== count($right)) {
+            return false;
+        }
+        foreach ($left as $name => $value) {
+            if (!array_key_exists($name, $right) || !self::equals($value, $right[$name])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * The GetHashCode() of a record and a struct: combined from every field's, so that equal values
+     * (fieldsEqual) have equal codes.
+     *
+     * @internal
+     */
+    public static function fieldsHash(object $value): int
+    {
+        return self::combine((array) $value);
+    }
+
+    /** @param array<mixed> $values */
+    private static function combine(array $values): int
+    {
+        $hash = 17;
+        foreach ($values as $value) {
+            $hash = ($hash * 31 + self::hashCode($value)) & 0xFFFFFFFF;
+        }
+
+        return self::int32($hash);
+    }
+
+    private static function intOf(mixed $value): int
+    {
+        return is_int($value) ? $value : (is_numeric($value) ? (int) $value : 0);
+    }
+
+    private static function int32(int $value): int
+    {
+        $value &= 0xFFFFFFFF;
+
+        return $value > 0x7FFFFFFF ? $value - 0x100000000 : $value;
+    }
+
+    /** @param array<mixed> $value */
+    private static function arrayKey(array $value): string
+    {
+        $parts = [];
+        foreach ($value as $k => $item) {
+            $parts[] = (is_int($k) ? $k : 's' . $k) . '=' . (self::key($item) ?? 'h' . self::hashCode($item));
+        }
+
+        return '[' . implode(',', $parts) . ']';
+    }
+
+    /**
      * C#'s lifted operator for a + b, a - b and -a on nullable values (DateTime? + TimeSpan): null when
      * an operand is null, else what the operator's method gives.
      */

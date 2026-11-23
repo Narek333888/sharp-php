@@ -1,0 +1,22 @@
+created
+[start]123
+[start][start]3 6
+query written
+?1?2?3?4 -> 3
+?1?2 -> 2
+0,1,2,3,4
+20,40,60
+101 True 4
+a0,b1,c2
+a:2 b:2 c:1 
+a|p|b|o|c|h|v|B
+5,4,3,2,1 3,3,1
+bob,Bob,apple,cherry,avocado 5 bob
+9,10,100 10,100,9
+2 3
+Sequence contains more than one matching element
+Sequence contains no elements
+Sequence contains more than one matching element
+5 4
+InvalidCastException
+Ann, Cid 3 ["Cid","Bob","Ann"]

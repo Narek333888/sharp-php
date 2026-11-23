@@ -179,9 +179,15 @@ trait EmitsDeclarations
             }
             $this->emitRecordToString($decl);
         }
-        if ($symbol->isRecord && !isset($symbol->members['Equals'])) {
+        // Records and structs are equal when their fields are (C#'s record equality and ValueType.Equals),
+        // with a hash code to match, so that they work as Dictionary keys and HashSet items.
+        if (($symbol->isRecord || $symbol->isStruct) && !isset($symbol->members['Equals'])) {
             $this->w->blank();
-            $this->emitObjectMember('Equals', 'return $other instanceof self && $other::class === static::class && $this == $other;');
+            $this->emitObjectMember('Equals', 'return $other instanceof self && $other::class === static::class && ' . $this->runtime('Op') . '::fieldsEqual($this, $other);');
+        }
+        if (($symbol->isRecord || $symbol->isStruct) && !isset($symbol->members['GetHashCode'])) {
+            $this->w->blank();
+            $this->emitObjectMember('GetHashCode', 'return ' . $this->runtime('Op') . '::fieldsHash($this);');
         }
         if ($this->recordSerializesItself($symbol)) {
             // Records are data: as JSON (json_encode, a Laravel controller's result) they are their properties.
@@ -712,6 +718,14 @@ trait EmitsDeclarations
             }
         }
 
+        if ($isGenerator) {
+            foreach ($method->params as $param) {
+                if (in_array($param->modifier, ['ref', 'out', 'in'], true)) {
+                    throw $this->error('SP1623', 'Iterators cannot have ref, in or out parameters', $param);
+                }
+            }
+        }
+
         $context = new FunctionContext($static, $bodyType, $typeParams);
         $context->isAsync = $async;
         $context->toPhpArray = $member->phpArrayOf !== null;
@@ -739,6 +753,8 @@ trait EmitsDeclarations
                 $this->emitParamConversions();
                 if ($async) {
                     $this->asyncBody($member->type, $static, array_map(static fn ($p): string => $p->name, $method->params), fn () => $this->methodBody($method, $bodyType));
+                } elseif ($isGenerator) {
+                    $this->iteratorBody($static, array_map(static fn ($p): string => $p->name, $method->params), fn () => $this->methodBody($method, $bodyType));
                 } else {
                     $this->methodBody($method, $bodyType);
                 }
@@ -874,6 +890,22 @@ trait EmitsDeclarations
         $this->w->line('});');
     }
 
+    /**
+     * An iterator method returns a Sequence around its body, which runs again (with the arguments, as
+     * captured here) on every enumeration, as C#'s iterator state machine does.
+     *
+     * @param list<string> $captures the parameter names
+     */
+    private function iteratorBody(bool $static, array $captures, callable $emitBody): void
+    {
+        $use = $captures === [] ? '' : ' use (' . implode(', ', array_map(static fn (string $n): string => '$' . $n, $captures)) . ')';
+        $this->w->line('return new ' . $this->runtime('Sequence') . '(' . ($static ? 'static ' : '') . "function ()$use: \\Generator {");
+        $this->w->indent();
+        $emitBody();
+        $this->w->outdent();
+        $this->w->line('});');
+    }
+
     /** The base class or interface method that $name overrides or implements, if any. */
     private function inheritedMethod(string $name): ?\SharpPhp\Semantics\MemberSymbol
     {
@@ -973,7 +1005,8 @@ trait EmitsDeclarations
         }
         $required = [];
         foreach ($this->symbols->interfacesOf($symbol) as $interface) {
-            foreach (['ToString', 'Equals', 'GetHashCode'] as $name) {
+            // A struct has Equals and GetHashCode already (by its fields).
+            foreach ($symbol->isStruct ? ['ToString'] : ['ToString', 'Equals', 'GetHashCode'] as $name) {
                 if (isset($interface->members[$name]) && $this->symbols->findMember($symbol, $name)?->owner->isInterface() !== false) {
                     $required[$name] = true;
                 }

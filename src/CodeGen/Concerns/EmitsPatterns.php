@@ -171,7 +171,10 @@ trait EmitsPatterns
         }
 
         return match ($type->kind) {
-            'int', 'float', 'string', 'bool', 'array', 'iterable' => Emitted::value("\\is_{$type->kind}($operand)", Type::bool()),
+            'iterable' => $type->collectionInterface() === 'IEnumerable'
+                ? Emitted::value("\\is_iterable($operand)", Type::bool())
+                : Emitted::value($this->runtime('Op') . "::isCollection($operand, '{$type->collectionInterface()}')", Type::bool()),
+            'int', 'float', 'string', 'bool', 'array' => Emitted::value("\\is_{$type->kind}($operand)", Type::bool()),
             'char' => Emitted::value($this->runtime('TypeCheck') . "::matches($operand, 'char')", Type::bool()),
             'closure' => Emitted::value("$wrapped instanceof \\Closure", Type::bool(), Prec::INSTANCEOF),
             'class' => Emitted::value("$wrapped instanceof " . $this->classRef((string) $type->class), Type::bool(), Prec::INSTANCEOF),

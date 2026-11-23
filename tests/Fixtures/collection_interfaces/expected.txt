@@ -1,0 +1,10 @@
+3 1 2 5 1 1 2
+0,2,3,9 3 True True 3
+2 True True
+0
+2 zy 1
+Collection was of a fixed size.
+2 5 9 6
+True True False True True
+8
+2

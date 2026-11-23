@@ -26,6 +26,7 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
 {
     /** @use EnumerableMethods<KeyValuePair<TKey, TValue>> */
     use EnumerableMethods;
+    use EqualityKeys;
 
     /** @var array<string, TKey> */
     private array $keys = [];
@@ -117,6 +118,7 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
             return false;
         }
         unset($this->keys[$hash], $this->values[$hash]);
+        $this->keyRemoved($hash);
 
         return true;
     }
@@ -150,6 +152,7 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
     {
         $this->keys = [];
         $this->values = [];
+        $this->hashBuckets = [];
     }
 
     public function ToString(): string
@@ -204,22 +207,25 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
 
     private function store(string $hash, mixed $key, mixed $value): void
     {
-        $this->keys[$hash] = $this->keyType === null ? $key : TypeCheck::check($key, $this->keyType);
+        $new = !array_key_exists($hash, $this->keys);
+        if ($new) {
+            // A key equal to a stored one keeps the stored one, as in .NET.
+            $this->keys[$hash] = $this->keyType === null ? $key : TypeCheck::check($key, $this->keyType);
+        }
         $this->values[$hash] = $this->valueType === null ? $value : TypeCheck::check($value, $this->valueType);
+        if ($new) {
+            $this->keyAdded($hash);
+        }
+    }
+
+    private function storedAt(string $key): mixed
+    {
+        return $this->keys[$key];
     }
 
     private function hash(mixed $key): string
     {
-        return match (true) {
-            $key === null => throw new ArgumentNullException('key'),
-            is_int($key) => 'i:' . $key,
-            is_string($key) => 's:' . $key,
-            is_bool($key) => 'b:' . (int) $key,
-            is_float($key) => 'f:' . $key,
-            $key instanceof \UnitEnum => 'e:' . $key::class . '::' . $key->name,
-            is_object($key) => 'o:' . spl_object_id($key),
-            default => 'x:' . serialize($key),
-        };
+        return $key === null ? throw new ArgumentNullException('key') : $this->keyOf($key);
     }
 
     /** json_encode() (and Laravel's JSON responses) write a JSON object: {"key": value, ...}. */

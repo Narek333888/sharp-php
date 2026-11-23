@@ -42,6 +42,12 @@ trait EmitsMembers
     /** Members that are resolved at runtime when the receiver's type is unknown. */
     private const DYNAMIC_MEMBERS = ['Length', 'Count', 'Message', 'Key', 'Value', 'Keys', 'Values'];
 
+    /** The methods of ICollection<T> and IList<T> (the others are LINQ's). */
+    private const COLLECTION_METHODS = [
+        'ICollection' => ['Add', 'Remove', 'Clear', 'Contains'],
+        'IList' => ['Add', 'Remove', 'Clear', 'Contains', 'IndexOf', 'Insert', 'RemoveAt'],
+    ];
+
     private const DYNAMIC_METHODS = [
         'ToString', 'Equals', 'CompareTo', 'GetHashCode', 'ToUpper', 'ToLower', 'Trim', 'TrimStart', 'TrimEnd',
         'Contains', 'StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf', 'Substring', 'Replace', 'Split',
@@ -534,6 +540,16 @@ trait EmitsMembers
             return $this->extensionPropertyAccess($target, $e)
                 ?? throw $this->error('SP1061', "'{$t->describe()}' does not contain a definition for '$name'", $e);
         }
+        if ($t->kind === 'iterable') {
+            // ICollection<T>, IReadOnlyCollection<T> and the lists have a Count; an IEnumerable<T> has
+            // only LINQ's Count().
+            if ($name === 'Count' && ($t->isCollection('ICollection') || $t->isCollection('IReadOnlyCollection'))) {
+                return $this->nullSafe($target, $nc, static fn (string $c): string => "\\count($c)", Type::int());
+            }
+
+            return $this->extensionPropertyAccess($target, $e)
+                ?? throw $this->error('SP1061', "'{$t->describe()}' does not contain a definition for '$name'", $e);
+        }
         if ($t->isNumeric() || $t->isBool() || $t->isChar() || $t->kind === 'closure' || $t->isNull()) {
             return $this->extensionPropertyAccess($target, $e)
                 ?? throw $this->error('SP1061', "'{$t->describe()}' does not contain a definition for '$name'", $e);
@@ -757,7 +773,7 @@ trait EmitsMembers
             }
         }
 
-        $result = Emitted::value($prefix . $member->name . '(' . $code . ')', $this->resultType($member, $subst, $values));
+        $result = Emitted::value($prefix . $member->name . '(' . $code . ')', $this->resultType($member, $subst, $values, $elementHint));
         if ($member->phpArrayOf !== null) {
             // rules() returns a PHP array, for Laravel; SharpPHP code gets the Dictionary it declares.
             $result = $this->convertedAtPhpBoundary(Emitted::value($result->code, Type::phpArray()), $result->type);
@@ -809,9 +825,24 @@ trait EmitsMembers
      * @param array<string, Type> $subst
      * @param array<int, Emitted> $values
      */
-    private function resultType(MemberSymbol $member, array $subst, array $values): Type
+    private function resultType(MemberSymbol $member, array $subst, array $values, ?Type $element = null): Type
     {
         $type = $member->type->substitute($subst);
+
+        // LINQ's Sum, Min and Max: of the elements, or of what the selector returns (int for
+        // words.Max(w => w.Length)); Aggregate: of the seed, or of the elements.
+        if (in_array($member->name, ['Sum', 'Min', 'Max', 'Aggregate'], true) && self::isRuntimeLibrary($member->owner)
+            && ($type->isUnknown() || $type->kind === 'float')) {
+            $last = end($values);
+            $selected = match (true) {
+                $member->name === 'Aggregate' => count($values) >= 2 ? reset($values)->type : $element,
+                $last !== false && $last->type->kind === 'closure' => $last->type->closureReturn(),
+                default => $element,
+            };
+            if ($selected !== null && !$selected->isUnknown() && $selected->kind !== 'void' && $selected->kind !== 'typeparam') {
+                return $selected;
+            }
+        }
 
         // Task.WhenAll(tasks) of Task<T>s (or of a collection of them) has the result T[].
         if ($member->name === 'WhenAll' && strcasecmp($member->owner->fqn, self::TASK_CLASS) === 0) {
@@ -824,11 +855,17 @@ trait EmitsMembers
             return $element === null ? Type::class(self::TASK_CLASS) : Type::class(self::TASK_CLASS, [Type::array($element)]);
         }
 
-        // Select(x => ...) and Zip(other, (a, b) => ...) produce a list of whatever the lambda returns.
-        if (($member->name === 'Select' || $member->name === 'Zip') && $type->isClass()) {
+        // Select(x => ...) and Zip(other, (a, b) => ...) produce a sequence of whatever the lambda returns;
+        // SelectMany(x => ...) one of the elements of what it returns.
+        if (in_array($member->name, ['Select', 'Zip', 'SelectMany'], true) && ($type->isClass() || $type->kind === 'iterable')) {
             $selector = end($values);
             if ($selector !== false && $selector->type->kind === 'closure') {
-                return Type::class((string) $type->class, [$selector->type->closureReturn()]);
+                $element = $selector->type->closureReturn();
+                if ($member->name === 'SelectMany') {
+                    $element = $element->isString() ? Type::char() : $this->elementTypeOf($element);
+                }
+
+                return $type->kind === 'iterable' ? Type::iterable($element) : Type::class((string) $type->class, [$element]);
             }
         }
 
@@ -863,6 +900,9 @@ trait EmitsMembers
             }
 
             return $this->callHelper('System\\String_', $target, $callee, $call, 'string');
+        }
+        if ($t->kind === 'iterable' && in_array($name, self::COLLECTION_METHODS[$t->collectionInterface()] ?? [], true)) {
+            return $this->callHelper('System\\Collections\\Generic\\CollectionMethods', $target, $callee, $call, $t->describe());
         }
         if ($t->kind === 'array' || $t->kind === 'iterable') {
             return $this->callHelper('System\\Linq\\Enumerable', $target, $callee, $call, $t->describe());
@@ -967,7 +1007,7 @@ trait EmitsMembers
         return match (true) {
             $name === 'ToString' && $args === [] => Emitted::value("$op::str({$target->code})", Type::string()),
             $name === 'Equals' && count($args) === 1 => Emitted::value("$op::equals({$target->code}, " . $this->arguments($args, [])[0] . ')', Type::bool()),
-            $name === 'GetHashCode' && $args === [] => Emitted::value("\\spl_object_id({$target->code})", Type::int()),
+            $name === 'GetHashCode' && $args === [] => Emitted::value("$op::hashCode({$target->code})", Type::int()),
             default => null,
         };
     }
@@ -1077,7 +1117,7 @@ trait EmitsMembers
                 }
             }
         }
-        $type = $this->resultType($member, $subst, $values);
+        $type = $this->resultType($member, $subst, $values, $elementType);
 
         return $this->valueTypeDefault($name, $this->nullSafe(
             $target,
@@ -1339,8 +1379,18 @@ trait EmitsMembers
             throw $this->error('SP0021', "Cannot apply indexing with [] to an expression of type '{$t->describe()}'", $e);
         }
 
+        if ($t->kind === 'iterable') {
+            // Only the lists have an indexer; IReadOnlyList's is read-only.
+            if (!$t->isCollection('IList') && !$t->isCollection('IReadOnlyList')) {
+                throw $this->error('SP0021', "Cannot apply indexing with [] to an expression of type '{$t->describe()}'", $e);
+            }
+            if ($write && !$t->isCollection('IList')) {
+                throw $this->error('SP0200', "Property or indexer '{$t->describe()}.this[int]' cannot be assigned to -- it is read only", $e);
+            }
+        }
+
         $type = match (true) {
-            $t->kind === 'array' => $t->element(),
+            $t->kind === 'array', $t->kind === 'iterable' => $t->element(),
             $offsetGet !== null => $offsetGet->type->substitute($symbol->substitutionFor($t)),
             default => Type::mixed(),
         };

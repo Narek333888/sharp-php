@@ -49,7 +49,8 @@ final class Interop
     private static function nested(mixed $value): mixed
     {
         return $value instanceof Dictionary || $value instanceof List_ || $value instanceof HashSet
-            || $value instanceof Queue || $value instanceof Stack ? self::toArray($value) : $value;
+            || $value instanceof Queue || $value instanceof Stack || $value instanceof Sequence
+            || $value instanceof System\Linq\IOrderedEnumerable ? self::toArray($value) : $value;
     }
 
     /**

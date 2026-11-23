@@ -1,0 +1,58 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+// Records and structs are equal by their fields, so they work as keys and set items.
+var set = new HashSet<Point> { new Point(1, 2), new Point(1, 2), new Point(3, 4) };
+Console.WriteLine(set.Count + " " + set.Contains(new Point(3, 4)) + " " + set.Remove(new Point(1, 2)) + " " + set.Count);
+var names = new Dictionary<Point, string>();
+names[new Point(0, 0)] = "origin";
+names[new Point(0, 0)] = "again";
+Console.WriteLine(names.Count + " " + names[new Point(0, 0)] + " " + names.ContainsKey(new Point(0, 0)) + " " + names.TryAdd(new Point(0, 0), "x"));
+var counts = new Dictionary<Point, int>();
+foreach (var p in new[] { new Point(1, 1), new Point(2, 2), new Point(1, 1) }) counts[p] = counts.GetValueOrDefault(p) + 1;
+Console.WriteLine(string.Join(", ", counts.Select(kv => $"{kv.Key}={kv.Value}")));
+counts.Remove(new Point(1, 1));
+Console.WriteLine(counts.Count + " " + counts.ContainsKey(new Point(1, 1)));
+
+var a = new Cell { X = 1, Y = 2 };
+var b = new Cell { X = 1, Y = 2 };
+Console.WriteLine(a.Equals(b) + " " + new HashSet<Cell> { a, b }.Count + " " + (a.GetHashCode() == b.GetHashCode()));
+
+// .NET's own value types, and classes that override Equals and GetHashCode.
+var days = new HashSet<DateTime> { new DateTime(2024, 1, 1), new DateTime(2024, 1, 1), new DateTime(2024, 1, 2) };
+var byDay = new Dictionary<DateTime, int> { [new DateTime(2024, 5, 1)] = 7 };
+Console.WriteLine(days.Count + " " + byDay[new DateTime(2024, 5, 1)] + " " + new HashSet<TimeSpan> { TimeSpan.FromHours(1), TimeSpan.FromMinutes(60) }.Count);
+Console.WriteLine(new HashSet<Money> { new Money(5), new Money(5), new Money(6) }.Count + " " + new HashSet<Plain> { new Plain(), new Plain() }.Count);
+
+// Record equality compares each field exactly (no PHP loose comparison).
+Console.WriteLine(new Named(null).Equals(new Named("")) + " " + new Named("1").Equals(new Named("01")) + " " + new Num(null).Equals(new Num(0)) + " " + new Named("x").Equals(new Named("x")));
+Console.WriteLine(new Line(new Point(0, 0), new Point(1, 1)) == new Line(new Point(0, 0), new Point(1, 1)));
+Console.WriteLine(new Bag(new List<int> { 1 }).Equals(new Bag(new List<int> { 1 })));
+
+// LINQ uses the same equality.
+var points = new List<Point> { new Point(1, 1), new Point(1, 1), new Point(2, 2) };
+Console.WriteLine(points.Distinct().Count() + " " + points.GroupBy(p => p).Count() + " " + points.DistinctBy(p => p.X).Count() + " " + points.Distinct().ToDictionary(p => p.X + p.Y * 10).Count);
+var doubles = new HashSet<double> { 0.1 + 0.2, 0.3, 1 };
+Console.WriteLine(doubles.Count + " " + doubles.Contains(1.0) + " " + new[] { 1, 2, 1, 3, 2 }.Distinct().Count());
+
+// GetHashCode of values: equal values have equal codes.
+Console.WriteLine(5.GetHashCode() + " " + ("a".GetHashCode() == "a".GetHashCode()) + " " + (new Point(1, 2).GetHashCode() == new Point(1, 2).GetHashCode()));
+
+// A constructor argument 0 is passed (it was dropped for int? parameters).
+Console.WriteLine(new Num(0).N + " " + new Num(5).N + " " + (new Num(null).N == null));
+
+record Point(int X, int Y);
+record Line(Point From, Point To);
+record Bag(List<int> Items);
+record Named(string? Name);
+record Num(int? N);
+struct Cell { public int X; public int Y; }
+class Plain { }
+class Money
+{
+    public int Cents { get; }
+    public Money(int cents) { Cents = cents; }
+    public override bool Equals(object? obj) => obj is Money m && m.Cents == Cents;
+    public override int GetHashCode() => Cents.GetHashCode();
+}

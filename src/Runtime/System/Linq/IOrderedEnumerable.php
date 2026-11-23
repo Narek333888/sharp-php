@@ -5,30 +5,32 @@ declare(strict_types=1);
 namespace SharpPhp\Runtime\System\Linq;
 
 use SharpPhp\Runtime\Op;
-use SharpPhp\Runtime\System\Collections\Generic\List_;
 
 /**
- * System.Linq.IOrderedEnumerable<T>: what OrderBy and OrderByDescending return. A list that remembers how
- * it was sorted, so that ThenBy and ThenByDescending sort the elements whose keys tie by further keys:
+ * System.Linq.IOrderedEnumerable<T>: what OrderBy and OrderByDescending return. It remembers how it
+ * sorts, so that ThenBy and ThenByDescending sort the elements whose keys tie by further keys:
  *
  *   people.OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
  *
- * Sorting is stable, as in LINQ: elements with equal keys keep their order.
+ * Sorting is stable, as in LINQ: elements with equal keys keep their order. Deferred, as in LINQ: the
+ * source is read and sorted when the result is enumerated, each time.
  *
  * @template T
  * @sharp-element T
- * @extends List_<T>
+ * @implements \IteratorAggregate<int, T>
  */
-final class IOrderedEnumerable extends List_
+final class IOrderedEnumerable implements \IteratorAggregate, \Countable, \JsonSerializable
 {
+    /** @use \SharpPhp\Runtime\System\Collections\Generic\EnumerableMethods<T> */
+    use \SharpPhp\Runtime\System\Collections\Generic\EnumerableMethods;
+
     /**
      * @internal use OrderBy() or OrderByDescending()
-     * @param iterable<T> $collection the elements, already sorted by $keys
+     * @param iterable<T> $source
      * @param list<array{0: ?\Closure, 1: int}> $keys key selectors (null: the element itself) and directions (1 or -1), the first one deciding first
      */
-    public function __construct(iterable $collection = [], private readonly array $keys = [])
+    public function __construct(private readonly iterable $source, private readonly array $keys)
     {
-        parent::__construct($collection);
     }
 
     /**
@@ -39,7 +41,7 @@ final class IOrderedEnumerable extends List_
      */
     public static function orderedBy(iterable $source, ?\Closure $keySelector, int $direction): self
     {
-        return self::sortBy(array_values(Enumerable::ToArray($source)), [[$keySelector, $direction]]);
+        return new self($source, [[$keySelector, $direction]]);
     }
 
     /**
@@ -49,7 +51,7 @@ final class IOrderedEnumerable extends List_
      */
     public function ThenBy(?\Closure $keySelector = null): self
     {
-        return self::sortBy(array_values($this->ToArray()), [...$this->keys, [$keySelector, 1]]);
+        return new self($this->source, [...$this->keys, [$keySelector, 1]]);
     }
 
     /**
@@ -59,34 +61,97 @@ final class IOrderedEnumerable extends List_
      */
     public function ThenByDescending(?\Closure $keySelector = null): self
     {
-        return self::sortBy(array_values($this->ToArray()), [...$this->keys, [$keySelector, -1]]);
+        return new self($this->source, [...$this->keys, [$keySelector, -1]]);
     }
 
     /**
-     * @template TItem
-     * @param list<TItem> $items
-     * @param list<array{0: ?\Closure, 1: int}> $keys
-     * @return IOrderedEnumerable<TItem>
+     * The elements, sorted now.
+     *
+     * @internal
+     * @return list<T>
      */
-    private static function sortBy(array $items, array $keys): self
+    public function sequence(): array
     {
-        $keyed = [];
-        foreach ($items as $i => $item) {
-            // Each key is computed once per element, not once per comparison.
-            $values = array_map(static fn (array $key): mixed => $key[0] === null ? $item : ($key[0])($item), $keys);
-            $keyed[] = [$values, $i, $item];
+        $items = array_values(Enumerable::ToArray(Enumerable::read($this->source)));
+        // Each key is computed once per element (a column per key), and the positions are sorted: less
+        // memory than an array per element, and numbers and strings compare without Op::compare().
+        $columns = [];
+        $directions = [];
+        $lowered = [];
+        foreach ($this->keys as $k => [$selector, $direction]) {
+            $column = $selector === null ? $items : array_map($selector, $items);
+            $columns[$k] = $column;
+            $directions[$k] = $direction;
+            $kind = self::kindOf($column);
+            if ($kind === 'string') {
+                $lowered[$k] = array_map(static fn (mixed $s): string => mb_strtolower((string) (is_string($s) ? $s : '')), $column);
+            } elseif ($kind === 'mixed') {
+                $lowered[$k] = null;
+            }
         }
-        usort($keyed, static function (array $a, array $b) use ($keys): int {
-            foreach ($keys as $k => [, $direction]) {
-                $order = Op::compare($a[0][$k], $b[0][$k]) * $direction;
-                if ($order !== 0) {
-                    return $order;
+        $order = array_keys($items);
+        usort($order, static function (int $a, int $b) use ($columns, $directions, $lowered): int {
+            foreach ($columns as $k => $column) {
+                if (!array_key_exists($k, $lowered)) {
+                    $c = $column[$a] <=> $column[$b];                                   // numbers
+                } elseif ($lowered[$k] !== null) {
+                    // As Op::compareStrings (strcmp, not <=>, which compares numeric strings as numbers).
+                    $c = (strcmp($lowered[$k][$a], $lowered[$k][$b]) <=> 0)
+                        ?: (strcmp(is_string($x = $column[$b]) ? $x : '', is_string($y = $column[$a]) ? $y : '') <=> 0);
+                } else {
+                    $c = Op::compare($column[$a], $column[$b]);
+                }
+                if ($c !== 0) {
+                    return $c * $directions[$k];
                 }
             }
 
-            return $a[1] <=> $b[1];
+            return $a <=> $b; // stable
         });
 
-        return new self(array_column($keyed, 2), $keys);
+        return array_map(static fn (int $i): mixed => $items[$i], $order);
+    }
+
+    /**
+     * "number" when every key is an int or a float, "string" when every key is a string, else "mixed".
+     *
+     * @param array<mixed> $column
+     */
+    private static function kindOf(array $column): string
+    {
+        $numbers = true;
+        $strings = true;
+        foreach ($column as $value) {
+            $numbers = $numbers && (is_int($value) || is_float($value));
+            $strings = $strings && is_string($value);
+            if (!$numbers && !$strings) {
+                return 'mixed';
+            }
+        }
+
+        return $numbers ? 'number' : 'string';
+    }
+
+    /** @return \Iterator<int, T> */
+    public function getIterator(): \Iterator
+    {
+        return new \ArrayIterator($this->sequence());
+    }
+
+    /** LINQ's Count() and Count(x => ...), and PHP's count() (Countable). */
+    public function Count(?\Closure $predicate = null): int
+    {
+        return $predicate === null ? count(Enumerable::ToArray(Enumerable::read($this->source))) : Enumerable::Count($this->sequence(), $predicate);
+    }
+
+    /** @return list<T> */
+    public function jsonSerialize(): array
+    {
+        return $this->sequence();
+    }
+
+    public function ToString(): string
+    {
+        return 'System.Linq.OrderedEnumerable`2';
     }
 }

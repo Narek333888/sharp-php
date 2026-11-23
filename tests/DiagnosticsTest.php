@@ -15,6 +15,7 @@ final class DiagnosticsTest extends TestCase
     public static function errors(): iterable
     {
         $main = static fn (string $body): string => "using System;\nclass P\n{\n    static void Main()\n    {\n        $body\n    }\n}\n";
+        $collections = static fn (string $body): string => "using System;\nusing System.Collections.Generic;\nusing System.Linq;\nclass P\n{\n    static void Main()\n    {\n        $body\n    }\n}\n";
 
         yield 'unknown name' => [$main('Console.WriteLine(x);'), 'SP0103', "The name 'x' does not exist in the current context", 6, 27];
         yield 'unknown root name' => [$main('Consol.WriteLine(1);'), 'SP0103', "The name 'Consol' does not exist in the current context", 6, 9];
@@ -153,6 +154,15 @@ class P { static void Main() { "x".Size = 2; } }', 'SP0200', 'Property or indexe
         yield 'event of a non-delegate type' => ['class B { public event int E; }', 'SP0066', "'B.E': event must be of a delegate type", 1, 28];
         yield 'await in a lock' => ["class P\n{\n    static async System.Threading.Tasks.Task Main()\n    {\n        var o = new object(); lock (o) { await System.Threading.Tasks.Task.Delay(1); }\n    }\n}\n", 'SP1996', 'Cannot await in the body of a lock statement', 5, 31];
         yield 'lock on a value type' => [$main('int x = 1; lock (x) { }'), 'SP0185', "'int' is not a reference type as required by the lock statement", 6, 26];
+        yield 'IEnumerable has no indexer' => [$collections('IEnumerable<int> e = new List<int>(); var x = e[0];'), 'SP0021', "Cannot apply indexing with [] to an expression of type 'IEnumerable<int>'", 8, 56];
+        yield 'IEnumerable has Count() only' => [$collections('IEnumerable<int> e = new List<int>(); var n = e.Count;'), 'SP1061', "'IEnumerable<int>' does not contain a definition for 'Count'", 8, 57];
+        yield 'IReadOnlyList indexer is read-only' => [$collections('IReadOnlyList<int> r = new List<int>(); r[0] = 1;'), 'SP0200', "Property or indexer 'IReadOnlyList<int>.this[int]' cannot be assigned to -- it is read only", 8, 50];
+        yield 'IReadOnlyList has no Add' => [$collections('IReadOnlyList<int> r = new List<int>(); r.Add(1);'), 'SP1061', "'IReadOnlyList<int>' does not contain a definition for 'Add'", 8, 51];
+        yield 'a query is not a List' => [$collections('List<int> l = new List<int>().Where(x => x > 1);'), 'SP0266', "Cannot implicitly convert type 'IEnumerable<int>' to 'System.Collections.Generic.List<int>'. An explicit conversion exists (are you missing a cast?)", 8, 44];
+        yield 'a query is not an array' => [$collections('int[] a = new List<int>().Select(x => x);'), 'SP0266', "Cannot implicitly convert type 'IEnumerable<int>' to 'int[]'. An explicit conversion exists (are you missing a cast?)", 8, 41];
+        yield 'a Queue is no ICollection<T>' => [$collections('ICollection<int> c = new Queue<int>();'), 'SP0266', "Cannot implicitly convert type 'System.Collections.Generic.Queue<int>' to 'ICollection<int>'. An explicit conversion exists (are you missing a cast?)", 8, 30];
+        yield 'a method group in a concatenation' => [$collections('var s = "n" + new[] { 1 }.OrderBy(x => x).Count;'), 'SP0019', "Operator '+' cannot be applied to operands of type 'string' and 'method group'", 8, 21];
+        yield 'iterator with a ref parameter' => [$collections('static IEnumerable<int> F(ref int x) { yield return x; }'), 'SP1623', 'Iterators cannot have ref, in or out parameters', 8, 35];
         yield 'constant out of a byte' => [$main('byte x = 10000;'), 'SP0031', "Constant value '10000' cannot be converted to a 'byte'", 6, 18];
         yield 'byte plus byte is an int' => [$main('byte x = 1; byte y = 2; byte z = x + y;'), 'SP0266', "Cannot implicitly convert type 'int' to 'byte'. An explicit conversion exists (are you missing a cast?)", 6, 44];
         yield 'long to int' => [$main('long l = 5; int i = l;'), 'SP0266', "Cannot implicitly convert type 'long' to 'int'. An explicit conversion exists (are you missing a cast?)", 6, 29];

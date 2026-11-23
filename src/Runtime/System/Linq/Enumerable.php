@@ -7,7 +7,9 @@ namespace SharpPhp\Runtime\System\Linq;
 use SharpPhp\Runtime\Op;
 use SharpPhp\Runtime\System\ArgumentException;
 use SharpPhp\Runtime\System\ArgumentOutOfRangeException;
+use SharpPhp\Runtime\Sequence;
 use SharpPhp\Runtime\System\Collections\Generic\Dictionary;
+use SharpPhp\Runtime\System\Collections\Generic\HashSet;
 use SharpPhp\Runtime\System\Collections\Generic\List_;
 use SharpPhp\Runtime\System\InvalidCastException;
 use SharpPhp\Runtime\System\InvalidOperationException;
@@ -20,55 +22,57 @@ use SharpPhp\Runtime\System\InvalidOperationException;
 final class Enumerable
 {
     /**
+     * The elements the predicate accepts (it may take the index too: (x, i) => ...). Deferred, as in
+     * LINQ: the source is read when the result is enumerated, and again each time.
+     *
      * @template TSource
      * @param iterable<TSource> $source
-     * @return List_<TSource>
+     * @return iterable<TSource>
      */
-    public static function Where(iterable $source, \Closure $predicate): List_
+    public static function Where(iterable $source, \Closure $predicate): iterable
     {
-        $result = [];
-        $i = 0;
-        foreach ($source as $item) {
-            if ($predicate($item, $i++)) {
-                $result[] = $item;
+        return new Sequence(static function () use ($source, $predicate): \Generator {
+            $i = 0;
+            foreach (self::read($source) as $item) {
+                if ($predicate($item, $i++)) {
+                    yield $item;
+                }
             }
-        }
-
-        return new List_($result);
+        });
     }
 
     /**
      * @template TSource
      * @param iterable<TSource> $source
-     * @return List_<mixed>
+     * @return iterable<mixed>
      */
-    public static function Select(iterable $source, \Closure $selector): List_
+    public static function Select(iterable $source, \Closure $selector): iterable
     {
-        $result = [];
-        $i = 0;
-        foreach ($source as $item) {
-            $result[] = $selector($item, $i++);
-        }
-
-        return new List_($result);
+        return new Sequence(static function () use ($source, $selector): \Generator {
+            $i = 0;
+            foreach (self::read($source) as $item) {
+                yield $selector($item, $i++);
+            }
+        });
     }
 
     /**
      * @template TSource
      * @param iterable<TSource> $source
-     * @param \Closure(TSource): iterable<mixed> $selector
-     * @return List_<mixed>
+     * @param \Closure(TSource, int): mixed $selector returns a sequence (or a string: its chars)
+     * @return iterable<mixed>
      */
-    public static function SelectMany(iterable $source, \Closure $selector): List_
+    public static function SelectMany(iterable $source, \Closure $selector): iterable
     {
-        $result = [];
-        foreach ($source as $item) {
-            foreach ($selector($item) as $inner) {
-                $result[] = $inner;
+        return new Sequence(static function () use ($source, $selector): \Generator {
+            $i = 0;
+            foreach (self::read($source) as $item) {
+                $inner = $selector($item, $i++);
+                foreach (is_string($inner) ? mb_str_split($inner) : (is_iterable($inner) ? self::read($inner) : []) as $element) {
+                    yield $element;
+                }
             }
-        }
-
-        return new List_($result);
+        });
     }
 
     /**
@@ -212,12 +216,23 @@ final class Enumerable
      */
     public static function Single(iterable $source, ?\Closure $predicate = null): mixed
     {
-        $matches = self::Where($source, $predicate ?? static fn (): bool => true)->ToArray();
-        if (count($matches) !== 1) {
-            throw new InvalidOperationException(count($matches) === 0 ? 'Sequence contains no elements' : 'Sequence contains more than one element');
+        // Stops at a second match, as LINQ does (so it ends on an endless sequence that has two).
+        $found = false;
+        $match = null;
+        foreach ($source as $item) {
+            if ($predicate === null || $predicate($item)) {
+                if ($found) {
+                    throw new InvalidOperationException($predicate === null ? 'Sequence contains more than one element' : 'Sequence contains more than one matching element');
+                }
+                [$found, $match] = [true, $item];
+            }
+        }
+        if (!$found) {
+            throw new InvalidOperationException($predicate === null ? 'Sequence contains no elements' : 'Sequence contains no matching element');
         }
 
-        return $matches[0];
+        /** @var TSource $match */
+        return $match;
     }
 
     /**
@@ -344,115 +359,148 @@ final class Enumerable
      * @param iterable<TFirst> $first
      * @param iterable<TSecond> $second
      * @param \Closure(TFirst, TSecond): TResult $resultSelector
-     * @return List_<TResult>
+     * @return iterable<TResult>
      */
-    public static function Zip(iterable $first, iterable $second, \Closure $resultSelector): List_
+    public static function Zip(iterable $first, iterable $second, \Closure $resultSelector): iterable
     {
-        $a = self::materialize($first);
-        $b = self::materialize($second);
-        $result = [];
-        for ($i = 0, $count = min(count($a), count($b)); $i < $count; $i++) {
-            $result[] = $resultSelector($a[$i], $b[$i]);
-        }
-
-        return new List_($result);
-    }
-
-    /**
-     * @template TSource
-     * @param iterable<TSource> $source
-     * @return List_<TSource>
-     */
-    public static function Take(iterable $source, int $count): List_
-    {
-        return new List_(array_slice(self::materialize($source), 0, max(0, $count)));
-    }
-
-    /**
-     * @template TSource
-     * @param iterable<TSource> $source
-     * @return List_<TSource>
-     */
-    public static function Skip(iterable $source, int $count): List_
-    {
-        return new List_(array_slice(self::materialize($source), max(0, $count)));
-    }
-
-    /**
-     * @template TSource
-     * @param iterable<TSource> $source
-     * @return List_<TSource>
-     */
-    public static function TakeWhile(iterable $source, \Closure $predicate): List_
-    {
-        $result = [];
-        foreach ($source as $item) {
-            if (!$predicate($item)) {
-                break;
+        return new Sequence(static function () use ($first, $second, $resultSelector): \Generator {
+            $other = self::iterator($second);
+            $other->rewind();
+            foreach (self::read($first) as $item) {
+                if (!$other->valid()) {
+                    return;
+                }
+                yield $resultSelector($item, $other->current());
+                $other->next();
             }
-            $result[] = $item;
-        }
-
-        return new List_($result);
+        });
     }
 
     /**
      * @template TSource
      * @param iterable<TSource> $source
-     * @return List_<TSource>
+     * @return iterable<TSource>
      */
-    public static function SkipWhile(iterable $source, \Closure $predicate): List_
+    public static function Take(iterable $source, int $count): iterable
     {
-        $result = [];
-        $skipping = true;
-        foreach ($source as $item) {
-            if ($skipping && $predicate($item)) {
-                continue;
+        return new Sequence(static function () use ($source, $count): \Generator {
+            if ($count <= 0) {
+                return;
             }
-            $skipping = false;
-            $result[] = $item;
-        }
-
-        return new List_($result);
-    }
-
-    /**
-     * @template TSource
-     * @param iterable<TSource> $source
-     * @return List_<TSource>
-     */
-    public static function Distinct(iterable $source): List_
-    {
-        $result = [];
-        foreach ($source as $item) {
-            if (!self::Contains($result, $item)) {
-                $result[] = $item;
+            $taken = 0;
+            foreach (self::read($source) as $item) {
+                yield $item;
+                if (++$taken >= $count) {
+                    return;
+                }
             }
-        }
-
-        return new List_($result);
+        });
     }
 
     /**
      * @template TSource
      * @param iterable<TSource> $source
-     * @return List_<TSource>
+     * @return iterable<TSource>
      */
-    public static function Reverse(iterable $source): List_
+    public static function Skip(iterable $source, int $count): iterable
     {
-        return new List_(array_reverse(self::materialize($source)));
+        return new Sequence(static function () use ($source, $count): \Generator {
+            $skipped = 0;
+            foreach (self::read($source) as $item) {
+                if ($skipped < $count) {
+                    $skipped++;
+                    continue;
+                }
+                yield $item;
+            }
+        });
+    }
+
+    /**
+     * @template TSource
+     * @param iterable<TSource> $source
+     * @return iterable<TSource>
+     */
+    public static function TakeWhile(iterable $source, \Closure $predicate): iterable
+    {
+        return new Sequence(static function () use ($source, $predicate): \Generator {
+            $i = 0;
+            foreach (self::read($source) as $item) {
+                if (!$predicate($item, $i++)) {
+                    return;
+                }
+                yield $item;
+            }
+        });
+    }
+
+    /**
+     * @template TSource
+     * @param iterable<TSource> $source
+     * @return iterable<TSource>
+     */
+    public static function SkipWhile(iterable $source, \Closure $predicate): iterable
+    {
+        return new Sequence(static function () use ($source, $predicate): \Generator {
+            $skipping = true;
+            $i = 0;
+            foreach (self::read($source) as $item) {
+                if ($skipping && $predicate($item, $i++)) {
+                    continue;
+                }
+                $skipping = false;
+                yield $item;
+            }
+        });
+    }
+
+    /**
+     * The elements without repeats (equal by Equals(), as a HashSet compares them), in order.
+     *
+     * @template TSource
+     * @param iterable<TSource> $source
+     * @return iterable<TSource>
+     */
+    public static function Distinct(iterable $source): iterable
+    {
+        return new Sequence(static function () use ($source): \Generator {
+            $seen = new HashSet();
+            foreach (self::read($source) as $item) {
+                if ($seen->Add($item)) {
+                    yield $item;
+                }
+            }
+        });
+    }
+
+    /**
+     * @template TSource
+     * @param iterable<TSource> $source
+     * @return iterable<TSource>
+     */
+    public static function Reverse(iterable $source): iterable
+    {
+        return new Sequence(static function () use ($source): \Generator {
+            yield from array_reverse(self::materialize(self::read($source)));
+        });
     }
 
     /**
      * @template TSource
      * @param iterable<TSource> $first
-     * @template TSource
      * @param iterable<TSource> $second
-     * @return List_<TSource>
+     * @return iterable<TSource>
      */
-    public static function Concat(iterable $first, iterable $second): List_
+    public static function Concat(iterable $first, iterable $second): iterable
     {
-        return new List_([...self::materialize($first), ...self::materialize($second)]);
+        return new Sequence(static function () use ($first, $second): \Generator {
+            foreach (self::read($first) as $item) {
+                yield $item;
+            }
+            foreach (self::read($second) as $item) {
+                yield $item;
+            }
+        });
     }
 
     /**
@@ -491,30 +539,37 @@ final class Enumerable
     }
 
     /**
+     * The elements in groups of equal keys (by Equals()), in the order the keys first appear.
+     *
      * @template TSource
      * @param iterable<TSource> $source
-     * @return List_<Grouping>
+     * @return iterable<Grouping>
      */
-    public static function GroupBy(iterable $source, \Closure $keySelector): List_
+    public static function GroupBy(iterable $source, \Closure $keySelector): iterable
     {
-        $groups = [];
-        $keys = [];
-        foreach ($source as $item) {
-            $key = $keySelector($item);
-            $index = array_search($key, $keys, true);
-            if ($index === false) {
-                $keys[] = $key;
-                $index = array_key_last($keys);
-                $groups[$index] = [];
+        return new Sequence(static function () use ($source, $keySelector): \Generator {
+            /** @var Dictionary<mixed, int> $index */
+            $index = new Dictionary();
+            $keys = [];
+            $groups = [];
+            foreach (self::read($source) as $item) {
+                $key = $keySelector($item);
+                if ($key === null) {
+                    $i = $nullGroup ??= count($keys);
+                } elseif (!$index->TryGetValue($key, $i)) {
+                    $i = count($keys);
+                    $index[$key] = $i;
+                }
+                if (!isset($groups[$i])) {
+                    $keys[$i] = $key;
+                    $groups[$i] = [];
+                }
+                $groups[$i][] = $item;
             }
-            $groups[$index][] = $item;
-        }
-        $result = [];
-        foreach ($keys as $i => $key) {
-            $result[] = new Grouping($key, $groups[$i]);
-        }
-
-        return new List_($result);
+            foreach ($keys as $i => $key) {
+                yield new Grouping($key, $groups[$i]);
+            }
+        });
     }
 
     /**
@@ -613,21 +668,18 @@ final class Enumerable
      *
      * @template TSource
      * @param iterable<TSource> $source
-     * @return List_<TSource>
+     * @return iterable<TSource>
      */
-    public static function DistinctBy(iterable $source, \Closure $keySelector): List_
+    public static function DistinctBy(iterable $source, \Closure $keySelector): iterable
     {
-        $keys = [];
-        $result = [];
-        foreach ($source as $item) {
-            $key = $keySelector($item);
-            if (!self::Contains($keys, $key)) {
-                $keys[] = $key;
-                $result[] = $item;
+        return new Sequence(static function () use ($source, $keySelector): \Generator {
+            $seen = new HashSet();
+            foreach (self::read($source) as $item) {
+                if ($seen->Add($keySelector($item))) {
+                    yield $item;
+                }
             }
-        }
-
-        return new List_($result);
+        });
     }
 
     /**
@@ -635,34 +687,95 @@ final class Enumerable
      *
      * @template TSource
      * @param iterable<TSource> $source
-     * @return List_<TSource[]>
+     * @return iterable<TSource[]>
      */
-    public static function Chunk(iterable $source, int $size): List_
+    public static function Chunk(iterable $source, int $size): iterable
     {
         if ($size < 1) {
             throw new ArgumentOutOfRangeException('size');
         }
 
-        /** @var List_<TSource[]> $chunks */
-        $chunks = new List_(array_chunk(self::materialize($source), $size));
-
-        return $chunks;
+        return new Sequence(static function () use ($source, $size): \Generator {
+            $chunk = [];
+            foreach (self::read($source) as $item) {
+                $chunk[] = $item;
+                if (count($chunk) === $size) {
+                    yield $chunk;
+                    $chunk = [];
+                }
+            }
+            if ($chunk !== []) {
+                yield $chunk;
+            }
+        });
     }
 
-    /** @return List_<int> */
-    public static function Range(int $start, int $count): List_
+    /** @return iterable<int> */
+    public static function Range(int $start, int $count): iterable
+    {
+        if ($count < 0 || $start + $count - 1 > 2147483647) {
+            throw new ArgumentOutOfRangeException('count');
+        }
+
+        return new Sequence(static function () use ($start, $count): \Generator {
+            for ($i = 0; $i < $count; $i++) {
+                yield $start + $i;
+            }
+        });
+    }
+
+    /** @return iterable<mixed> */
+    public static function Repeat(mixed $element, int $count): iterable
     {
         if ($count < 0) {
             throw new ArgumentOutOfRangeException('count');
         }
 
-        return new List_($count === 0 ? [] : range($start, $start + $count - 1));
+        return new Sequence(static function () use ($element, $count): \Generator {
+            for ($i = 0; $i < $count; $i++) {
+                yield $element;
+            }
+        });
     }
 
-    /** @return List_<mixed> */
-    public static function Repeat(mixed $element, int $count): List_
+    /**
+     * What a deferred operator reads when it is enumerated: a collection's current elements (a List's
+     * array: faster to walk than its iterator), so that a query sees the changes made after it was
+     * written, as in LINQ.
+     *
+     * @internal
+     * @template TSource
+     * @param iterable<TSource> $source
+     * @return iterable<TSource>
+     */
+    public static function read(iterable $source): iterable
     {
-        return new List_(array_fill(0, max(0, $count), $element));
+        if (is_object($source) && method_exists($source, 'sequence')) {
+            $elements = $source->sequence();
+            if (is_iterable($elements)) {
+                return $elements;
+            }
+        }
+
+        return $source;
+    }
+
+    /**
+     * @param iterable<mixed> $source
+     * @return \Iterator<mixed, mixed>
+     */
+    private static function iterator(iterable $source): \Iterator
+    {
+        $source = self::read($source);
+        while ($source instanceof \IteratorAggregate) {
+            $source = $source->getIterator();
+        }
+
+        return match (true) {
+            is_array($source) => new \ArrayIterator($source),
+            $source instanceof \Iterator => $source,
+            default => new \IteratorIterator($source),
+        };
     }
 
     /**

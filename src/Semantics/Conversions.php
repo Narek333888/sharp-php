@@ -48,13 +48,15 @@ final class Conversions
             'int' => ($to->kind === 'int' && self::integralConverts($from->integralName(), $to->integralName()))
                 || $to->kind === 'float' || ($isZeroLiteral && $this->isEnum($to)),
             'float', 'bool' => $to->kind === $from->kind,
-            // Arrays and IEnumerable<T> are covariant: Dog[] is an Animal[] and an IEnumerable<Animal>.
+            // Arrays are covariant: Dog[] is an Animal[], an IEnumerable<Animal> and an IList<Animal>.
             'array' => in_array($to->kind, ['array', 'iterable'], true) && $this->argumentConverts($from->element(), $to->element(), 'out'),
             'char' => in_array($to->kind, ['char', 'float'], true) || ($to->kind === 'int' && self::integralConverts('ushort', $to->integralName()))
                 || ($charAsString && $to->isString()),
-            'string' => in_array($to->kind, ['string', 'iterable'], true),
+            'string' => $to->kind === 'string' || ($to->kind === 'iterable' && $to->collectionInterface() === 'IEnumerable'),
             'closure' => ($to->kind === 'closure' && $this->delegateConverts($from, $to)) || ($to->isClass() && strcasecmp((string) $to->class, 'Closure') === 0),
-            'iterable' => !$this->isPrimitive($to) && ($to->kind !== 'iterable' || $this->argumentConverts($from->element(), $to->element(), 'out')),
+            'iterable' => $to->kind === 'iterable'
+                ? $from->isCollection($to->collectionInterface()) && $this->argumentConverts($from->element(), $to->element(), self::collectionVariance($to))
+                : $this->sequenceToClass($to),
             'class' => $this->isImplicitFromClass($from, $to),
             default => true,
         };
@@ -83,12 +85,13 @@ final class Conversions
 
     /**
      * A PHP array where SharpPHP wants a List, Dictionary or HashSet, or the other way round: converted
-     * at run time (see ChecksTypes::converted()), so SharpPHP and PHP code can call each other.
+     * at run time (see ChecksTypes::converted()), so SharpPHP and PHP code can call each other. A
+     * sequence (a LINQ query: implode(", ", names.Where(...))) becomes a PHP array too.
      */
     public function isPhpArrayBoundary(Type $from, Type $to): bool
     {
         return ($from->isPhpArray() && $this->collectionName($to, exact: true) !== null)
-            || ($to->isPhpArray() && $this->collectionName($from) !== null);
+            || ($to->isPhpArray() && ($this->collectionName($from) !== null || $from->kind === 'iterable'));
     }
 
     /**
@@ -119,6 +122,11 @@ final class Conversions
             return true;
         }
         if (($from->isInt() && $this->isEnum($to)) || ($this->isEnum($from) && $to->isInt())) {
+            return true;
+        }
+        // (List<int>)query, (IList<int>)sequence, (IList<int>)set: checked when the program runs.
+        if (($from->kind === 'iterable' && ($to->kind === 'iterable' || $to->kind === 'array' || $to->isClass()))
+            || ($from->isClass() && $to->kind === 'iterable')) {
             return true;
         }
         $fromSymbol = $this->symbols->symbolForType($from);
@@ -234,9 +242,54 @@ final class Conversions
         return $symbol === null || (!$symbol->isEnum() && !$symbol->isStruct);
     }
 
-    private function isPrimitive(Type $type): bool
+    /**
+     * IEnumerable<T>, IReadOnlyCollection<T> and IReadOnlyList<T> are covariant (out T); ICollection<T>
+     * and IList<T> are not.
+     *
+     * @return 'out'|null
+     */
+    private static function collectionVariance(Type $interface): ?string
     {
-        return in_array($type->kind, ['int', 'float', 'bool', 'char', 'string'], true);
+        return in_array($interface->collectionInterface(), ['ICollection', 'IList'], true) ? null : 'out';
+    }
+
+    /**
+     * A sequence where a class is expected: as in C#, a List<T> = someEnumerable needs a cast (the
+     * value may be a query or another collection), except for a PHP class (not SharpPHP's library),
+     * which PHP checks when the value arrives.
+     */
+    private function sequenceToClass(Type $to): bool
+    {
+        if (!$to->isClass()) {
+            return false;
+        }
+        $symbol = $this->symbols->symbolForType($to);
+
+        return $symbol === null || ($symbol->external && !str_starts_with($symbol->fqn, Names::RUNTIME_NAMESPACE . '\\'));
+    }
+
+    /**
+     * The collection interfaces a runtime collection implements, as its .NET type does (Dictionary is
+     * an ICollection of its pairs, a Queue only an IReadOnlyCollection); null for other classes.
+     *
+     * @return list<string>|null
+     */
+    private function collectionInterfacesOf(TypeSymbol $symbol): ?array
+    {
+        $generic = Names::RUNTIME_NAMESPACE . '\\System\\Collections\\Generic\\';
+        foreach ([
+            'List_' => ['IList', 'ICollection', 'IReadOnlyList', 'IReadOnlyCollection', 'IEnumerable'],
+            'HashSet' => ['ICollection', 'IReadOnlyCollection', 'IEnumerable'],
+            'Dictionary' => ['ICollection', 'IReadOnlyCollection', 'IEnumerable'],
+            'Queue' => ['IReadOnlyCollection', 'IEnumerable'],
+            'Stack' => ['IReadOnlyCollection', 'IEnumerable'],
+        ] as $class => $interfaces) {
+            if ($this->symbols->isSubtypeOf($symbol->fqn, $generic . $class)) {
+                return $interfaces;
+            }
+        }
+
+        return null;
     }
 
     private function isImplicitFromClass(Type $from, Type $to): bool
@@ -258,9 +311,22 @@ final class Conversions
             if ($fromSymbol !== null && !$fromSymbol->external && !$this->symbols->isSubtypeOf($fromSymbol->fqn, 'Traversable')) {
                 return false;
             }
+            $interface = $to->collectionInterface();
+            if ($fromSymbol !== null && $interface !== 'IEnumerable') {
+                // The runtime collections implement what their .NET types do; a PHP class, what its PHP
+                // interfaces allow (a count: Countable, an indexer: ArrayAccess too).
+                $implements = $this->collectionInterfacesOf($fromSymbol);
+                if ($implements !== null ? !in_array($interface, $implements, true) : (
+                    !$fromSymbol->external
+                    || !$this->symbols->isSubtypeOf($fromSymbol->fqn, 'Countable')
+                    || (in_array($interface, ['IList', 'IReadOnlyList'], true) && !$this->symbols->isSubtypeOf($fromSymbol->fqn, 'ArrayAccess'))
+                )) {
+                    return false;
+                }
+            }
             $element = $fromSymbol?->elementType !== null ? $fromSymbol->elementType->substitute($fromSymbol->substitutionFor($from)) : null;
 
-            return $element === null || $this->argumentConverts($element, $to->element(), 'out');
+            return $element === null || $this->argumentConverts($element, $to->element(), self::collectionVariance($to));
         }
         if ($to->kind === 'closure') {
             return $fromSymbol === null || strcasecmp($fromSymbol->fqn, 'Closure') === 0;

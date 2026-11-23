@@ -95,7 +95,9 @@ final class TypeResolver
         }
         $collectionSimple = str_starts_with($simple, 'Collections.Generic.') ? substr($simple, 20) : $simple;
         if (in_array($collectionSimple, self::SEQUENCE_INTERFACES, true)) {
-            return Type::iterable($args[0] ?? Type::mixed())->withNullable($ref->nullable);
+            $interface = isset(Type::COLLECTION_INTERFACES[$collectionSimple]) ? $collectionSimple : 'IEnumerable';
+
+            return Type::iterable($args[0] ?? Type::mixed(), $interface)->withNullable($ref->nullable);
         }
 
         $symbol = $this->findClass($ref->name, $ctx, $ref);

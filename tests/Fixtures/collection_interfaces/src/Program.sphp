@@ -1,0 +1,47 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+// Each collection interface has its members: Count, an indexer, Add, Remove, Insert, ...
+IList<int> list = new List<int> { 1, 2, 3 };
+IReadOnlyList<int> readOnly = new List<int> { 4, 5 };
+ICollection<int> set = new HashSet<int> { 6 };
+IReadOnlyCollection<string> queue = new Queue<string>(new[] { "a" });
+IEnumerable<int> sequence = new List<int> { 7, 8 };
+Console.WriteLine(list.Count + " " + list[0] + " " + readOnly.Count + " " + readOnly[1] + " " + set.Count + " " + queue.Count + " " + sequence.Count());
+list.Add(9);
+list[0] = 10;
+list.Insert(0, 0);
+list.RemoveAt(1);
+set.Add(6);
+set.Add(7);
+Console.WriteLine(string.Join(",", list) + " " + list.IndexOf(9) + " " + list.Contains(3) + " " + list.Remove(3) + " " + list.Count);
+Console.WriteLine(set.Count + " " + set.Remove(6) + " " + set.Contains(7));
+set.Clear();
+Console.WriteLine(set.Count);
+
+// An array is an IList of a fixed size, as in C#.
+IList<string> letters = new[] { "x", "y" };
+letters[0] = "z";
+Console.WriteLine(letters.Count + " " + letters[0] + letters[1] + " " + letters.IndexOf("y"));
+try { letters.Add("w"); } catch (NotSupportedException e) { Console.WriteLine(e.Message); }
+
+// Properties and parameters of interface types.
+var order = new Order();
+order.Lines.Add("pen");
+order.Lines.Add("ink");
+Console.WriteLine(order.Lines.Count + " " + Total(new List<int> { 1, 2 }) + " " + Total(new[] { 3, 4 }) + " " + Total(new HashSet<int> { 5 }));
+
+// Type tests and casts.
+object o = new List<int>();
+Console.WriteLine((o is IList<int>) + " " + (o is ICollection<int>) + " " + (new HashSet<int>() is IList<int>) + " " + (new HashSet<int>() is ICollection<int>) + " " + (o is IEnumerable<int>));
+if (sequence is IReadOnlyList<int> items) Console.WriteLine(items[1]);
+List<int> back = (List<int>)sequence;
+Console.WriteLine(back.Count);
+
+static int Total(IReadOnlyCollection<int> values) => values.Sum() + values.Count;
+
+class Order
+{
+    public ICollection<string> Lines { get; set; } = new List<string>();
+}

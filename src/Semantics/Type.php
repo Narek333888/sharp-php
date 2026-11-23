@@ -136,9 +136,35 @@ final class Type
         return $this->kind === 'array' && $this->param === self::PHP_ARRAY;
     }
 
-    public static function iterable(?Type $element = null): self
+    /**
+     * C#'s collection interfaces, each with those it extends. All are the kind "iterable"; the
+     * interface says which members a value of it has: Count (all but IEnumerable), an indexer (the
+     * lists), Add, Remove, Clear (ICollection, IList), Insert, RemoveAt, IndexOf (IList).
+     */
+    public const COLLECTION_INTERFACES = [
+        'IEnumerable' => ['IEnumerable'],
+        'IReadOnlyCollection' => ['IReadOnlyCollection', 'IEnumerable'],
+        'IReadOnlyList' => ['IReadOnlyList', 'IReadOnlyCollection', 'IEnumerable'],
+        'ICollection' => ['ICollection', 'IEnumerable'],
+        'IList' => ['IList', 'ICollection', 'IEnumerable'],
+    ];
+
+    /** IEnumerable<T>, or another collection interface (see COLLECTION_INTERFACES). */
+    public static function iterable(?Type $element = null, string $interface = 'IEnumerable'): self
     {
-        return new self('iterable', null, [$element ?? self::mixed()]);
+        return new self('iterable', null, [$element ?? self::mixed()], false, $interface === 'IEnumerable' ? null : $interface);
+    }
+
+    /** "IEnumerable", "IList", ... for a sequence type. */
+    public function collectionInterface(): string
+    {
+        return $this->kind === 'iterable' ? ($this->param ?? 'IEnumerable') : 'IEnumerable';
+    }
+
+    /** Whether a value of this sequence type is (or derives from) the collection interface $interface. */
+    public function isCollection(string $interface): bool
+    {
+        return $this->kind === 'iterable' && in_array($interface, self::COLLECTION_INTERFACES[$this->collectionInterface()] ?? ['IEnumerable'], true);
     }
 
     /** @param list<Type> $args */
@@ -330,7 +356,7 @@ final class Type
             'mixed' => 'object',
             'null' => 'null',
             'array' => $this->isPhpArray() ? 'array' : $this->element()->describe() . '[]',
-            'iterable' => 'IEnumerable<' . $this->element()->describe() . '>',
+            'iterable' => $this->collectionInterface() . '<' . $this->element()->describe() . '>',
             'closure' => $this->delegateName(),
             'typeparam' => (string) $this->param,
             'class' => Names::csharpName((string) $this->class) . ($this->args !== []

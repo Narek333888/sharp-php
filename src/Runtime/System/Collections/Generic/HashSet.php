@@ -21,6 +21,7 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
 {
     /** @use EnumerableMethods<T> */
     use EnumerableMethods;
+    use EqualityKeys;
 
     /** @var array<string, T> */
     private array $items = [];
@@ -40,11 +41,12 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
     /** @param T $item */
     public function Add(mixed $item): bool
     {
-        $key = $this->key($item);
+        $key = $this->keyOf($item);
         if (array_key_exists($key, $this->items)) {
             return false;
         }
         $this->items[$key] = $this->of === null ? $item : TypeCheck::check($item, $this->of);
+        $this->keyAdded($key);
 
         return true;
     }
@@ -52,11 +54,12 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
     /** @param T $item */
     public function Remove(mixed $item): bool
     {
-        $key = $this->key($item);
+        $key = $this->keyOf($item);
         if (!array_key_exists($key, $this->items)) {
             return false;
         }
         unset($this->items[$key]);
+        $this->keyRemoved($key);
 
         return true;
     }
@@ -64,12 +67,13 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
     /** @param T $item */
     public function Contains(mixed $item): bool
     {
-        return array_key_exists($this->key($item), $this->items);
+        return array_key_exists($this->keyOf($item), $this->items);
     }
 
     public function Clear(): void
     {
         $this->items = [];
+        $this->hashBuckets = [];
     }
 
     /** @param iterable<T> $other */
@@ -87,6 +91,7 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
         foreach ($this->items as $key => $item) {
             if (!$keep->Contains($item)) {
                 unset($this->items[$key]);
+                $this->keyRemoved($key);
             }
         }
     }
@@ -119,12 +124,9 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
         return $predicate === null ? count($this->items) : Enumerable::Count($this, $predicate);
     }
 
-    private function key(mixed $item): string
+    private function storedAt(string $key): mixed
     {
-        return match (true) {
-            is_object($item) => 'o:' . spl_object_id($item),
-            default => get_debug_type($item) . ':' . Op::str($item),
-        };
+        return $this->items[$key];
     }
 
     /**

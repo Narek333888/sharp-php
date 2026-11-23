@@ -164,6 +164,12 @@ trait EmitsExpressions
     }
 
     /** Converts a value to a string the way C# would (true => "True", objects => ToString()). */
+    /** A method named without a call (list.Count where Count() is meant): PHP's first-class callable syntax. */
+    private static function isMethodGroup(Emitted $value): bool
+    {
+        return $value->type->kind === 'closure' && str_ends_with($value->code, '(...)');
+    }
+
     private function asString(Emitted $value): Emitted
     {
         if (($value->type->isString() || $value->type->isChar()) && !$value->type->nullable) {
@@ -402,6 +408,12 @@ trait EmitsExpressions
         switch ($op) {
             case '+':
                 if ($lt->isString() || $rt->isString()) {
+                    // "n = " + list.Count, where Count is a method (list.Count()): C#'s CS0019, not a delegate's name.
+                    $describe = static fn (Emitted $x): string => self::isMethodGroup($x) ? 'method group' : $x->type->describe();
+                    if (self::isMethodGroup($l) || self::isMethodGroup($r)) {
+                        throw $this->error('SP0019', "Operator '+' cannot be applied to operands of type '{$describe($l)}' and '{$describe($r)}'", $at);
+                    }
+
                     return $this->infix('.', $this->asString($l), $this->asString($r), Prec::CONCAT, Type::string());
                 }
                 if ($bothNumeric) {
@@ -1114,7 +1126,8 @@ trait EmitsExpressions
             return Emitted::value("new $class([" . implode(', ', $elements) . "], of: $of)", $type);
         }
 
-        $argList = implode(', ', array_filter([$args, $of !== null ? "of: $of" : '']));
+        // (A callback: array_filter() alone would drop the argument list "0", new Num(0).)
+        $argList = implode(', ', array_filter([$args, $of !== null ? "of: $of" : ''], static fn (string $part): bool => $part !== ''));
         $code = "new $class($argList)";
         if ($items === [] || $e->initializer === null) {
             return Emitted::value($code, $type);

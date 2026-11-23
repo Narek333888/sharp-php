@@ -36,13 +36,13 @@ public class Program
         Console.WriteLine(string.Join(" ", people.OrderBy(p => p.Last).ThenBy(p => p.First).Select(p => p.First)));
         Console.WriteLine(string.Join(" ", people.OrderByDescending(p => p.Age).ThenByDescending(p => p.Last).ThenBy(p => p.First).Select(p => p.First)));
         var sorted = new[] { 3, 1, 2 }.OrderBy(x => x);
-        Console.WriteLine(string.Join(",", sorted) + " " + sorted.Count + " " + sorted.ToList()[0]);
+        Console.WriteLine(string.Join(",", sorted) + " " + sorted.Count() + " " + sorted.ToList()[0]);
 
         // Zip pairs elements up to the shorter sequence; the result type comes from the lambda.
         var names = new[] { "Ann", "Bob", "Cid" };
         var ages = new List<int> { 30, 25 };
         var pairs = names.Zip(ages, (n, a) => n + ":" + a);
-        Console.WriteLine(string.Join(" ", pairs) + " " + pairs[0].Length);
+        Console.WriteLine(string.Join(" ", pairs) + " " + pairs.First().Length);
 
         // StringComparison
         Console.WriteLine("Hello".Equals("hello", StringComparison.OrdinalIgnoreCase) + " " + string.Equals("a", "A", StringComparison.Ordinal) + " " + "a".Equals("a"));
