@@ -6,6 +6,7 @@ namespace SharpPhp\Runtime\System\Threading\Tasks;
 
 use SharpPhp\Runtime\EventLoop;
 use SharpPhp\Runtime\System\ArgumentException;
+use SharpPhp\Runtime\System\Threading\CancellationToken;
 
 /**
  * System.Threading.Tasks.Task and Task<T>: an operation that completes later.
@@ -53,7 +54,12 @@ class Task
     }
 
     public bool $IsFaulted {
-        get => $this->state === self::FAULTED;
+        get => $this->state === self::FAULTED && !$this->error instanceof \SharpPhp\Runtime\System\OperationCanceledException;
+    }
+
+    /** Ended by its CancellationToken (TaskCanceledException). */
+    public bool $IsCanceled {
+        get => $this->state === self::FAULTED && $this->error instanceof \SharpPhp\Runtime\System\OperationCanceledException;
     }
 
     /** The exception that ended the task, or null. */
@@ -78,9 +84,14 @@ class Task
      * @return Task<mixed>
      * @sharp-return Task<TResult>
      */
-    public static function Run(\Closure $function): self
+    public static function Run(\Closure $function, ?CancellationToken $cancellationToken = null): self
     {
         $task = new self();
+        if ($cancellationToken?->IsCancellationRequested === true) {
+            $task->fail(new TaskCanceledException());
+
+            return $task;
+        }
         EventLoop::defer(static fn () => EventLoop::start(static fn () => $task->runBody($function)));
 
         return $task;
@@ -92,13 +103,17 @@ class Task
      * @return Task<mixed>
      * @sharp-return Task
      */
-    public static function Delay(int $milliseconds): self
+    public static function Delay(int $milliseconds, ?CancellationToken $cancellationToken = null): self
     {
         if ($milliseconds < -1) {
             throw new ArgumentException("The value needs to be either -1 (signifying an infinite timeout), 0 or a positive integer. (Parameter 'millisecondsDelay')");
         }
         $task = new self();
-        EventLoop::delay($milliseconds / 1000, static fn () => $task->succeed(null));
+        // A canceled token ends the delay with TaskCanceledException; -1 (Timeout.Infinite) waits for that.
+        $cancellationToken?->Register(static fn () => $task->fail(new TaskCanceledException()));
+        if ($milliseconds >= 0 && $task->state === self::PENDING) {
+            EventLoop::delay($milliseconds / 1000, static fn () => $task->succeed(null));
+        }
 
         return $task;
     }

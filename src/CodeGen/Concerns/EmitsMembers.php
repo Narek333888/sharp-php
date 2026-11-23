@@ -36,6 +36,9 @@ use SharpPhp\Syntax\TypeRef;
  */
 trait EmitsMembers
 {
+    /** The member being resolved is the target of += or -=, which an event allows from anywhere. */
+    private bool $eventTargetOfAddOrRemove = false;
+
     /** Members that are resolved at runtime when the receiver's type is unknown. */
     private const DYNAMIC_MEMBERS = ['Length', 'Count', 'Message', 'Key', 'Value', 'Keys', 'Values'];
 
@@ -122,9 +125,23 @@ trait EmitsMembers
         throw $this->error('SP0103', "The name '$name' does not exist in the current context", $e);
     }
 
+    /**
+     * C#'s CS0070: outside the class that declares it (also in a derived class), an event may only be
+     * the target of += or -=; only the class itself invokes, reads or assigns it.
+     */
+    private function requireEventAccess(MemberSymbol $member, Node $at): void
+    {
+        if (!$member->isEvent || $this->eventTargetOfAddOrRemove || ($this->class !== null && $this->class->fqn === $member->owner->fqn)) {
+            return;
+        }
+        $owner = $member->owner->csharpName();
+        throw $this->error('SP0070', "The event '$owner.{$member->name}' can only appear on the left hand side of += or -= (except when used from within the type '$owner')", $at);
+    }
+
     private function ownMember(MemberSymbol $member, Node $at): Emitted
     {
         $this->requireAccessible($member, $at);
+        $this->requireEventAccess($member, $at);
         if ($member->kind === 'method') {
             if (!$member->isStatic) {
                 $this->requireInstance($member, $at);
@@ -537,6 +554,7 @@ trait EmitsMembers
                     throw $this->error('SP0176', "Member '{$symbol->csharpName()}.$name' cannot be accessed with an instance reference; qualify it with a type name instead", $e);
                 }
                 $this->requireAccessible($member, $e);
+                $this->requireEventAccess($member, $e);
                 $type = $member->type->substitute($member->owner->substitutionFor($t));
 
                 return new Emitted($this->wrap($target, Prec::ATOM) . "$arrow$name", $nc ? $type->withNullable() : $type, member: $member);
@@ -868,6 +886,11 @@ trait EmitsMembers
         if ($t->kind === 'closure') {
             if ($name === 'Invoke') {
                 return $this->callClosure($target, $args, $callee);
+            }
+            if ($name === 'GetInvocationList' && $args === []) {
+                $delegate = $this->runtime('System\\Delegate');
+
+                return $this->nullSafe($target, $nc, static fn (string $c): string => "$delegate::GetInvocationList($c)", Type::array($t->withNullable(false)));
             }
 
             return $this->callExtension($target, $callee, $call)

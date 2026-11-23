@@ -102,7 +102,9 @@ final class Emitter
         foreach ($namespaces as $ns) {
             $this->ctx = $this->declarator->contextFor($unit, $ns);
             $phpNs = $this->ctx->phpNamespace();
-            $declared = array_map(static fn (TypeDecl $t): string => Names::mangle($t->name), $ns->types);
+            // Delegate types are function types to the compiler: no PHP class.
+            $types = array_values(array_filter($ns->types, static fn (TypeDecl $t): bool => $t->kind !== 'delegate'));
+            $declared = array_map(static fn (TypeDecl $t): string => Names::mangle($t->name), $types);
             if ($hasProgram && $phpNs === '') {
                 $declared[] = Declarator::TOP_LEVEL_CLASS;
             }
@@ -110,7 +112,7 @@ final class Emitter
             $this->w = new CodeWriter();
             $this->staticInitCalls = [];
 
-            foreach ($ns->types as $i => $decl) {
+            foreach ($types as $i => $decl) {
                 if ($i > 0) {
                     $this->w->blank();
                 }

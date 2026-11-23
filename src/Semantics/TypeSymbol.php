@@ -46,6 +46,14 @@ final class TypeSymbol
     /** @var array{0: string, 1: int, 2: int}|null where it is declared: file, line, column */
     public ?array $location = null;
 
+    /**
+     * A delegate type (kind "delegate"): its declaration, whose Invoke method is the signature, and
+     * where it was declared. TypeResolver makes it the closure type of that signature.
+     */
+    public ?\SharpPhp\Syntax\TypeDecl $delegateDecl = null;
+
+    public ?ResolutionContext $delegateContext = null;
+
     /** @var array<string, 'in'|'out'> variant type parameters (interface IBox<out T>), by name */
     public array $variance = [];
 

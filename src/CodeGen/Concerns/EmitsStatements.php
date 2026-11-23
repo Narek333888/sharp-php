@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace SharpPhp\CodeGen\Concerns;
 
-use SharpPhp\CodeGen\Emitted;
 use SharpPhp\CodeGen\EmitStep;
+use SharpPhp\CodeGen\Emitted;
 use SharpPhp\Semantics\MemberSymbol;
 use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\Type;
+use SharpPhp\Syntax\AwaitExpr;
 use SharpPhp\Syntax\BinaryExpr;
 use SharpPhp\Syntax\Block;
 use SharpPhp\Syntax\BreakStmt;
@@ -20,16 +21,19 @@ use SharpPhp\Syntax\ExprStmt;
 use SharpPhp\Syntax\ForeachStmt;
 use SharpPhp\Syntax\ForStmt;
 use SharpPhp\Syntax\IfStmt;
+use SharpPhp\Syntax\InvocationExpr;
 use SharpPhp\Syntax\LiteralExpr;
 use SharpPhp\Syntax\LocalDecl;
+use SharpPhp\Syntax\LockStmt;
 use SharpPhp\Syntax\MemberAccessExpr;
 use SharpPhp\Syntax\NameExpr;
+use SharpPhp\Syntax\Node;
+use SharpPhp\Syntax\NodeFinder;
 use SharpPhp\Syntax\ReturnStmt;
 use SharpPhp\Syntax\Stmt;
 use SharpPhp\Syntax\SwitchStmt;
 use SharpPhp\Syntax\ThrowStmt;
 use SharpPhp\Syntax\TryStmt;
-use SharpPhp\Syntax\InvocationExpr;
 use SharpPhp\Syntax\UnaryExpr;
 use SharpPhp\Syntax\UsingStmt;
 use SharpPhp\Syntax\WhileStmt;
@@ -77,6 +81,7 @@ trait EmitsStatements
             $s instanceof TryStmt => $this->tryStatement($s),
             $s instanceof YieldStmt => $this->yieldStatement($s),
             $s instanceof UsingStmt => $this->usingStatement($s),
+            $s instanceof LockStmt => $this->lockStatement($s),
             $s instanceof EmitStep => ($s->emit)(),
             $s instanceof EmptyStmt => null,
             default => throw $this->error('SP1010', 'Unsupported statement', $s),
@@ -455,6 +460,26 @@ trait EmitsStatements
             return;
         }
         $this->w->line('yield ' . $this->expr($s->value)->code . ';');
+    }
+
+    /**
+     * lock (gate) { ... }: one thread runs SharpPHP code, so only C#'s rules remain: the gate is an
+     * object that is not null (ArgumentNullException), and no await inside (CS1996), where another
+     * async method could run before the lock is released.
+     */
+    private function lockStatement(LockStmt $s): void
+    {
+        $gate = $this->expr($s->target);
+        if ($gate->type->isNumeric() || $gate->type->isBool() || $gate->type->isChar() || ($gate->type->isClass() && $this->isValueType($gate->type))) {
+            throw $this->error('SP0185', "'{$gate->type->describe()}' is not a reference type as required by the lock statement", $s->target);
+        }
+        if (NodeFinder::contains($s->body, static fn (Node $n): bool => $n instanceof AwaitExpr)) {
+            throw $this->error('SP1996', 'Cannot await in the body of a lock statement', $s);
+        }
+        $this->w->line($this->runtime('Op') . '::lockTarget(' . $gate->code . ');');
+        $this->w->line('{');
+        $this->body($s->body);
+        $this->w->line('}');
     }
 
     private function returnStatement(ReturnStmt $s): void

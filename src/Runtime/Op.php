@@ -458,6 +458,18 @@ final class Op
         return $index;
     }
 
+    /**
+     * lock (gate): one thread runs SharpPHP code, so a lock is always free; the gate must be an object.
+     *
+     * @internal the compiler emits it for lock statements
+     */
+    public static function lockTarget(mixed $gate): void
+    {
+        if ($gate === null) {
+            throw new System\ArgumentNullException('obj');
+        }
+    }
+
     /** The size of new T[n]: .NET throws OverflowException for a negative one. */
     public static function arraySize(int $size): int
     {

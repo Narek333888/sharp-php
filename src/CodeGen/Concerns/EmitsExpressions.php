@@ -325,6 +325,14 @@ trait EmitsExpressions
         if ($defined !== null) {
             return $defined;
         }
+        // a + b, handler -= h: delegates combine (all of them are called) and remove, as Delegate.Combine.
+        if (($op === '+' || $op === '-') && ($l->type->kind === 'closure' || $r->type->kind === 'closure')
+            && !$l->type->isString() && !$r->type->isString()) {
+            $delegate = $this->runtime('System\\Delegate');
+            $type = $l->type->kind === 'closure' ? $l->type : $r->type;
+
+            return Emitted::value("$delegate::" . ($op === '+' ? 'Combine' : 'Remove') . "({$l->code}, {$r->code})", $type->withNullable());
+        }
 
         $lt = $l->type;
         $rt = $r->type;
@@ -547,7 +555,13 @@ trait EmitsExpressions
                 return $update;
             }
         }
-        $target = $this->place($e->target);
+        // button.Clicked += handler: an event allows += and -= from outside its class.
+        $this->eventTargetOfAddOrRemove = $e->operator === '+=' || $e->operator === '-=';
+        try {
+            $target = $this->place($e->target);
+        } finally {
+            $this->eventTargetOfAddOrRemove = false;
+        }
         $type = $target->type;
         $op = $e->operator;
 
@@ -584,7 +598,8 @@ trait EmitsExpressions
         }
 
         $binaryOp = substr($op, 0, -1);
-        $value = $this->expr($e->value);
+        // Clicked += () => ...: the lambda gets the delegate's parameter types.
+        $value = $this->expr($e->value, $type->kind === 'closure' ? $type->withNullable(false) : null);
         $vt = $value->type;
 
         if ($type->isChar() && !$vt->isString()) {
@@ -606,7 +621,7 @@ trait EmitsExpressions
             '/' => null, // intdiv() or fdiv(), never PHP's "/"
             '%' => $bothInt ? '%=' : null,
             // Objects have no PHP operators: date -= span goes through binaryOperation() (operatorMethod()).
-            '-', '*', '<<', '>>', '&', '|', '^' => $type->isClass() || $vt->isClass() ? null : $binaryOp . '=',
+            '-', '*', '<<', '>>', '&', '|', '^' => $type->isClass() || $vt->isClass() || $type->kind === 'closure' || $vt->kind === 'closure' ? null : $binaryOp . '=',
             default => null,
         };
         if ($compound !== null) {
@@ -945,6 +960,14 @@ trait EmitsExpressions
             return Emitted::value('new \\stdClass()', Type::mixed());
         }
         $type = $e->type !== null ? $this->resolveType($e->type) : $expected?->withNullable(false);
+        // new Transform(Twice), new Action(() => ...): a delegate made from a method or a lambda.
+        if ($type !== null && $type->kind === 'closure' && $e->initializer === null) {
+            if (count($e->args) !== 1 || $e->args[0]->name !== null || $e->args[0]->modifier !== null) {
+                throw $this->error('SP0149', 'Method name expected', $e);
+            }
+
+            return $this->convert($e->args[0]->value, $type);
+        }
         if ($type === null || !$type->isClass()) {
             throw $this->error('SP8754', $type === null
                 ? "There is no target type for 'new()'"

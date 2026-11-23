@@ -1,0 +1,9 @@
+a0 b0 a1 b1 a2 b2 | alive: False
+11
+10,20,30 concurrently
+canceled: A task was canceled. True
+False False
+OperationCanceledException
+callback ran
+True False
+stopped after some steps

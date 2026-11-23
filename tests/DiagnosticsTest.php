@@ -149,6 +149,10 @@ class P { static void Main() { "x".Size = 2; } }', 'SP0200', 'Property or indexe
         yield 'nested initializer on a value' => ["class P { public int N { get; set; } static void Main() { var x = new P { N = { } }; } }", 'SP1918', "Members of 'N' cannot be initialized with an object or collection initializer: its type 'int' is not a class", 1, 75];
         yield 'unknown method of a library class' => [$main('new System.Collections.Generic.List<int>().Foo();'), 'SP1061', "'System.Collections.Generic.List' does not contain a definition for 'Foo'", 6, 52];
         yield 'unknown property of a library class' => [$main('var n = new System.Collections.Generic.List<int>().Lenght;'), 'SP1061', "'System.Collections.Generic.List' does not contain a definition for 'Lenght'", 6, 60];
+        yield 'event invoked from outside' => ["class B { public event System.Action? E; }\nclass P { static void Main() { new B().E?.Invoke(); } }", 'SP0070', "The event 'B.E' can only appear on the left hand side of += or -= (except when used from within the type 'B')", 2, 40];
+        yield 'event of a non-delegate type' => ['class B { public event int E; }', 'SP0066', "'B.E': event must be of a delegate type", 1, 28];
+        yield 'await in a lock' => ["class P\n{\n    static async System.Threading.Tasks.Task Main()\n    {\n        var o = new object(); lock (o) { await System.Threading.Tasks.Task.Delay(1); }\n    }\n}\n", 'SP1996', 'Cannot await in the body of a lock statement', 5, 31];
+        yield 'lock on a value type' => [$main('int x = 1; lock (x) { }'), 'SP0185', "'int' is not a reference type as required by the lock statement", 6, 26];
         yield 'default interface method' => ["interface I { string Name() => \"d\"; }\nclass A : I { }", 'SP8701', 'Default interface methods are not supported; use an abstract base class', 1, 22];
     }
 

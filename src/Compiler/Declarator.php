@@ -50,6 +50,7 @@ final class Declarator
                 $kind = match ($decl->kind) {
                     'interface' => 'interface',
                     'enum' => 'enum',
+                    'delegate' => 'delegate',
                     default => 'class',
                 };
                 $fqn = ($phpNs === '' ? '' : $phpNs . '\\') . Names::mangle($decl->name);
@@ -60,6 +61,11 @@ final class Declarator
                 $symbol->typeParams = $decl->typeParams;
                 $symbol->variance = $decl->variance;
                 $symbol->location = [$unit->file->path, $decl->line, $decl->column];
+                if ($decl->kind === 'delegate') {
+                    // Resolved where it is used (TypeResolver), maybe before phase 2 reaches it.
+                    $symbol->delegateDecl = $decl;
+                    $symbol->delegateContext = $this->contextFor($unit, $ns);
+                }
                 if ($this->symbols->declare($symbol) !== null) {
                     $where = $ns->name === '' ? 'the global namespace' : "namespace '{$ns->name}'";
                     throw $this->error('SP0101', "The $where already contains a definition for '{$decl->name}'", $unit->file, $decl);
@@ -87,6 +93,11 @@ final class Declarator
         foreach ($unit->namespaces as $ns) {
             $ctx = $this->contextFor($unit, $ns);
             foreach ($ns->types as $decl) {
+                if ($decl->kind === 'delegate') {
+                    // Check the signature's types now (TypeResolver resolves it where it is used).
+                    $this->resolver->resolve((new \SharpPhp\Syntax\TypeRef($decl->name, array_map(static fn (string $t): \SharpPhp\Syntax\TypeRef => new \SharpPhp\Syntax\TypeRef($t, [], false), $decl->typeParams), false))->at($decl), $ctx, array_fill_keys($decl->typeParams, Type::mixed()));
+                    continue;
+                }
                 $this->defineType($decl, $this->symbolOf($decl), $ctx);
                 if ($decl->variance !== []) {
                     $this->checkVariance($decl, $this->symbolOf($decl), $ctx->file);
@@ -348,6 +359,10 @@ final class Declarator
                         visibility: self::visibility($member->modifiers, $defaultVisibility),
                     );
                     $field->isReadonly = in_array('readonly', $member->modifiers, true);
+                    $field->isEvent = in_array('event', $member->modifiers, true);
+                    if ($field->isEvent && $type->kind !== 'closure') {
+                        throw $this->error('SP0066', "'{$decl->name}.{$declarator->name}': event must be of a delegate type", $file, $declarator);
+                    }
                     $field->constantValue = $member->isConst ? $declarator->init : null;
                     // Laravel's Model::$casts, $hidden, ...: a field redeclaring a property of a PHP base
                     // class is read by PHP code, which takes a PHP array, not a Dictionary or List.

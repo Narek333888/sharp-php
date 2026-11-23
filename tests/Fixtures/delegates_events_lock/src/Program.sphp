@@ -1,0 +1,58 @@
+using System;
+using System.Collections.Generic;
+
+Transform twice = x => x * 2;
+Console.WriteLine(twice(21) + " " + twice.Invoke(4) + " " + new Transform(Square)(5));
+Producer<string> hello = () => "hi";
+Console.WriteLine(hello());
+
+Action log = () => Console.Write("a");
+log += () => Console.Write("b");
+log += Bang;
+log();
+Console.WriteLine(" " + log.GetInvocationList().Length);
+log -= Bang;
+log();
+Console.WriteLine();
+Action? none = null;
+none += Bang;
+none -= Bang;
+Console.WriteLine(none == null);
+Func<int, int> f = x => x + 1;
+Func<int, int> g = x => x * 10;
+var both = f + g;
+Console.WriteLine(both(1));
+
+var button = new Button();
+var counter = new Counter();
+button.Clicked += counter.OnClick;
+button.Clicked += (sender, name) => Console.WriteLine($"clicked {name}");
+button.Click("ok");
+button.Click("again");
+button.Clicked -= counter.OnClick;
+button.Click("third");
+Console.WriteLine(counter.Count);
+
+var gate = new object();
+int n = 0;
+lock (gate) { n++; }
+Console.WriteLine(n);
+
+static int Square(int x) => x * x;
+static void Bang() => Console.Write("!");
+
+delegate int Transform(int x);
+delegate T Producer<T>();
+
+class Button
+{
+    public delegate void ClickHandler(Button sender, string name);
+    public event ClickHandler? Clicked;
+    public void Click(string name) => Clicked?.Invoke(this, name);
+}
+
+class Counter
+{
+    public int Count { get; private set; }
+    public void OnClick(Button sender, string name) => Count++;
+}

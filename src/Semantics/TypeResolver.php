@@ -95,7 +95,46 @@ final class TypeResolver
             );
         }
 
+        if ($symbol->kind === 'delegate') {
+            return $this->delegateType($symbol, $args)->withNullable($ref->nullable);
+        }
+
         return Type::class($symbol->fqn, $args, $ref->nullable);
+    }
+
+    /** @var array<string, true> delegate types being resolved (delegate D Next(D d) refers to itself) */
+    private array $resolvingDelegates = [];
+
+    /**
+     * delegate int Transform(int x): the closure type (int) => int, as Func<int, int> is. Generic
+     * delegates bind their type parameters to the arguments: Producer<string> for delegate T Producer<T>().
+     *
+     * @param list<Type> $args
+     */
+    private function delegateType(TypeSymbol $symbol, array $args): Type
+    {
+        $decl = $symbol->delegateDecl;
+        $ctx = $symbol->delegateContext;
+        $invoke = $decl?->members[0] ?? null;
+        if ($decl === null || $ctx === null || !$invoke instanceof \SharpPhp\Syntax\MethodDecl || isset($this->resolvingDelegates[$symbol->fqn])) {
+            return Type::closure([]);
+        }
+        $this->resolvingDelegates[$symbol->fqn] = true;
+        try {
+            $map = [];
+            foreach ($decl->typeParams as $i => $name) {
+                $map[$name] = $args[$i] ?? Type::typeParam($name);
+            }
+            $types = [];
+            foreach ($invoke->params as $param) {
+                $types[] = $param->type !== null ? $this->resolve($param->type, $ctx, $map) : Type::mixed();
+            }
+            $types[] = $this->resolve($invoke->returnType ?? new TypeRef('void', [], false), $ctx, $map);
+
+            return Type::closure($types);
+        } finally {
+            unset($this->resolvingDelegates[$symbol->fqn]);
+        }
     }
 
     private function isProjectType(string $name, ResolutionContext $ctx): bool

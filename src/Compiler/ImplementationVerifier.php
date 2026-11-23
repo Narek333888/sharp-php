@@ -45,7 +45,7 @@ final class ImplementationVerifier
         foreach ($unit->namespaces as $ns) {
             foreach ($ns->types as $decl) {
                 $symbol = $this->declarator->symbolOf($decl);
-                if (!$symbol->isInterface() && !$symbol->isEnum()) {
+                if (!$symbol->isInterface() && !$symbol->isEnum() && $symbol->kind !== 'delegate') {
                     $this->verifyType($decl, $symbol, $unit->file);
                 }
             }

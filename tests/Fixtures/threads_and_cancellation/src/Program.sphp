@@ -1,0 +1,61 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+var log = new List<string>();
+var a = new Thread(() => { for (int i = 0; i < 3; i++) { log.Add("a" + i); Thread.Sleep(10); } });
+var b = new Thread(() => { for (int i = 0; i < 3; i++) { log.Add("b" + i); Thread.Sleep(10); } });
+a.Start(); b.Start();
+a.Join(); b.Join();
+Console.WriteLine(string.Join(" ", log) + " | alive: " + a.IsAlive);
+
+int count = 0;
+Parallel.For(0, 5, i => Interlocked.Increment(ref count));
+Parallel.ForEach(new[] { 1, 2, 3 }, x => Interlocked.Add(ref count, x));
+Console.WriteLine(count);
+
+var results = new List<int>();
+var started = Environment.TickCount;
+await Parallel.ForEachAsync(new[] { 1, 2, 3 }, async (x, token) => { await Task.Delay(100, token); lock (results) results.Add(x * 10); });
+Console.WriteLine(string.Join(",", results.OrderBy(x => x)) + " " + (Environment.TickCount - started < 250 ? "concurrently" : "one by one"));
+
+using var cts = new CancellationTokenSource();
+cts.CancelAfter(50);
+try
+{
+    await Task.Delay(Timeout.Infinite, cts.Token);
+}
+catch (TaskCanceledException e)
+{
+    Console.WriteLine("canceled: " + e.Message + " " + cts.IsCancellationRequested);
+}
+var token = new CancellationTokenSource().Token;
+Console.WriteLine(token.IsCancellationRequested + " " + CancellationToken.None.CanBeCanceled);
+try { new CancellationToken(true).ThrowIfCancellationRequested(); } catch (OperationCanceledException) { Console.WriteLine("OperationCanceledException"); }
+var registered = new CancellationTokenSource();
+registered.Token.Register(() => Console.WriteLine("callback ran"));
+registered.Cancel();
+var canceledTask = Task.Delay(1000, registered.Token);
+try { await canceledTask; } catch (OperationCanceledException) { }
+Console.WriteLine(canceledTask.IsCanceled + " " + canceledTask.IsFaulted);
+Console.WriteLine(await Work(new CancellationTokenSource(30).Token));
+
+static async Task<string> Work(CancellationToken token = default)
+{
+    int steps = 0;
+    try
+    {
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            await Task.Delay(5, token);
+            steps++;
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        return steps > 0 ? "stopped after some steps" : "stopped at once";
+    }
+}

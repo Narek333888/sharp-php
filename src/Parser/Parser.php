@@ -48,6 +48,7 @@ use SharpPhp\Syntax\IsPatternExpr;
 use SharpPhp\Syntax\LambdaExpr;
 use SharpPhp\Syntax\LiteralExpr;
 use SharpPhp\Syntax\LocalDecl;
+use SharpPhp\Syntax\LockStmt;
 use SharpPhp\Syntax\MemberAccessExpr;
 use SharpPhp\Syntax\MethodDecl;
 use SharpPhp\Syntax\NameExpr;
@@ -103,6 +104,9 @@ final class Parser
     /** @var list<MethodDecl> local functions parsed in the current member (they become methods of the type) */
     private array $localFunctions = [];
 
+    /** @var list<TypeDecl> delegate types declared inside a class: types of the namespace (C# nests them) */
+    private array $hoistedTypes = [];
+
     /** The member being parsed is static (or top-level code): its local functions are static methods. */
     private bool $inStaticMember = false;
 
@@ -155,6 +159,7 @@ final class Parser
                     $types = [];
                     while (!$this->atEnd()) {
                         $types[] = $this->parseTypeDecl();
+                        array_push($types, ...$this->takeHoistedTypes());
                     }
                     $namespaces[] = (new NamespaceDecl($name, $nsUsings, $types))->at($nsToken);
                     continue;
@@ -168,6 +173,7 @@ final class Parser
                         throw $this->error('Nested namespace blocks are not supported; use dotted names instead', $this->current(), 'SP1010');
                     }
                     $types[] = $this->parseTypeDecl();
+                    array_push($types, ...$this->takeHoistedTypes());
                 }
                 $this->expect('}');
                 $namespaces[] = (new NamespaceDecl($name, $nsUsings, $types))->at($nsToken);
@@ -176,10 +182,11 @@ final class Parser
 
             if ($this->isTypeDeclarationStart()) {
                 $globalTypes[] = $this->parseTypeDecl();
+                array_push($globalTypes, ...$this->takeHoistedTypes());
                 continue;
             }
 
-            if ($this->check('using')) {
+            if ($this->check('using') && !$this->isUsingStatement()) {
                 throw $this->error('A using directive must precede all other elements defined in the file', $this->current());
             }
 
@@ -280,6 +287,33 @@ final class Parser
         return $name;
     }
 
+    /**
+     * "using var r = ...;", "using (...)" and "using Stream s = ...;" are statements (also in top-level
+     * code after other statements); "using System;" and "using A = B;" are directives.
+     */
+    private function isUsingStatement(): bool
+    {
+        if ($this->peek(1)->is('(') || ($this->peek(1)->isIdentifier('var') && $this->peek(2)->isIdentifier())) {
+            return true;
+        }
+        $start = $this->pos;
+        $this->advance();
+        try {
+            return $this->tryParseType() !== null && $this->current()->isIdentifier();
+        } finally {
+            $this->pos = $start;
+        }
+    }
+
+    /** @return list<TypeDecl> */
+    private function takeHoistedTypes(): array
+    {
+        $types = $this->hoistedTypes;
+        $this->hoistedTypes = [];
+
+        return $types;
+    }
+
     private function isTypeDeclarationStart(): bool
     {
         $i = 0;
@@ -292,7 +326,9 @@ final class Parser
         $token = $this->peek($i);
 
         return $token->is('class') || $token->is('struct') || $token->is('interface') || $token->is('enum')
-            || ($token->isIdentifier('record') && ($this->peek($i + 1)->isIdentifier() || $this->peek($i + 1)->is('class') || $this->peek($i + 1)->is('struct')));
+            || ($token->isIdentifier('record') && ($this->peek($i + 1)->isIdentifier() || $this->peek($i + 1)->is('class') || $this->peek($i + 1)->is('struct')))
+            // delegate int Transform(int x); (not an anonymous method: delegate (int x) { ... })
+            || ($token->is('delegate') && !$this->peek($i + 1)->is('(') && !$this->peek($i + 1)->is('{'));
     }
 
     private function isModifierAt(int $i): bool
@@ -351,6 +387,32 @@ final class Parser
         }
     }
 
+    /**
+     * delegate TResult Transform<in T, out TResult>(T value);  a type that is a function of that signature,
+     * the same as Func<T, TResult> to the compiler (see TypeResolver). Its one member is Invoke.
+     *
+     * @param list<string> $modifiers
+     */
+    private function parseDelegate(Token $start, array $modifiers): TypeDecl
+    {
+        $this->expect('delegate');
+        if ($this->check('void')) {
+            $voidToken = $this->advance();
+            $returnType = (new TypeRef('void', [], false))->at($voidToken);
+        } else {
+            $returnType = $this->parseType();
+        }
+        $name = $this->expectIdentifier('delegate name');
+        $variance = [];
+        $typeParams = $this->check('<') ? $this->parseTypeParameterList(true, $variance) : [];
+        $params = $this->parseParameterList();
+        $constraints = $this->parseConstraints();
+        $this->expect(';');
+        $invoke = (new MethodDecl(['public'], $returnType, 'Invoke', [], $params, null, null, 'method', null, [], []))->at($name);
+
+        return (new TypeDecl('delegate', $name->text(), $modifiers, $typeParams, [], [$invoke], [], [], $constraints, $variance))->at($start);
+    }
+
     private function parseTypeDecl(): TypeDecl
     {
         $this->skipAttributes();
@@ -358,6 +420,9 @@ final class Parser
         $modifiers = $this->parseModifiers();
         $kindToken = $this->current();
 
+        if ($kindToken->is('delegate')) {
+            return $this->parseDelegate($start, $modifiers);
+        }
         if ($kindToken->isIdentifier('record')) {
             $this->advance();
             $kind = 'record';
@@ -625,8 +690,34 @@ final class Parser
 
             return $this->parseExtensionBlock($typeName);
         }
-        if ($token->is('event') || $token->is('delegate')) {
-            throw $this->error("'{$token->text()}' declarations are not supported", $token, 'SP1010');
+        if ($token->is('delegate')) {
+            // A delegate type declared in a class: C# nests it; here it is a type of the namespace.
+            $this->hoistedTypes[] = $this->parseDelegate($start, $modifiers);
+
+            return (new ExtensionBlock([]))->at($start);
+        }
+        if ($token->is('event')) {
+            // public event Action<string>? Changed;  a field holding the delegate, which code outside
+            // the class can only add to and remove from (+= and -=).
+            $this->advance();
+            $eventType = $this->parseType();
+            $nameToken = $this->expectIdentifier('event name');
+            if ($this->check('{')) {
+                throw $this->error('Events with add and remove accessors are not supported; declare a field-like event (event Action Changed;)', $this->current(), 'SP1010');
+            }
+            $declarators = [];
+            $declToken = $nameToken;
+            while (true) {
+                $init = $this->accept('=') ? $this->parseVariableInitializer() : null;
+                $declarators[] = (new VarDeclarator($declToken->text(), $init))->at($declToken);
+                if (!$this->accept(',')) {
+                    break;
+                }
+                $declToken = $this->expectIdentifier('event name');
+            }
+            $this->expect(';');
+
+            return (new FieldDecl([...$modifiers, 'event'], $eventType, $declarators, false))->at($start);
         }
         if ($token->is('implicit') || $token->is('explicit')) {
             throw $this->error('Conversion operators are not supported', $token, 'SP1010');
@@ -1034,6 +1125,7 @@ final class Parser
                 case 'using':
                     return $this->parseUsingStatement();
                 case 'lock':
+                    return $this->parseLock();
                 case 'goto':
                 case 'checked':
                 case 'unchecked':
@@ -1074,6 +1166,17 @@ final class Parser
         $this->expect(';');
 
         return (new ExprStmt($expr))->at($token);
+    }
+
+    /** lock (gate) { ... } */
+    private function parseLock(): LockStmt
+    {
+        $token = $this->advance();
+        $this->expect('(');
+        $target = $this->parseExpression();
+        $this->expect(')');
+
+        return (new LockStmt($target, $this->parseEmbeddedStatement()))->at($token);
     }
 
     /** using (var r = ...) statement, using (expression) statement, or "using var r = ...;". */

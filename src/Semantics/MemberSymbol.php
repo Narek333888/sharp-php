@@ -54,6 +54,9 @@ final class MemberSymbol
      */
     public ?Type $phpArrayOf = null;
 
+    /** A field-like event: outside its class only += and -= may be applied to it (CS0070). */
+    public bool $isEvent = false;
+
     public ?string $csharpName = null;
 
     /**
