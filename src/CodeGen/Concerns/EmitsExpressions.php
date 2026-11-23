@@ -192,6 +192,133 @@ trait EmitsExpressions
     }
 
     /**
+     * The kind of operand C#'s operator rules look at, when the compiler knows the type: number, char,
+     * bool, string, enum, struct (a value type: DateTime, a struct of the program), class (a class, a
+     * record, an array) or null. Null (not checked) for object, dynamic, type parameters, delegates,
+     * interfaces, anonymous types and values of PHP code of unknown type.
+     */
+    private function operandKind(Type $type): ?string
+    {
+        $plain = $type->withNullable(false);
+        if ($plain->kind === 'class' && !$plain->isAnonymous()) {
+            $symbol = $this->symbols->symbolForType($plain);
+
+            return match (true) {
+                $symbol === null || $symbol->isInterface() || $symbol->kind === 'delegate' => null,
+                $symbol->isEnum() => 'enum',
+                $symbol->isStruct => 'struct',
+                default => 'class',
+            };
+        }
+
+        return match (true) {
+            $plain->isNull() => 'null',
+            $plain->isNumeric() => 'number',
+            $plain->isChar() => 'char',
+            $plain->isBool() => 'bool',
+            $plain->isString() => 'string',
+            $plain->kind === 'array' && !$plain->isPhpArray() => 'class',
+            default => null,
+        };
+    }
+
+    /**
+     * C#'s CS0019: a binary operator that is not defined for its operands (true + 1, "a" * 2, "a" < "b",
+     * E1.A == E2.A, date == "x", 5 ?? 0), when the compiler knows both types (see operandKind()).
+     * Operators that a class defines (DateTime - DateTime) are found before.
+     */
+    private function checkBinaryOperands(string $op, Emitted $l, Emitted $r, \SharpPhp\Syntax\Node $at): void
+    {
+        $a = $this->operandKind($l->type);
+        $b = $this->operandKind($r->type);
+        if ($op === '??') {
+            // The left operand must be able to be null: not an int, a bool, an enum or a struct.
+            if (in_array($a, ['number', 'char', 'bool', 'enum', 'struct'], true) && !$l->type->nullable && $b !== null) {
+                throw $this->error('SP0019', "Operator '??' cannot be applied to operands of type '{$l->type->describe()}' and '{$r->type->describe()}'", $at);
+            }
+
+            return;
+        }
+        if ($a === null || $b === null || $a === 'null' || $b === 'null') {
+            return;
+        }
+        $numeric = static fn (string $kind): bool => $kind === 'number' || $kind === 'char';
+        $integral = static fn (Emitted $e): bool => $e->type->isChar() || $e->type->isInt();
+        $sameEnum = $a === 'enum' && $b === 'enum' && $l->type->withNullable(false)->equals($r->type->withNullable(false));
+        // The constant 0 converts to every enum type: e == 0, e & 0.
+        $enumAndZero = ($a === 'enum' && $r->type->isInt() && $r->intValue === 0) || ($b === 'enum' && $l->type->isInt() && $l->intValue === 0);
+        $related = static fn (): bool => false;
+        if (($a === 'class' || $a === 'struct') && $a === $b) {
+            $plainL = $l->type->withNullable(false);
+            $plainR = $r->type->withNullable(false);
+            $related = fn (): bool => $plainL->equals($plainR) || $this->conversions->isImplicit($plainL, $plainR) || $this->conversions->isImplicit($plainR, $plainL);
+        }
+        $ok = match ($op) {
+            '+' => $a === 'string' || $b === 'string' || ($numeric($a) && $numeric($b))
+                || ($a === 'enum' && $integral($r)) || ($b === 'enum' && $integral($l)),
+            '-' => ($numeric($a) && $numeric($b)) || $sameEnum || ($a === 'enum' && $integral($r)),
+            '*', '/', '%' => $numeric($a) && $numeric($b),
+            // The count of a shift converts to int: not a long, a uint or a ulong.
+            '<<', '>>', '>>>' => $integral($l) && $integral($r) && !in_array($r->type->withNullable(false)->integralName(), ['long', 'uint', 'ulong'], true),
+            '&', '|', '^' => ($integral($l) && $integral($r)) || ($a === 'bool' && $b === 'bool') || $sameEnum || $enumAndZero,
+            '&&', '||' => $a === 'bool' && $b === 'bool' && !$l->type->nullable && !$r->type->nullable,
+            // Reference types compare when one converts to the other; a struct needs an == of its own.
+            '==', '!=' => ($numeric($a) && $numeric($b)) || ($a === $b && in_array($a, ['bool', 'string'], true))
+                || $sameEnum || $enumAndZero || ($a === 'class' && $b === 'class' && $related())
+                || ($a === 'struct' && $b === 'struct' && $this->isRecordType($l->type->withNullable(false)) && $related()),
+            '<', '>', '<=', '>=' => ($numeric($a) && $numeric($b)) || $sameEnum || $enumAndZero,
+            default => true,
+        };
+        if (!$ok) {
+            throw $this->error('SP0019', "Operator '$op' cannot be applied to operands of type '{$l->type->describe()}' and '{$r->type->describe()}'", $at);
+        }
+    }
+
+    /**
+     * C#'s arithmetic of enums: e - E.A is the difference of their values (an int), e + 1, 1 + e and e - 1
+     * the enum value that many further (PHP's enums have no operators). Null for other operands.
+     */
+    private function enumArithmetic(string $op, Emitted $l, Emitted $r): ?Emitted
+    {
+        if (($op !== '+' && $op !== '-') || $l->type->nullable || $r->type->nullable) {
+            return null;
+        }
+        $leftEnum = $this->conversions->isEnum($l->type);
+        $rightEnum = $this->conversions->isEnum($r->type);
+        $integral = static fn (Emitted $e): bool => $e->type->isInt() || $e->type->isChar();
+        if ($leftEnum && $rightEnum && $op === '-') {
+            return $this->infix('-', $this->enumValue($l), $this->enumValue($r), Prec::ADD, Type::int());
+        }
+        if ($leftEnum !== $rightEnum && ($leftEnum ? $integral($r) : $integral($l) && $op === '+')) {
+            [$enum, $number] = $leftEnum ? [$l, $this->charToInt($r)] : [$r, $this->charToInt($l)];
+            $sum = $leftEnum ? $this->infix($op, $this->enumValue($enum), $number, Prec::ADD, Type::int()) : $this->infix('+', $number, $this->enumValue($enum), Prec::ADD, Type::int());
+
+            return Emitted::value($this->classRef((string) $enum->type->class) . '::from(' . $sum->code . ')', $enum->type->withNullable(false));
+        }
+
+        return null;
+    }
+
+    /** C#'s CS0023: a unary operator that is not defined for its operand (-"a", !5, ~1.5, b++ of a bool). */
+    private function checkUnaryOperand(string $op, Emitted $operand, \SharpPhp\Syntax\Node $at): void
+    {
+        $kind = $this->operandKind($operand->type);
+        if ($kind === null || $kind === 'null') {
+            return;
+        }
+        $ok = match ($op) {
+            '!' => $kind === 'bool',
+            '-', '+' => $kind === 'number' || $kind === 'char',
+            '~' => ($kind === 'number' && $operand->type->isInt()) || $kind === 'char' || $kind === 'enum',
+            '++', '--' => $kind === 'number' || $kind === 'char' || $kind === 'enum',
+            default => true,
+        };
+        if (!$ok) {
+            throw $this->error('SP0023', "Operator '$op' cannot be applied to operand of type '{$operand->type->describe()}'", $at);
+        }
+    }
+
+    /**
      * C#'s lifted operators: with a nullable operand (int?, double?, bool?), arithmetic gives null when an
      * operand is null, and <, >, <=, >= give false (PHP's null + 5 is 5, null < 5 is true). bool?'s & and
      * | are three-valued: null & false is false, null | true is true, else null with a null operand.
@@ -402,6 +529,19 @@ trait EmitsExpressions
             if ($e->operand instanceof NameExpr) {
                 $this->requireAssigned($e->operand->name, $e->operand);
             }
+            $this->checkUnaryOperand($op, $target, $e);
+            if ($this->conversions->isEnum($target->type) && !$target->type->nullable && !$target->member?->isStaticAccessor) {
+                // e++: the next value of the enum (PHP's enums have no operators).
+                $enum = $this->classRef((string) $target->type->class);
+                $step = $op === '++' ? '+' : '-';
+                $assign = "{$target->code} = $enum::from({$target->code}->value $step 1)";
+                if (!$e->postfix || $this->discarded === $e) {
+                    return Emitted::value($assign, $target->type, Prec::ASSIGN);
+                }
+                $back = $op === '++' ? '-' : '+';
+
+                return Emitted::value("$enum::from(($assign)->value $back 1)", $target->type);
+            }
             if ($target->member?->isStaticAccessor) {
                 $step = $op === '++' ? '+' : '-';
                 $setter = $target->receiver . 'set_' . $target->member->name;
@@ -462,11 +602,12 @@ trait EmitsExpressions
             return Emitted::value($e->postfix ? $target->code . $op : $op . $target->code, $target->type, Prec::UNARY);
         }
 
-        $operand = $op === '!' ? $this->convert($e->operand, Type::bool()) : $this->charToInt($this->expr($e->operand));
-
+        $operand = $this->expr($e->operand, $op === '!' ? Type::bool() : null);
         if ($op === '-' && $operand->type->withNullable(false)->isClass() && ($negation = $this->negationMethod($operand, $e)) !== null) {
-            return $negation;
+            return $negation; // -span: an operator the class defines
         }
+        $this->checkUnaryOperand($op, $operand, $e);
+        $operand = $op === '!' ? $this->converted($operand, Type::bool(), $e->operand) : $this->charToInt($operand);
 
         // -5 is a constant too (array sizes, CS0248).
         // -x of a byte or short is an int; of a uint a long (C#'s unary promotion).
@@ -551,7 +692,11 @@ trait EmitsExpressions
     private function binary(BinaryExpr $e, ?Type $expected): Emitted
     {
         if ($e->operator === '&&' || $e->operator === '||') {
-            return $this->binaryOperation($e->operator, $this->convert($e->left, Type::bool()), $this->convert($e->right, Type::bool()), $e);
+            $left = $this->expr($e->left, Type::bool());
+            $right = $this->expr($e->right, Type::bool());
+            $this->checkBinaryOperands($e->operator, $left, $right, $e);
+
+            return $this->binaryOperation($e->operator, $this->converted($left, Type::bool(), $e->left), $this->converted($right, Type::bool(), $e->right), $e);
         }
         $left = $this->expr($e->left);
         $right = $this->expr($e->right, $e->operator === '??' ? $left->type->withNullable(false) : null);
@@ -561,6 +706,7 @@ trait EmitsExpressions
 
     private function binaryOperation(string $op, Emitted $l, Emitted $r, \SharpPhp\Syntax\Node $at): Emitted
     {
+        $operands = [$l, $r]; // as written, for checkBinaryOperands()
         // char is an integral type: 'a' + 1 === 98, c - '0' is a digit's value.
         // Two chars are still compared as strings ($c >= 'a'), which orders them the same way.
         $numberLike = static fn (Type $t): bool => !$t->nullable && ($t->isChar() || $t->isNumeric());
@@ -585,6 +731,11 @@ trait EmitsExpressions
             $type = $l->type->kind === 'closure' ? $l->type : $r->type;
 
             return Emitted::value("$delegate::" . ($op === '+' ? 'Combine' : 'Remove') . "({$l->code}, {$r->code})", $type->withNullable());
+        }
+        $this->checkBinaryOperands($op, $operands[0], $operands[1], $at);
+        $enumArithmetic = $this->enumArithmetic($op, $operands[0], $operands[1]);
+        if ($enumArithmetic !== null) {
+            return $enumArithmetic;
         }
 
         $lifted = $this->liftedOperation($op, $l, $r, $at);
@@ -910,6 +1061,15 @@ trait EmitsExpressions
         }
         $bothNumeric = $type->isNumeric() && $vt->isNumeric();
         $bothInt = $type->isInt() && $vt->isInt();
+        // i += 1.5, i += aLong: the value must convert to the variable's type (CS0266), as C# stores the
+        // result without a cast; a constant that fits it does (ul += 1).
+        if ($bothNumeric && $binaryOp !== '<<' && $binaryOp !== '>>') {
+            [$min, $max] = $type->isInt() ? Type::INTEGRAL_RANGES[$type->withNullable(false)->integralName()] ?? [PHP_INT_MIN, PHP_INT_MAX] : [0, -1];
+            $constantFits = $vt->isInt() && $value->intValue !== null && $type->isInt() && $value->intValue >= $min && $value->intValue <= $max;
+            if (!$constantFits && !$this->conversions->isImplicit($vt, $type)) {
+                throw $this->conversionError($value, $type, $e->value, null);
+            }
+        }
         // n += 5 of an int? that is null stays null (lifted); f += x of a float keeps single precision.
         if ((($type->nullable || $vt->nullable) && $bothNumeric) || ($type->nullable && $type->isBool())
             || ($type->kind === 'float' && $type->floatingName() === 'float' && $bothNumeric)) {
@@ -918,7 +1078,11 @@ trait EmitsExpressions
             return Emitted::value($target->code . ' = ' . $this->wrap($combined, Prec::ASSIGN), $type, Prec::ASSIGN);
         }
 
-        // Use PHP's compound operator when it has the same meaning as the C# one.
+        // Use PHP's compound operator when it has the same meaning as the C# one (s -= "b" is still CS0019;
+        // class operands go through binaryOperation(), which finds the operators classes define first).
+        if (!$type->isClass() && !$vt->isClass()) {
+            $this->checkBinaryOperands($binaryOp, $target, $value, $e);
+        }
         $compound = match ($binaryOp) {
             '+' => $type->isString() || $vt->isString() ? '.=' : ($bothNumeric ? '+=' : null),
             '/' => null, // intdiv() or fdiv(), never PHP's "/"
@@ -1023,12 +1187,40 @@ trait EmitsExpressions
         $condition = $this->convert($e->condition, Type::bool());
         $then = $this->expr($e->then, $expected);
         $else = $this->expr($e->else, $expected ?? $then->type);
+        if ($expected === null) {
+            $this->checkConditionalType($then, $else, $e);
+        }
 
         return Emitted::value(
             $this->wrap($condition, Prec::TERNARY + 1) . ' ? ' . $this->wrap($then, Prec::TERNARY + 1) . ' : ' . $this->wrap($else, Prec::TERNARY + 1),
             $this->unify($then->type, $else->type),
             Prec::TERNARY,
         );
+    }
+
+    /**
+     * C#'s CS0173: without a target type (var v = c ? 1 : "a"), a conditional expression takes the type
+     * one branch converts to; there must be one. With a target type (object o = c ? 1 : "a") C# 9 converts
+     * each branch to it instead. Only branches whose types are known (see operandKind()) are checked.
+     */
+    private function checkConditionalType(Emitted $then, Emitted $else, \SharpPhp\Syntax\Node $at): void
+    {
+        $a = $this->operandKind($then->type);
+        $b = $this->operandKind($else->type);
+        if ($a === null || $b === null || ($a === 'null' && $b === 'null')) {
+            return;
+        }
+        if ($a === 'null' || $b === 'null') {
+            // null and a value type have no type in common (int? is the target type's business).
+            $other = $a === 'null' ? $else : $then;
+            $ok = $other->type->nullable || in_array($this->operandKind($other->type), ['string', 'class'], true);
+        } else {
+            $ok = $this->conversions->isImplicit($then->type, $else->type, $then->type->isInt() && $then->intValue === 0)
+                || $this->conversions->isImplicit($else->type, $then->type, $else->type->isInt() && $else->intValue === 0);
+        }
+        if (!$ok) {
+            throw $this->error('SP0173', "Type of conditional expression cannot be determined because there is no implicit conversion between '{$then->type->describe()}' and '{$else->type->describe()}'", $at);
+        }
     }
 
     private function unify(Type $a, Type $b): Type
