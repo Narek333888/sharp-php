@@ -1,0 +1,57 @@
+using System;
+using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+
+// Expected output: what .NET 10 prints for this program.
+
+// Lifted operators of nullable values.
+int? a = null; int? b = 5;
+Console.WriteLine(((a + b) == null) + " " + (a < b) + " " + (a <= b) + " " + (-a == null) + " " + (b * 3) + " " + (b > 2));
+bool? t = null; Console.WriteLine((t & false) + " " + (t | true) + " " + ((t & true) == null));
+int? counter = null; counter += 5; counter++; Console.WriteLine(counter == null);
+
+// Exception filters are tried in order.
+try { throw new InvalidOperationException("io"); } catch (ArgumentException) { Console.WriteLine("arg"); } catch (InvalidOperationException e) when (e.Message.Length > 5) { Console.WriteLine("long"); } catch (Exception e) when (e.Message == "io") { Console.WriteLine("filtered " + e.Message); }
+
+// obj?.Member = value assigns (and evaluates the value) only when obj is not null.
+Holder none = null; none?.Value = Count(); var holder = new Holder(); holder?.Value = 6; holder?.Value += 4;
+Console.WriteLine(holder.Value + " " + Holder.Calls);
+
+// A method that hides a base method is chosen by the static type; an override by the object.
+Base asBase = new Derived(); Derived asDerived = new Derived();
+Console.WriteLine(asBase.Hidden() + " " + asDerived.Hidden() + " " + asBase.Who());
+
+// A static constructor runs at the class's first use.
+Console.WriteLine("before");
+Console.WriteLine(Lazy.Value);
+
+// Caller information.
+Where();
+try { string missing = null; ArgumentNullException.ThrowIfNull(missing); } catch (ArgumentNullException e) { Console.WriteLine(e.Message); }
+
+// Defaults of value types: structs, out variables, Find.
+var origin = default(Cell);
+Console.WriteLine(origin.X + " " + (origin.Name == null) + " " + default(Guid) + " " + default(TimeSpan));
+var dict = new Dictionary<string, int>();
+Console.WriteLine(dict.TryGetValue("x", out var found) + " " + found + " " + dict.GetValueOrDefault("x") + " " + new List<int> { 1 }.Find(x => x > 5));
+
+// (string) is a reference conversion; null passes through a string parameter.
+object text = "text"; object nothing = null;
+Console.WriteLine((string)text + " " + ((string)nothing == null) + " " + Length(null));
+try { object number = 5; var s = (string)number; } catch (InvalidCastException e) { Console.WriteLine(e.GetType().Name); }
+
+// Records and structs are equal by their fields.
+Console.WriteLine(new Named(null).Equals(new Named("")) + " " + new Num(null).Equals(new Num(0)) + " " + (new Point(1, 2) == new Point(1, 2)) + " " + new Cell { X = 1 }.Equals(new Cell { X = 1 }));
+
+static int Count() { Holder.Calls++; return 1; }
+static int Length(string s) => s == null ? -1 : s.Length;
+static void Where([CallerMemberName] string member = "", [CallerLineNumber] int line = 0) => Console.WriteLine(member + " " + line);
+
+class Holder { public int Value; public static int Calls; }
+class Base { public string Hidden() => "base"; public virtual string Who() => "base"; }
+class Derived : Base { public new string Hidden() => "derived"; public override string Who() => "derived"; }
+static class Lazy { public static int Value; static Lazy() { Console.WriteLine("static constructor"); Value = 42; } }
+struct Cell { public int X; public string Name; }
+record Named(string Name);
+record Num(int? N);
+record Point(int X, int Y);

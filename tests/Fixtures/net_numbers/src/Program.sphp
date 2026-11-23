@@ -1,0 +1,38 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+// Expected output: what .NET 10 prints for this program (en-US).
+
+// Doubles print their shortest round-trip digits; floats in single precision; decimals keep 15 digits.
+Console.WriteLine(0.1 + 0.2); Console.WriteLine(1.0 / 3); Console.WriteLine(1e15); Console.WriteLine(1e16); Console.WriteLine(1e17); Console.WriteLine(1e-5); Console.WriteLine(-0.0); Console.WriteLine(Math.PI);
+float f = 0.1f; Console.WriteLine(f + " " + 1.0f / 3 + " " + (double)0.1f + " " + 16777217f + " " + float.MaxValue + " " + float.Epsilon + " " + (0.1f + 0.2f) + " " + (f + 0.2));
+Console.WriteLine(double.MaxValue + " " + double.Epsilon + " " + (1.0 / 0) + " " + double.NaN);
+Console.WriteLine($"{0.1m + 0.2m} {(decimal)0.1} {2.5m:F0} {1.005m:F2}");
+
+// Integral types and casts (saturating, as .NET 9+).
+double big = 3e10, neg = -3e10, nan = double.NaN, b300 = 300.7, m5 = -5.5;
+Console.WriteLine(string.Join(" ", (int)big, (int)neg, (int)nan, (byte)b300, (byte)m5, (short)big, (ushort)m5, (uint)neg, (uint)big, (int)3.9, (int)-3.9));
+
+// Format strings.
+Console.WriteLine($"{1234567.891:N2}|{1234.5:F3}|{0.256:P1}|{42:D5}|{255:X}|{255:x4}|{-1:X}|{1234.5:E2}|{1234.5:G3}|{-1234.5:N0}|{1234.5:C}|{-5.0:C}|{2.5:F0}|{0.125:F2}|{2.675:F2}|{-0.001:F2}");
+Console.WriteLine($"{1234.5:0.00}|{1234.5:#,##0.0}|{0.5:#.##}|{5:000}|{1234567:#,#}|{0.1234:0.0%}|{-3.0:0.0;(0.0)}|{0.0:0.0;(0.0);zero}|{123:'#'000}|{-0.004:0.00}|{1234567890:#,##0,,}|{1234567890:(###) ###-####}|{1234.5:0.00E+0}|{0.000123:0.0e-00}|{7.5:0}|{1.45:0.0}");
+decimal m = 2.345m;
+Console.WriteLine(m.ToString("F2") + " " + 2.5m.ToString("F0") + " " + (-2.5m).ToString("N0") + " " + 2.355m.ToString("#.##"));
+
+// Parsing.
+Console.WriteLine(double.Parse("1,234.5") + " " + double.Parse("NaN") + " " + double.Parse("1e3") + " " + double.TryParse("1.5,0", out var bad) + " " + bad + " " + int.Parse(" 42 ") + " " + int.TryParse("1,000", out var n) + " " + n);
+
+// Math with NaN and signed zeros; Clamp's argument check.
+Console.WriteLine(Math.Max(double.NaN, 1) + " " + Math.Min(1, double.NaN) + " " + 1 / Math.Min(-0.0, 0.0) + " " + Math.Clamp(15, 0, 10) + " " + Math.Round(2.5) + " " + Math.Round(2.5, MidpointRounding.AwayFromZero));
+try { Math.Sign(double.NaN); } catch (ArithmeticException e) { Console.WriteLine(e.Message); }
+try { Math.Clamp(5, 3, 1); } catch (ArgumentException e) { Console.WriteLine(e.Message); }
+
+// A seeded Random gives .NET's numbers.
+var random = new Random(42);
+Console.WriteLine(string.Join(" ", random.Next(), random.Next(), random.Next(100), random.Next(5, 10), random.Next(-1000000000, 2000000000)) + " " + random.NextDouble());
+
+// Strings: simple case mapping, Split counts, ordinal comparison.
+Console.WriteLine(string.Join(" ", "ß".ToUpper(), "ﬁ".ToUpper(), "ΣΑΣ".ToLower(), "ǅ".ToUpper(), char.ToUpper('ß')));
+Console.WriteLine(string.Join("|", "a,b,c,d".Split(',', 2)) + " " + string.Join("|", "a,,b,c".Split(',', 2, StringSplitOptions.RemoveEmptyEntries)) + " " + string.Join("|", " a , ,b ".Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) + " " + string.Join("|", "a b\tc".Split()));
+Console.WriteLine(string.Compare("a", "B", StringComparison.Ordinal) + " " + string.Compare("", "a", StringComparison.Ordinal) + " " + string.Compare("Z", "a", StringComparison.OrdinalIgnoreCase));

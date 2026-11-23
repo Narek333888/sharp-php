@@ -1,0 +1,36 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+// Expected output: what .NET 10 prints for this program.
+
+// Dictionary and HashSet reuse the slots of removed entries.
+var d = new Dictionary<int, int> { { 1, 0 }, { 2, 0 }, { 3, 0 } }; d.Remove(1); d.Remove(3); d[4] = 0; d[5] = 0; d[6] = 0;
+var s = new HashSet<string> { "a", "b", "c", "d" }; s.Remove("b"); s.Remove("a"); s.Add("x"); s.Add("y");
+Console.WriteLine(string.Join(",", d.Keys) + " " + string.Join(",", s));
+
+// Changing a collection during foreach: adding throws, removing from a Dictionary is allowed.
+foreach (var kv in d) d.Remove(kv.Key);
+Console.WriteLine(d.Count);
+try { var q = new Queue<int>(new[] { 1 }); foreach (var x in q) q.Enqueue(2); } catch (InvalidOperationException e) { Console.WriteLine(e.Message); }
+
+// LINQ aggregates: nulls are skipped; no elements of a value type throws; Sum is checked.
+int?[] values = { 1, null, 3 };
+Console.WriteLine(values.Sum() + " " + values.Max() + " " + values.Min() + " " + values.Average() + " " + (new int?[0].Max() == null) + " " + new[] { "b", null, "a" }.Max());
+try { new int[0].Max(); } catch (InvalidOperationException e) { Console.WriteLine(e.Message); }
+try { Console.WriteLine(new[] { int.MaxValue, 1 }.Sum()); } catch (OverflowException e) { Console.WriteLine(e.Message); }
+Console.WriteLine(new[] { int.MaxValue, 1L }.Sum() + " " + new[] { 1, 2.5 }.GetType().Name + " " + 5L.GetType().Name);
+
+// Task.Wait() and Result throw an AggregateException; await throws the exception itself.
+try { Task.Run(() => throw new InvalidOperationException("in task")).Wait(); } catch (AggregateException e) { Console.WriteLine(e.Message + " " + e.InnerExceptions.Count); }
+try { Task.WhenAll(Task.FromException(new FormatException("a")), Task.FromException(new InvalidOperationException("b"))).Wait(); } catch (AggregateException e) { Console.WriteLine(e.Message); }
+try { await Task.FromException(new FormatException("awaited")); } catch (FormatException e) { Console.WriteLine(e.Message); }
+
+// JSON as System.Text.Json writes it.
+Console.WriteLine(JsonSerializer.Serialize(new { Name = "q\" <a>&'+` é", Score = 0.1 + 0.2, Big = 1e21, Nil = (string)null, Tags = new[] { 1, 2 } }));
+
+// Types and arrays as text.
+char[] letters = { 'h', 'i' }; Array.Reverse(letters);
+Console.WriteLine(letters); Console.WriteLine(new int[0]); Console.WriteLine(new List<int>().GetType().Name + " " + new Queue<string>());

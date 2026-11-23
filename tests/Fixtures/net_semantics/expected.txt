@@ -1,0 +1,16 @@
+True False False True 15 True
+False True True
+True
+filtered io
+10 0
+base derived derived
+before
+static constructor
+42
+<Main>$ 29
+Value cannot be null. (Parameter 'missing')
+0 True 00000000-0000-0000-0000-000000000000 00:00:00
+False 0 0 0
+text True -1
+InvalidCastException
+False False True True
