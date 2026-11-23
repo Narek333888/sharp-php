@@ -960,7 +960,9 @@ trait EmitsMembers
                 [$code] = $this->arguments($args, []);
 
                 if ($code !== '') {
-                    return Emitted::value("$op::format({$target->code}, $code)", Type::string());
+                    $helper = $t->kind === 'float' && $t->floatingName() === 'decimal' ? 'formatDecimal' : 'format';
+
+                    return Emitted::value("$op::$helper({$target->code}, $code)", Type::string());
                 }
                 $text = $this->asString(new Emitted($target->code, $t->withNullable(false), $target->prec));
 

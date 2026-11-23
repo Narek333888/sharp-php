@@ -112,6 +112,12 @@ final class Op
      * Scientific notation when the exponent reaches the precision (17 for the shortest digits, as .NET:
      * 1E+16 is 10000000000000000, 1E+17 is 1E+17) or is below -4.
      */
+    /** @internal "G" with a precision, for NumberFormat. */
+    public static function formatGeneral(float $value, int $precision): string
+    {
+        return self::general($value, $precision);
+    }
+
     private static function general(float $value, ?int $precision, int $shortestLimit = 17): string
     {
         // var_export() writes the shortest round-trip digits (serialize_precision -1).
@@ -279,6 +285,16 @@ final class Op
         return mb_str_pad($text, abs($width), ' ', $width < 0 ? STR_PAD_RIGHT : STR_PAD_LEFT);
     }
 
+    /**
+     * value.ToString(format) of a decimal: decimals round half away from zero (2.345m with F2 is 2.35).
+     *
+     * @internal
+     */
+    public static function formatDecimal(mixed $value, string $format): string
+    {
+        return is_int($value) || is_float($value) ? NumberFormat::format($value, $format, decimal: true) : self::format($value, $format);
+    }
+
     /** Standard and custom C# format strings: F2, N0, D5, X, P1, E3, 0.00, yyyy-MM-dd ... */
     public static function format(mixed $value, string $format): string
     {
@@ -297,70 +313,7 @@ final class Op
             return self::str($value);
         }
 
-        if (preg_match('/^([A-Za-z])(\d{0,2})$/', $format, $m)) {
-            $kind = strtoupper($m[1]);
-            $digits = $m[2] === '' ? null : (int) $m[2];
-
-            return match ($kind) {
-                'F' => number_format((float) $value, $digits ?? 2, '.', ''),
-                'N' => number_format((float) $value, $digits ?? 2, '.', ','),
-                'D' => is_int($value)
-                    ? ($value < 0 ? '-' : '') . str_pad((string) abs($value), $digits ?? 0, '0', STR_PAD_LEFT)
-                    : throw new FormatException('Format specifier was invalid.'),
-                'X' => is_int($value)
-                    ? str_pad($m[1] === 'x' ? dechex($value) : strtoupper(dechex($value)), $digits ?? 0, '0', STR_PAD_LEFT)
-                    : throw new FormatException('Format specifier was invalid.'),
-                'P' => number_format((float) $value * 100, $digits ?? 2, '.', ',') . ' %',
-                'E' => self::exponential((float) $value, $digits ?? 6, $m[1] === 'e'),
-                'C' => ($value < 0 ? '-' : '') . '$' . number_format(abs((float) $value), $digits ?? 2, '.', ','),
-                'G' => is_float($value) && $digits !== null && $digits > 0 ? self::general($value, $digits) : self::str($value),
-                'R' => is_float($value) ? self::general($value, null) : self::str($value),
-                default => throw new FormatException('Format specifier was invalid.'),
-            };
-        }
-
-        // Custom numeric format: 0.00, #,##0.0, 000
-        if (preg_match('/^[#0,.]+$/', $format)) {
-            $parts = explode('.', $format, 2);
-            $decimals = isset($parts[1]) ? strlen($parts[1]) : 0;
-            $minDecimals = isset($parts[1]) ? strlen(rtrim($parts[1], '#')) : 0;
-            $text = number_format((float) $value, $decimals, '.', str_contains($parts[0], ',') ? ',' : '');
-            if ($decimals > $minDecimals && str_contains($text, '.')) {
-                [$int, $frac] = explode('.', $text);
-                $frac = rtrim($frac, '0');
-                $frac = str_pad($frac, $minDecimals, '0');
-                $text = $frac === '' ? $int : $int . '.' . $frac;
-            }
-            $minInt = strlen(str_replace([',', '#'], '', $parts[0]));
-            [$int] = explode('.', $text);
-            $sign = str_starts_with($int, '-') ? '-' : '';
-            $digitsOnly = ltrim($int, '-');
-            if (strlen(str_replace(',', '', $digitsOnly)) < $minInt) {
-                $text = $sign . str_pad($digitsOnly, $minInt, '0', STR_PAD_LEFT) . substr($text, strlen($int));
-            }
-
-            return $text;
-        }
-
-        return self::str($value);
-    }
-
-    private static function exponential(float $value, int $digits, bool $lower): string
-    {
-        // .NET rounds a half away from zero (1234.5 with E3 is 1.235E+003); sprintf() rounds it to even.
-        if ($value != 0 && is_finite($value)) {
-            $exponent = (int) floor(log10(abs($value)));
-            $mantissa = round($value / 10 ** $exponent, $digits, PHP_ROUND_HALF_UP);
-            if (abs($mantissa) >= 10) {
-                [$mantissa, $exponent] = [$mantissa / 10, $exponent + 1];
-            }
-            $text = number_format($mantissa, $digits, '.', '') . 'E' . ($exponent < 0 ? '-' : '+') . abs($exponent);
-        } else {
-            $text = sprintf('%.' . $digits . 'E', $value);
-        }
-        $text = preg_replace_callback('/E([+-])(\d+)/', static fn (array $m): string => 'E' . $m[1] . str_pad($m[2], 3, '0', STR_PAD_LEFT), $text) ?? $text;
-
-        return $lower ? strtolower($text) : $text;
+        return NumberFormat::format($value, $format);
     }
 
     private static function dateFormat(string $format): string

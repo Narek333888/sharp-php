@@ -156,7 +156,7 @@ trait EmitsExpressions
     {
         $value = $this->expr($hole->expr);
         $text = $hole->format !== null
-            ? Emitted::value($this->runtime('Op') . '::format(' . $value->code . ', ' . self::phpString($hole->format) . ')', Type::string())
+            ? Emitted::value($this->runtime('Op') . '::' . ($value->type->kind === 'float' && $value->type->floatingName() === 'decimal' ? 'formatDecimal' : 'format') . '(' . $value->code . ', ' . self::phpString($hole->format) . ')', Type::string())
             : $this->asString($value);
         if ($hole->alignment === null) {
             return $text;
