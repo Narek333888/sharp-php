@@ -508,7 +508,7 @@ final class NumberFormat
             return ['1', $scale + 1];
         }
 
-        return [substr($kept, 0, -1) . chr(ord($kept[-1]) + 1), $scale];
+        return [substr($kept, 0, -1) . ((int) $kept[-1] + 1), $scale]; // the last digit is 0-8 here
     }
 
     /**
