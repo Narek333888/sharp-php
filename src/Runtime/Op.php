@@ -143,6 +143,17 @@ final class Op
     }
 
     /**
+     * An array as text: its type's name ("System.Int32[]"), which the compiler knows; null is "".
+     *
+     * @internal
+     * @param array<mixed>|null $array
+     */
+    public static function arrayName(?array $array, string $name): string
+    {
+        return $array === null ? '' : $name;
+    }
+
+    /**
      * A double as .NET's ToString() writes it: the shortest digits that read back as the same double
      * (0.30000000000000004, 1E+21, 5E-324).
      *

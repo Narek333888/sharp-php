@@ -86,6 +86,11 @@ class Queue implements \IteratorAggregate, \Countable, \JsonSerializable
         $this->version++;
     }
 
+    public function ToString(): string
+    {
+        return 'System.Collections.Generic.Queue`1[' . \SharpPhp\Runtime\TypeName::ofSpec($this->of ?? 'mixed') . ']';
+    }
+
     /** @return \Generator<int, T> */
     public function getIterator(): \Generator
     {

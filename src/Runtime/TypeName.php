@@ -27,6 +27,7 @@ final class TypeName
     public static function ofClass(string $class): string
     {
         $class = ltrim($class, '\\');
+        $original = $class;
         if (isset(self::NATIVE[$class])) {
             return self::NATIVE[$class];
         }
@@ -39,9 +40,25 @@ final class TypeName
         if (str_ends_with($last, '_') && in_array(strtolower(substr($last, 0, -1)), self::RESERVED, true)) {
             $last = substr($last, 0, -1);
         }
-        $parts[] = $last;
+        $parts[] = $last . self::arity($original);
 
         return implode('.', $parts);
+    }
+
+    /** @var array<string, string> */
+    private static array $arities = [];
+
+    /** "`1" for a generic class (List<T>), as .NET names them: List`1; "" otherwise. */
+    private static function arity(string $class): string
+    {
+        if (!isset(self::$arities[$class])) {
+            $count = class_exists($class) || interface_exists($class)
+                ? preg_match_all('/@template\s+\w+/', (string) (new \ReflectionClass($class))->getDocComment())
+                : 0;
+            self::$arities[$class] = $count > 0 ? '`' . $count : '';
+        }
+
+        return self::$arities[$class];
     }
 
     public static function of(mixed $value): string

@@ -178,8 +178,29 @@ trait EmitsExpressions
         if ($value->type->isInt() && !$value->type->nullable) {
             return $value;
         }
+        // An array as text is its type's name, as in .NET ("System.Int32[]"); PHP knows no element type.
+        if ($value->type->kind === 'array' && !$value->type->isPhpArray()) {
+            return Emitted::value($this->runtime('Op') . "::arrayName({$value->code}, " . self::phpString($this->netTypeName($value->type)) . ')', Type::string());
+        }
 
         return Emitted::value($this->runtime('Op') . '::str(' . $value->code . ')', Type::string());
+    }
+
+    /** The .NET name of a type, as GetType().ToString() gives it: "System.Int32[]", "System.Int64". */
+    private function netTypeName(Type $type): string
+    {
+        $integrals = ['sbyte' => 'SByte', 'byte' => 'Byte', 'short' => 'Int16', 'ushort' => 'UInt16', 'int' => 'Int32', 'uint' => 'UInt32', 'long' => 'Int64', 'ulong' => 'UInt64'];
+
+        return match (true) {
+            $type->kind === 'array' => $this->netTypeName($type->element()) . '[]',
+            $type->isInt() => 'System.' . ($integrals[$type->integralName()] ?? 'Int32'),
+            $type->isChar() => 'System.Char',
+            $type->isString() => 'System.String',
+            $type->isBool() => 'System.Boolean',
+            $type->kind === 'float' => 'System.Double',
+            $type->isClass() => \SharpPhp\Runtime\TypeName::ofClass((string) $type->class),
+            default => 'System.Object',
+        } . ($type->nullable && $this->conversions->isValueType($type) && $type->kind !== 'array' ? '' : '');
     }
 
     // ------------------------------------------------------------------

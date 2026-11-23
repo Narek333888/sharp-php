@@ -73,6 +73,11 @@ class Stack implements \IteratorAggregate, \Countable, \JsonSerializable
         $this->version++;
     }
 
+    public function ToString(): string
+    {
+        return 'System.Collections.Generic.Stack`1[' . \SharpPhp\Runtime\TypeName::ofSpec($this->of ?? 'mixed') . ']';
+    }
+
     /**
      * Enumerates from the top of the stack, like C#.
      *

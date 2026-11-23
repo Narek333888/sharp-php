@@ -759,6 +759,14 @@ trait EmitsMembers
         }
 
         [$code, $values] = $this->arguments($args, $member->params, $subst, $elementHint, $runtime, phpCode: self::isPhpCode($member->owner));
+        // Console.Write(chars) writes the chars (C#'s char[] overload); another array, its type's name.
+        if (count($values) === 1 && in_array($member->name, ['Write', 'WriteLine'], true) && isset($values[0])
+            && strcasecmp($member->owner->fqn, Names::RUNTIME_NAMESPACE . '\\System\\Console') === 0
+            && $values[0]->type->kind === 'array' && !$values[0]->type->isPhpArray()) {
+            $code = $values[0]->type->element()->isChar()
+                ? "\\implode('', {$values[0]->code} ?? [])"
+                : $this->runtime('Op') . "::arrayName({$values[0]->code}, " . self::phpString($this->netTypeName($values[0]->type)) . ')';
+        }
 
         foreach ($member->params as $i => $param) {
             if (isset($values[$i])) {
