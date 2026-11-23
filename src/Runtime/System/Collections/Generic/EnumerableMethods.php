@@ -125,7 +125,7 @@ trait EnumerableMethods
         return Enumerable::Sum($this->sequence(), $selector);
     }
 
-    public function Average(?\Closure $selector = null): float
+    public function Average(?\Closure $selector = null): ?float
     {
         return Enumerable::Average($this->sequence(), $selector);
     }

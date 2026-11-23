@@ -260,7 +260,7 @@ final class Enumerable
     {
         $sum = 0;
         foreach ($source as $item) {
-            $sum += self::number($selector === null ? $item : $selector($item));
+            $sum += self::number($selector === null ? $item : $selector($item)); // a null counts 0, as .NET skips it
         }
 
         return $sum;
@@ -270,19 +270,51 @@ final class Enumerable
      * @template TSource
      * @param iterable<TSource> $source
      */
-    public static function Average(iterable $source, ?\Closure $selector = null): float
+    public static function Average(iterable $source, ?\Closure $selector = null): ?float
     {
+        // As .NET: nulls (of int?, double?, ...) are skipped; no value at all gives null, which the
+        // compiler turns into InvalidOperationException for a sequence of a non-nullable type.
         $sum = 0;
         $count = 0;
         foreach ($source as $item) {
-            $sum += self::number($selector === null ? $item : $selector($item));
+            $value = $selector === null ? $item : $selector($item);
+            if ($value === null) {
+                continue;
+            }
+            $sum += self::number($value);
             $count++;
         }
-        if ($count === 0) {
-            throw new InvalidOperationException('Sequence contains no elements');
+
+        return $count === 0 ? null : $sum / $count;
+    }
+
+    /**
+     * Min(), Max() and Average() of a sequence of a non-nullable value type: InvalidOperationException
+     * for no elements (their result is null then).
+     *
+     * @internal the compiler emits it
+     * @template T
+     * @param T|null $result
+     * @return T
+     */
+    public static function required(mixed $result): mixed
+    {
+        return $result ?? throw new InvalidOperationException('Sequence contains no elements');
+    }
+
+    /**
+     * Sum() of ints and longs is checked, as in .NET: OverflowException past the type's range.
+     *
+     * @internal the compiler emits it
+     * @param 'int'|'long' $type
+     */
+    public static function checkedSum(int|float $sum, string $type): int
+    {
+        if (is_float($sum) || ($type === 'int' && ($sum > 2147483647 || $sum < -2147483648))) {
+            throw new \SharpPhp\Runtime\System\OverflowException('Arithmetic operation resulted in an overflow.');
         }
 
-        return $sum / $count;
+        return $sum;
     }
 
     /**
@@ -309,17 +341,18 @@ final class Enumerable
      */
     private static function extreme(iterable $source, ?\Closure $selector, int $direction): mixed
     {
+        // As .NET: nulls are skipped (int?, strings); no value at all gives null (see required()).
         $best = null;
         $found = false;
         foreach ($source as $item) {
             $value = $selector === null ? $item : $selector($item);
+            if ($value === null) {
+                continue;
+            }
             if (!$found || Op::compare($value, $best) === $direction) {
                 $best = $value;
                 $found = true;
             }
-        }
-        if (!$found) {
-            throw new InvalidOperationException('Sequence contains no elements');
         }
 
         return $best;

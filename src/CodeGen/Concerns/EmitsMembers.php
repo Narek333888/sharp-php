@@ -784,7 +784,7 @@ trait EmitsMembers
         $outDefaults = $this->lastOutDefaults;
         $result = Emitted::value($prefix . $member->name . '(' . $code . ')', $this->resultType($member, $subst, $values, $elementHint));
         $this->lastOutDefaults = $outDefaults;
-        $result = $this->withOutDefaults($result);
+        $result = $this->linqAggregate($member, $this->withOutDefaults($result), $elementHint, $values);
         // list.Find(...) and dict.GetValueOrDefault(key) return T (declared T|null for PHP): for a value
         // type T its default, not null.
         if (in_array($member->name, ['Find', 'FindLast', 'GetValueOrDefault', 'FirstOrDefault', 'LastOrDefault', 'SingleOrDefault', 'ElementAtOrDefault'], true)
@@ -923,6 +923,12 @@ trait EmitsMembers
         // object.GetType(), for every value (numbers and strings too).
         if ($name === 'GetType' && $args === [] && $t->kind !== 'closure') {
             $typeClass = $this->runtime('System\\Type');
+            // A value type is sealed, so its static type is its type at run time (5L is an Int64), and an
+            // array's element type is known only here.
+            $static = !$t->nullable && (($t->isInt() && $t->integralName() !== Type::UNSIZED) || $t->isChar() || $t->isBool() || $t->kind === 'float' || ($t->kind === 'array' && !$t->isPhpArray()));
+            if ($static) {
+                return Emitted::value("$typeClass::named(" . self::phpString($this->netTypeName($t)) . ')', Type::class(Names::RUNTIME_NAMESPACE . '\\System\\Type'));
+            }
 
             return $this->nullSafe($target, $nc, static fn (string $c): string => "$typeClass::fromValue($c)", Type::class(Names::RUNTIME_NAMESPACE . '\\System\\Type'));
         }
@@ -1152,6 +1158,9 @@ trait EmitsMembers
             }
         }
         $type = $this->resultType($member, $subst, $values, $elementType);
+        if (in_array($name, ['Min', 'Max', 'Average', 'Sum'], true) && !$callee->nullConditional) {
+            return $this->linqAggregate($member, Emitted::value("$classRef::$name({$target->code}" . ($code !== '' ? ", $code" : '') . ')', $type), $elementType, $values);
+        }
         if ($this->lastOutDefaults !== []) {
             $call = $this->withOutDefaults(Emitted::value("$classRef::$name({$target->code}" . ($code !== '' ? ", $code" : '') . ')', $type));
 
@@ -1368,6 +1377,37 @@ trait EmitsMembers
 
     /** @var list<array{0: string, 1: string}> the out variables of the last arguments() and their defaults */
     private array $lastOutDefaults = [];
+
+    /**
+     * LINQ's Min, Max, Average and Sum, as .NET computes them: of a non-nullable value type they throw for
+     * no elements (the runtime gives null), and a Sum of ints or longs is checked for overflow.
+     *
+     * @param array<int, Emitted> $values
+     */
+    private function linqAggregate(MemberSymbol $member, Emitted $call, ?Type $element, array $values): Emitted
+    {
+        if (!in_array($member->name, ['Min', 'Max', 'Average', 'Sum'], true) || !self::isRuntimeLibrary($member->owner)
+            || !in_array($member->owner->shortName(), ['Enumerable', 'List', 'HashSet', 'Dictionary', 'Queue', 'Stack', 'IOrderedEnumerable', 'Grouping', 'Sequence'], true)) {
+            return $call;
+        }
+        $last = end($values);
+        $aggregated = $last !== false && $last->type->kind === 'closure' ? $last->type->closureReturn() : $element;
+        if ($aggregated === null || $aggregated->isUnknown()) {
+            return $call;
+        }
+        $enumerable = $this->runtime('System\\Linq\\Enumerable');
+        if ($member->name === 'Sum') {
+            $integral = $aggregated->isInt() && in_array($aggregated->integralName(), ['int', 'long'], true) ? $aggregated->integralName() : null;
+
+            return $integral === null ? $call : Emitted::value("$enumerable::checkedSum({$call->code}, '$integral')", Type::integral($integral));
+        }
+        $type = $member->name === 'Average' ? Type::float() : $aggregated;
+        if ($aggregated->nullable || !$this->isValueType($aggregated)) {
+            return Emitted::value($call->code, $type->withNullable());
+        }
+
+        return Emitted::value("$enumerable::required({$call->code})", $type->withNullable(false));
+    }
 
     /** The call, then each value-type out variable it left null set to its default (see arguments()). */
     private function withOutDefaults(Emitted $call): Emitted

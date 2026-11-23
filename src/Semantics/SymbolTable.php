@@ -20,6 +20,14 @@ use ReflectionUnionType;
  */
 final class SymbolTable
 {
+    /** The runtime classes of the integral types: their constants have the type. */
+    private const INTEGRAL_CLASSES = [
+        'SharpPhp\\Runtime\\System\\Int32' => 'int', 'SharpPhp\\Runtime\\System\\Int64' => 'long',
+        'SharpPhp\\Runtime\\System\\Int16' => 'short', 'SharpPhp\\Runtime\\System\\UInt16' => 'ushort',
+        'SharpPhp\\Runtime\\System\\UInt32' => 'uint', 'SharpPhp\\Runtime\\System\\UInt64' => 'ulong',
+        'SharpPhp\\Runtime\\System\\Byte' => 'byte', 'SharpPhp\\Runtime\\System\\SByte' => 'sbyte',
+    ];
+
     /** A closure type in a docblock: \Closure(int, string): bool (PHPStan syntax). */
     private const CLOSURE_DOC = '\\\\?(?:Closure|callable)\([^)\r\n]*\)\s*:\s*[^\s$]+';
 
@@ -456,6 +464,11 @@ final class SymbolTable
                 continue; // a combination of a flags enum's cases (StringSplitOptions: A | B)
             }
             $type = $isCase ? Type::class($symbol->fqn) : $this->valueType($constant->getValue());
+            // int.MaxValue is an int, long.MaxValue a long (PHP's integers have no size).
+            $integral = self::INTEGRAL_CLASSES[$symbol->fqn] ?? null;
+            if ($integral !== null && $type->isInt()) {
+                $type = Type::integral($integral);
+            }
             $symbol->addMember(new MemberSymbol($isCase ? 'case' : 'const', $constant->getName(), true, $type, $symbol));
         }
 

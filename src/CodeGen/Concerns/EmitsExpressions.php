@@ -186,6 +186,37 @@ trait EmitsExpressions
         return Emitted::value($this->runtime('Op') . '::str(' . $value->code . ')', Type::string());
     }
 
+    /**
+     * C#'s best common type: the element type all the others convert to implicitly ({ 1, 2.5 } is double,
+     * { 1, 2L } long, { "a", null } string); null when there is none or a type is not known.
+     *
+     * @param list<Type> $types
+     */
+    private function bestCommonType(array $types): ?Type
+    {
+        $known = array_values(array_filter($types, static fn (Type $t): bool => !$t->isNull()));
+        if ($known === [] || array_filter($known, static fn (Type $t): bool => $t->isUnknown() || $t->kind === 'closure') !== []) {
+            return null;
+        }
+        foreach ($known as $candidate) {
+            if ($candidate->isInt() && $candidate->integralName() === Type::UNSIZED) {
+                continue; // an integer of PHP code fits any integral type
+            }
+            $all = true;
+            foreach ($types as $t) {
+                if (!$this->conversions->isImplicit($t, $candidate)) {
+                    $all = false;
+                    break;
+                }
+            }
+            if ($all) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
     /** The .NET name of a type, as GetType().ToString() gives it: "System.Int32[]", "System.Int64". */
     private function netTypeName(Type $type): string
     {
@@ -1306,6 +1337,17 @@ trait EmitsExpressions
         }
 
         $elements = [];
+        if ($elementType === null && count($e->elements) > 1) {
+            // new[] { 1, 2L }: the best common type of the elements, as in C# (long here), each element
+            // evaluated once and then converted to it.
+            $values = array_map(fn (Expr $element): Emitted => $this->expr($element), $e->elements);
+            $best = $this->bestCommonType(array_map(static fn (Emitted $v): Type => $v->type, $values));
+            foreach ($values as $i => $value) {
+                $elements[] = $best === null ? $value->code : $this->converted($value, $best, $e->elements[$i])->code;
+            }
+
+            return Emitted::value('[' . implode(', ', $elements) . ']', Type::array($best ?? $values[0]->type));
+        }
         foreach ($e->elements as $element) {
             $value = $elementType !== null ? $this->convert($element, $elementType) : $this->expr($element);
             $elementType ??= $value->type;
