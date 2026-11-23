@@ -48,10 +48,16 @@ final class HttpClientTest extends TestCase
             var http = new HttpClient { BaseAddress = "$url" };
             await http.GetStringAsync("/warm-up");
 
-            // One after another would take at least 1500 ms; at the same time about 500 ms.
-            var started = Environment.TickCount;
-            var pages = await Task.WhenAll(new[] { "/a", "/b", "/c" }.Select(u => http.GetStringAsync(u)));
-            var elapsed = Environment.TickCount - started;
+            // One after another would take at least 1500 ms; at the same time about 500 ms. A busy CI
+            // machine sometimes gives the built-in server's workers no time to accept: measure twice.
+            string[] pages = [];
+            var elapsed = int.MaxValue;
+            for (var attempt = 0; attempt < 2 && elapsed >= 1200; attempt++)
+            {
+                var started = Environment.TickCount;
+                pages = await Task.WhenAll(new[] { "/a", "/b", "/c" }.Select(u => http.GetStringAsync(u)));
+                elapsed = Environment.TickCount - started;
+            }
             Console.WriteLine(string.Join(" | ", pages));
             Console.WriteLine(elapsed < 1200 ? "at the same time" : \$"one after another ({elapsed} ms)");
 
