@@ -1197,17 +1197,22 @@ trait EmitsExpressions
     private function place(Expr $e, bool $reference = false): Emitted
     {
         // A constant, a foreach variable and a using variable cannot be changed.
-        $kind = $e instanceof NameExpr && $this->scope->lookup($e->name) !== null ? $this->scope->kindOf($e->name) : null;
-        $what = ['foreach' => 'foreach iteration variable', 'using' => 'using variable'][$kind] ?? null;
+        $name = $e instanceof NameExpr ? $e->name : '';
+        $kind = $name !== '' && $this->scope->lookup($name) !== null ? $this->scope->kindOf($name) : null;
+        $what = match ($kind) {
+            'foreach' => 'foreach iteration variable',
+            'using' => 'using variable',
+            default => null,
+        };
         if ($kind === 'const') {
             throw $reference
                 ? $this->error('SP1510', 'A ref or out value must be an assignable variable', $e)
                 : $this->error('SP0131', 'The left-hand side of an assignment must be a variable, property or indexer', $e);
         }
-        if ($what !== null && $e instanceof NameExpr) {
+        if ($what !== null) {
             throw $reference
-                ? $this->error('SP1657', "Cannot use '{$e->name}' as a ref or out value because it is a '$what'", $e)
-                : $this->error('SP1656', "Cannot assign to '{$e->name}' because it is a '$what'", $e);
+                ? $this->error('SP1657', "Cannot use '$name' as a ref or out value because it is a '$what'", $e)
+                : $this->error('SP1656', "Cannot assign to '$name' because it is a '$what'", $e);
         }
         $result = match (true) {
             $e instanceof NameExpr => $this->valueOf($this->name($e, 'assign'), $e),
