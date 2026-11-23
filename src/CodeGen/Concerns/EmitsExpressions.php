@@ -377,6 +377,22 @@ trait EmitsExpressions
             : Emitted::value("$op_::lifted($closure, {$l->code}, {$r->code})", $inner->type->withNullable());
     }
 
+    /**
+     * The value of a double or float constant: a literal (1.5, -2e10) or a constant of System.Double or
+     * System.Single (NaN, PositiveInfinity, NegativeInfinity, MaxValue, MinValue, Epsilon); null otherwise.
+     */
+    private function floatingConstant(Emitted $value): ?float
+    {
+        if (is_numeric($value->code)) {
+            return (float) $value->code;
+        }
+        // Double::NaN, \\SharpPhp\\Runtime\\System\\Single::MaxValue: the runtime's constants.
+        if (preg_match('/^\\\\?(?:[\\w\\\\]*\\\\)?(Double|Single)::(NaN|PositiveInfinity|NegativeInfinity|MaxValue|MinValue|Epsilon)$/', $value->code, $m) !== 1) {
+            return null;
+        }
+        return (float) constant(Names::RUNTIME_NAMESPACE . '\\System\\' . $m[1] . '::' . $m[2]);
+    }
+
     /** A float (System.Single) result is rounded to single precision, as C# computes float arithmetic. */
     private function singleRounded(Emitted $value): Emitted
     {
@@ -733,6 +749,9 @@ trait EmitsExpressions
             return Emitted::value("$delegate::" . ($op === '+' ? 'Combine' : 'Remove') . "({$l->code}, {$r->code})", $type->withNullable());
         }
         $this->checkBinaryOperands($op, $operands[0], $operands[1], $at);
+        if (($op === '/' || $op === '%') && $r->type->isInt() && $r->intValue === 0 && $l->type->isInt() && $l->intValue !== null) {
+            throw $this->error('SP0020', 'Division by constant zero', $at);
+        }
         $enumArithmetic = $this->enumArithmetic($op, $operands[0], $operands[1]);
         if ($enumArithmetic !== null) {
             return $enumArithmetic;
@@ -1156,8 +1175,22 @@ trait EmitsExpressions
     }
 
     /** An expression used as an assignment target (variable, property, indexer). */
-    private function place(Expr $e): Emitted
+    /** @param bool $reference passed as ref or out (CS1657, CS1510) rather than assigned */
+    private function place(Expr $e, bool $reference = false): Emitted
     {
+        // A constant, a foreach variable and a using variable cannot be changed.
+        $kind = $e instanceof NameExpr && $this->scope->lookup($e->name) !== null ? $this->scope->kindOf($e->name) : null;
+        $what = ['foreach' => 'foreach iteration variable', 'using' => 'using variable'][$kind] ?? null;
+        if ($kind === 'const') {
+            throw $reference
+                ? $this->error('SP1510', 'A ref or out value must be an assignable variable', $e)
+                : $this->error('SP0131', 'The left-hand side of an assignment must be a variable, property or indexer', $e);
+        }
+        if ($what !== null && $e instanceof NameExpr) {
+            throw $reference
+                ? $this->error('SP1657', "Cannot use '{$e->name}' as a ref or out value because it is a '$what'", $e)
+                : $this->error('SP1656', "Cannot assign to '{$e->name}' because it is a '$what'", $e);
+        }
         $result = match (true) {
             $e instanceof NameExpr => $this->valueOf($this->name($e, 'assign'), $e),
             $e instanceof MemberAccessExpr => $this->valueOf($this->memberAccess($e, 'assign'), $e),
@@ -1309,9 +1342,10 @@ trait EmitsExpressions
                     return $this->narrowed(Emitted::value($this->wrap($value, Prec::ATOM) . '->value', Type::int()), $plain);
                 }
 
-                // A constant: (int)3.9 is the constant 3; out of the type's range it is C#'s CS0221.
-                if ($source->kind === 'float' && is_numeric($value->code)) {
-                    $constant = (float) $value->code;
+                // A constant: (int)3.9 is the constant 3; out of the type's range it is C#'s CS0221
+                // (also (int)double.NaN, (long)double.MaxValue, (int)float.PositiveInfinity).
+                $constant = $source->kind === 'float' ? $this->floatingConstant($value) : null;
+                if ($constant !== null) {
                     [$min, $max] = Type::INTEGRAL_RANGES[$plain->integralName()] ?? [PHP_INT_MIN, PHP_INT_MAX];
                     $whole = $constant < 0 ? ceil($constant) : floor($constant);
                     if ($whole < $min || $whole > $max || !is_finite($constant)) {
@@ -1831,7 +1865,7 @@ trait EmitsExpressions
                 $ref = in_array($param->modifier, ['ref', 'out'], true) ? '&' : '';
                 $params[] = $decl . $ref . '$' . $param->name;
                 $paramTypes[] = $type;
-                $this->declareLocal($param->name, $type, $param);
+                $this->declareLocal($param->name, $type, $param, kind: 'parameter');
             }
             $paramCode = implode(', ', $params);
 

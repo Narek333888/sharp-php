@@ -55,6 +55,14 @@ trait EmitsStatements
     /** @param list<Stmt> $statements */
     private function statements(array $statements): void
     {
+        // A local's scope is its whole block, also before its declaration (CS0841, CS0136).
+        foreach ($statements as $statement) {
+            if ($statement instanceof LocalDecl) {
+                foreach ($statement->declarators as $declarator) {
+                    $this->scope->declareLater($declarator->name);
+                }
+            }
+        }
         foreach ($statements as $statement) {
             $this->tolerating(fn () => $this->statement($statement));
         }
@@ -112,12 +120,23 @@ trait EmitsStatements
         $this->w->line('}');
     }
 
-    private function localDeclaration(LocalDecl $s): void
+    /** @param 'using'|null $kind a using statement's resource (CS1656 when it is assigned) */
+    private function localDeclaration(LocalDecl $s, ?string $kind = null): void
     {
+        if ($s->isConst && $s->type?->name === 'var' && $s->type->args === [] && $this->resolver->findClass('var', $this->ctx, $s) === null) {
+            throw $this->error('SP0822', 'Implicitly-typed variables cannot be constant', $s);
+        }
         $declared = $s->type !== null ? $this->resolveType($s->type) : null;
+        $kind = $s->isConst ? 'const' : $kind;
 
         foreach ($s->declarators as $declarator) {
             $this->w->sourceLine = $declarator->line;
+            if ($s->isConst && $declarator->init === null) {
+                throw $this->error('SP0145', 'A const field requires a value to be provided', $declarator);
+            }
+            if ($s->isConst && !$this->isCSharpConstant($declarator->init)) {
+                throw $this->error('SP0133', "The expression being assigned to '{$declarator->name}' must be constant", $declarator->init);
+            }
             if ($declarator->init === null) {
                 if ($declared === null) {
                     throw $this->error('SP0818', 'Implicitly-typed variables must be initialized', $declarator);
@@ -141,7 +160,7 @@ trait EmitsStatements
             if ($declared === null && $value->type->kind === 'void') {
                 throw $this->error('SP0815', 'Cannot assign void to an implicitly-typed variable', $declarator);
             }
-            $this->declareLocal($declarator->name, $declared ?? $value->type, $declarator);
+            $this->declareLocal($declarator->name, $declared ?? $value->type, $declarator, kind: $kind);
             $root = $this->fn?->root();
             if ($root !== null && isset($root->reassigned[$declarator->name], $root->capturedByLambdas[$declarator->name])
                 && in_array('loop', $this->fn->breakables, true)) {
@@ -345,12 +364,12 @@ trait EmitsStatements
             if ($s->deconstruction !== []) {
                 $types = $elementType->isClass() && $elementType->args !== [] ? $elementType->args : [];
                 foreach ($s->deconstruction as $i => $name) {
-                    $this->declareLocal($name, $types[$i] ?? Type::mixed(), $s);
+                    $this->declareLocal($name, $types[$i] ?? Type::mixed(), $s, kind: 'foreach');
                 }
                 $target = '[' . implode(', ', array_map(static fn (string $n): string => '$' . $n, $s->deconstruction)) . ']';
             } else {
                 $type = $s->type !== null ? $this->resolveType($s->type) : $elementType;
-                $this->declareLocal((string) $s->variable, $type, $s);
+                $this->declareLocal((string) $s->variable, $type, $s, kind: 'foreach');
                 $target = '$' . $s->variable;
             }
 
@@ -566,7 +585,7 @@ trait EmitsStatements
         }
         $resource = array_shift($resources);
         if ($resource instanceof LocalDecl) {
-            $this->localDeclaration($resource);
+            $this->localDeclaration($resource, 'using');
             $at = $resource->declarators[0];
             $name = $at->name;
             $type = $this->scope->lookup($name)[0] ?? Type::mixed();

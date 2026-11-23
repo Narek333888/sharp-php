@@ -350,15 +350,20 @@ final class Emitter
         }
     }
 
-    private function declareLocal(string $name, Type $type, Node $at, bool $assigned = true): void
+    /** @param 'parameter'|'const'|'foreach'|'using'|null $kind */
+    private function declareLocal(string $name, Type $type, Node $at, bool $assigned = true, ?string $kind = null): void
     {
         if ($name === 'this') {
             throw $this->error('SP1001', "'this' cannot be used as a variable name", $at);
         }
-        if ($this->scope->declaresLocally($name)) {
+        $hidesParameter = $this->scope->declaresLocally($name) && $this->scope->ownKind($name) === 'parameter' && $kind !== 'parameter';
+        if ($this->scope->declaresLocally($name) && !$hidesParameter) {
             throw $this->error('SP0128', "A local variable or function named '$name' is already defined in this scope", $at);
         }
-        $this->scope->declare($name, $type);
+        if ($hidesParameter || $this->scope->hidesEnclosing($name)) {
+            throw $this->error('SP0136', "A local or parameter named '$name' cannot be declared in this scope because that name is used in an enclosing local scope to define a local or parameter", $at);
+        }
+        $this->scope->declare($name, $type, $kind);
         $this->flow->declare($this->scope, $name, $assigned);
         $this->model?->localDeclared($this->file, $this->scope->id, $name, $at);
     }

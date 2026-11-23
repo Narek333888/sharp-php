@@ -252,6 +252,9 @@ trait EmitsDeclarations
                 if ($declarator->init === null) {
                     throw $this->error('SP0145', 'A const field requires a value to be provided', $declarator);
                 }
+                if (!$this->isCSharpConstant($declarator->init)) {
+                    throw $this->error('SP0133', "The expression being assigned to '{$this->currentClass()->csharpName()}.{$declarator->name}' must be constant", $declarator->init);
+                }
                 $value = $this->constantValue($declarator->init, $type);
                 $decl = $type->isUnknown() ? '' : $this->typeDecl($type) . ' ';
                 $this->w->line("$visibility const {$decl}{$declarator->name} = $value;");
@@ -488,7 +491,7 @@ trait EmitsDeclarations
         $this->inFunction($context, function () use ($accessor, $isGet, $type, $property, $static): void {
             $this->inScope(function () use ($accessor, $isGet, $type, $property, $static): void {
                 if (!$isGet) {
-                    $this->scope->declare('value', $type);
+                    $this->scope->declare('value', $type, 'parameter');
                 }
                 if ($accessor->exprBody !== null) {
                     $code = $isGet ? $this->convert($accessor->exprBody, $type)->code : $this->effect($accessor->exprBody);
@@ -567,7 +570,7 @@ trait EmitsDeclarations
                         $type = $symbol->members[$param->name]->type;
                         $default = $param->default !== null ? ' = ' . $this->constantValue($param->default, $type) : '';
                         $params[] = 'public readonly ' . $this->signatureTypeDecl($type) . ' $' . $param->name . $default;
-                        $this->scope->declare($param->name, $type);
+                        $this->scope->declare($param->name, $type, 'parameter');
                     }
                     $this->w->line("$visibility function __construct(");
                     foreach ($params as $param) {
@@ -981,7 +984,7 @@ trait EmitsDeclarations
                 $this->paramConversions[] = "if (\\is_array(\${$param->name})) {\n    \${$param->name} = {$conversion->code};\n}";
             }
             $parts[] = ($decl !== null ? $decl . ' ' : '') . $prefix . '$' . $param->name . $default;
-            $this->declareLocal($param->name, $localType, $param, assigned: $param->modifier !== 'out');
+            $this->declareLocal($param->name, $localType, $param, assigned: $param->modifier !== 'out', kind: 'parameter');
             if ($param->modifier === 'out') {
                 $this->currentFunction()->outParams[] = $param->name;
             }
@@ -1193,7 +1196,7 @@ trait EmitsDeclarations
         self::analyzeCaptures($context, $unit->topLevelStatements);
         $this->inFunction($context, function () use ($unit, $async, $mainType): void {
             $this->inScope(function () use ($unit, $async, $mainType): void {
-                $this->scope->declare('args', Type::array(Type::string()));
+                $this->scope->declare('args', Type::array(Type::string()), 'parameter');
                 if ($async) {
                     $this->asyncBody($mainType, true, ['args'], fn () => $this->statements($unit->topLevelStatements));
                 } else {
@@ -1255,6 +1258,41 @@ trait EmitsDeclarations
                 && $this->isConstantExpression($expr->then) && $this->isConstantExpression($expr->else),
             $expr instanceof ArrayCreationExpr => $expr->size === null && $expr->elements !== null
                 && array_reduce($expr->elements, fn (bool $c, Expr $e): bool => $c && $this->isConstantExpression($e), true),
+            $expr instanceof NameExpr, $expr instanceof MemberAccessExpr => $this->isConstantMember($expr),
+            default => false,
+        };
+    }
+
+    /**
+     * C#'s constant expressions, for const declarations (CS0133): literals, nameof, default, other
+     * constants (const fields and locals, enum members, int.MaxValue, Math.PI, double.NaN), and
+     * operators, casts and interpolations of constants. Not typeof, new, method calls or variables.
+     */
+    private function isCSharpConstant(Expr $expr): bool
+    {
+        // string.Empty is a static readonly field in .NET, not a constant.
+        $target = $expr instanceof MemberAccessExpr ? $expr->target : null;
+        if ($expr instanceof MemberAccessExpr && $expr->name === 'Empty'
+            && (($target instanceof \SharpPhp\Syntax\PredefinedTypeExpr && $target->keyword === 'string') || ($target instanceof NameExpr && $target->name === 'String'))) {
+            return false;
+        }
+        if ($this->evaluateConstant($expr) !== self::notConstant()) {
+            return true;
+        }
+
+        return match (true) {
+            $expr instanceof NameOfExpr, $expr instanceof DefaultExpr => true,
+            $expr instanceof UnaryExpr => !in_array($expr->operator, ['++', '--'], true) && $this->isCSharpConstant($expr->operand),
+            $expr instanceof BinaryExpr => $this->isCSharpConstant($expr->left) && $this->isCSharpConstant($expr->right),
+            $expr instanceof ConditionalExpr => $this->isCSharpConstant($expr->condition)
+                && $this->isCSharpConstant($expr->then) && $this->isCSharpConstant($expr->else),
+            $expr instanceof \SharpPhp\Syntax\CastExpr => $this->isCSharpConstant($expr->expr),
+            $expr instanceof \SharpPhp\Syntax\InterpolatedStringExpr => array_reduce(
+                $expr->parts,
+                fn (bool $constant, string|\SharpPhp\Syntax\InterpolationHole $part): bool => $constant && (is_string($part) || ($part->format === null && $part->alignment === null && $this->isCSharpConstant($part->expr))),
+                true,
+            ),
+            $expr instanceof NameExpr && $this->scope->lookup($expr->name) !== null => $this->scope->kindOf($expr->name) === 'const',
             $expr instanceof NameExpr, $expr instanceof MemberAccessExpr => $this->isConstantMember($expr),
             default => false,
         };

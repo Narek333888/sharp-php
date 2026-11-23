@@ -91,6 +91,14 @@ trait EmitsMembers
 
             return Emitted::value('$' . $name, $type, Prec::ATOM, $name);
         }
+        // A local's scope is its whole block: before its declaration the name is not a field's or a type's.
+        if ($this->scope->isDeclaredLater($name) && $mode !== 'target') {
+            $field = $this->class !== null ? $this->symbols->findMember($this->class, $name) : null;
+            if ($field !== null && in_array($field->kind, ['field', 'property'], true)) {
+                throw $this->error('SP0844', "Cannot use local variable '$name' before it is declared. The declaration of the local variable hides the field '{$field->owner->csharpName()}.$name'.", $e);
+            }
+            throw $this->error('SP0841', "Cannot use local variable '$name' before it is declared", $e);
+        }
 
         if ($this->class !== null) {
             $member = $this->symbols->findMember($this->class, $name);
@@ -1344,7 +1352,7 @@ trait EmitsMembers
                 // out _: a discard; PHP passes a variable by reference, so a fresh one nobody reads.
                 $value = Emitted::value($this->currentFunction()->temp('discard'), $expected ?? Type::mixed());
             } elseif ($arg->modifier === 'ref' || $arg->modifier === 'out') {
-                $value = $this->place($arg->value);
+                $value = $this->place($arg->value, reference: true);
                 if ($value->member?->isStaticAccessor) {
                     throw $this->error('SP0206', 'A property or indexer may not be passed as an out or ref parameter', $arg->value);
                 }
