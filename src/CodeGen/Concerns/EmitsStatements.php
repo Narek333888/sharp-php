@@ -128,6 +128,9 @@ trait EmitsStatements
         }
         $declared = $s->type !== null ? $this->resolveType($s->type) : null;
         $kind = $s->isConst ? 'const' : $kind;
+        if ($declared !== null && $declared->kind === 'class' && $this->symbolForType($declared)?->isStatic === true) {
+            throw $this->error('SP0723', "Cannot declare a variable of static type '{$declared->describe()}'", $s->type ?? $s);
+        }
 
         foreach ($s->declarators as $declarator) {
             $this->w->sourceLine = $declarator->line;
@@ -355,6 +358,7 @@ trait EmitsStatements
     private function foreachStatement(ForeachStmt $s): void
     {
         $collection = $this->expr($s->collection);
+        $this->requireEnumerable($collection, $s->collection);
         $elementType = $this->elementTypeOf($collection->type);
         $source = $collection->type->isString()
             ? '\\mb_str_split(' . $collection->code . ')'
@@ -381,6 +385,86 @@ trait EmitsStatements
         });
     }
 
+    /**
+     * C#'s CS0160: a catch clause after one without a filter that catches its type or a base type.
+     * The general catch clause (catch { }) is not checked (C# only warns there).
+     *
+     * @param list<Type> $previous the types of the clauses before, without a filter
+     */
+    private function requireReachableCatch(\SharpPhp\Syntax\CatchClause $catch, Type $type, array &$previous): void
+    {
+        if ($catch->type === null) {
+            return;
+        }
+        foreach ($previous as $earlier) {
+            if ($this->symbols->isSubtypeOf((string) $type->class, (string) $earlier->class)) {
+                throw $this->error('SP0160', "A previous catch clause already catches all exceptions of this or of a super type ('{$earlier->describe()}')", $catch->type);
+            }
+        }
+        if ($catch->when === null) {
+            $previous[] = $type;
+        }
+    }
+
+    /** C#'s CS0152: two labels of a switch statement with the same constant value, or two defaults. */
+    private function requireDistinctLabels(SwitchStmt $s): void
+    {
+        $seen = [];
+        foreach ($s->sections as $section) {
+            foreach ($section->labels as $label) {
+                if ($label->pattern === null) {
+                    [$key, $text] = ['default', 'default'];
+                } elseif ($label->isConstantCase() && $label->when === null && $label->pattern->expr !== null) {
+                    $expr = $label->pattern->expr;
+                    $value = $this->evaluateConstant($expr);
+                    if ($value !== self::notConstant()) {
+                        $key = match (true) {
+                            is_int($value), is_float($value) => 'number:' . (float) $value,
+                            is_bool($value) => 'bool:' . var_export($value, true),
+                            $value === null => 'null',
+                            default => 'text:' . \SharpPhp\Runtime\Op::str($value),
+                        };
+                        $text = is_string($value) ? $value : \SharpPhp\Runtime\Op::str($value);
+                    } elseif ($expr instanceof \SharpPhp\Syntax\MemberAccessExpr && $expr->target instanceof \SharpPhp\Syntax\NameExpr) {
+                        // An enum member (or another constant of a type): E.A
+                        $key = 'member:' . $expr->target->name . '.' . $expr->name;
+                        $text = $expr->target->name . '.' . $expr->name;
+                    } else {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+                if (isset($seen[$key])) {
+                    throw $this->error('SP0152', "The switch statement contains multiple cases with the label value '$text'", $label);
+                }
+                $seen[$key] = true;
+            }
+        }
+    }
+
+    /**
+     * C#'s CS1579: foreach needs a GetEnumerator(): not a number, bool, char, enum or struct, nor a class of
+     * the program or the library without one. Values of PHP classes and of unknown types are not checked.
+     */
+    private function requireEnumerable(Emitted $collection, \SharpPhp\Syntax\Node $at): void
+    {
+        $kind = $this->operandKind($collection->type);
+        if ($kind === null || $kind === 'string' || $kind === 'null' || $collection->type->kind === 'array') {
+            return;
+        }
+        if ($kind === 'class' || $kind === 'struct') {
+            $symbol = $this->symbolForType($collection->type);
+            if ($symbol === null || ($symbol->external && !self::isRuntimeLibrary($symbol)) || $symbol->elementType !== null
+                || $this->symbols->findMember($symbol, 'GetEnumerator') !== null || $this->findMethod($symbol, 'GetEnumerator') !== null
+                || $this->symbols->isSubtypeOf($symbol->fqn, \Traversable::class)) {
+                return;
+            }
+        }
+        $type = $collection->type->describe();
+        throw $this->error('SP1579', "foreach statement cannot operate on variables of type '$type' because '$type' does not contain a public instance or extension definition for 'GetEnumerator'", $at);
+    }
+
     private function elementTypeOf(Type $type): Type
     {
         if (in_array($type->kind, ['array', 'iterable', 'string'], true)) {
@@ -397,6 +481,7 @@ trait EmitsStatements
     private function switchStatement(SwitchStmt $s): void
     {
         $subject = $this->expr($s->subject);
+        $this->requireDistinctLabels($s);
         $subjectSymbol = $this->symbolForType($subject->type);
         $strictSafe = $subject->type->isInt() || ($subjectSymbol !== null && $subjectSymbol->isEnum());
 
@@ -544,7 +629,7 @@ trait EmitsStatements
     private function throwStatement(ThrowStmt $s): void
     {
         if ($s->value !== null) {
-            $this->w->line('throw ' . $this->expr($s->value)->code . ';');
+            $this->w->line('throw ' . $this->thrown($this->expr($s->value), $s->value)->code . ';');
             $this->flow->markUnreachable();
 
             return;
@@ -637,6 +722,7 @@ trait EmitsStatements
         if ($filtered) {
             $this->filteredCatches($s, $before, $outcomes);
         }
+        $previous = [];
         foreach ($filtered ? [] : $s->catches as $catch) {
             $this->w->sourceLine = $catch->line;
             $type = $catch->type !== null
@@ -645,6 +731,7 @@ trait EmitsStatements
             if (!$type->isClass() || !$this->symbols->isThrowable((string) $type->class)) {
                 throw $this->error('SP0155', "The type caught or thrown must be derived from System.Exception", $catch->type ?? $catch);
             }
+            $this->requireReachableCatch($catch, $type, $previous);
 
             $this->flow->restore($before); // the exception may come before any assignment in the try block
             $variable = $catch->variable !== null ? '$' . $catch->variable : $this->currentFunction()->temp('e');
@@ -698,6 +785,7 @@ trait EmitsStatements
         $this->w->line("} catch (\\Throwable $caught) {");
         $this->w->indent();
         $this->w->line("$caught = " . $this->runtime('ErrorHandler') . "::translate($caught);");
+        $previous = [];
         foreach ($s->catches as $i => $catch) {
             $this->w->sourceLine = $catch->line;
             $type = $catch->type !== null
@@ -706,6 +794,7 @@ trait EmitsStatements
             if (!$type->isClass() || !$this->symbols->isThrowable((string) $type->class)) {
                 throw $this->error('SP0155', "The type caught or thrown must be derived from System.Exception", $catch->type ?? $catch);
             }
+            $this->requireReachableCatch($catch, $type, $previous);
             $this->flow->restore($before);
             $variable = $catch->variable !== null ? '$' . $catch->variable : $caught;
             $this->inScope(function () use ($catch, $type, $variable, $caught, $i): void {

@@ -731,6 +731,11 @@ trait EmitsDeclarations
                     throw $this->error('SP1623', 'Iterators cannot have ref, in or out parameters', $param);
                 }
             }
+            // An iterator returns IEnumerable<T> or IEnumerator<T> (CS1624), not a List<T> or an int.
+            $returns = $member->type;
+            if (!$returns->isUnknown() && !($returns->kind === 'iterable' && $returns->collectionInterface() === 'IEnumerable')) {
+                throw $this->error('SP1624', "The body of '{$this->currentClass()->csharpName()}.{$method->name}()' cannot be an iterator block because '{$returns->describe()}' is not an iterator interface type", $method);
+            }
         }
 
         $context = new FunctionContext($static, $bodyType, $typeParams);

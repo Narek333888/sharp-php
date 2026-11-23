@@ -58,6 +58,8 @@ final class Declarator
                 $symbol->isRecord = $decl->kind === 'record';
                 $symbol->isStruct = $decl->kind === 'struct';
                 $symbol->isAbstract = in_array('abstract', $decl->modifiers, true);
+                $symbol->isSealed = in_array('sealed', $decl->modifiers, true) || $decl->kind === 'struct';
+                $symbol->isStatic = in_array('static', $decl->modifiers, true);
                 $symbol->typeParams = $decl->typeParams;
                 $symbol->variance = $decl->variance;
                 $symbol->location = [$unit->file->path, $decl->line, $decl->column];
@@ -133,6 +135,7 @@ final class Declarator
                 'private',
             );
             $method->isLocalFunction = true;
+            $method->constraints = $this->constraintsOf($function, $ctx, $typeParams);
             $this->add($symbol, $method, $unit->file, $function);
         }
     }
@@ -267,6 +270,27 @@ final class Declarator
         return $this->entryPoints;
     }
 
+    /** The constraints that are not types: where T : class, struct, new(), notnull, unmanaged. */
+    public const SPECIAL_CONSTRAINTS = ['class', 'struct', 'new()', 'notnull', 'unmanaged'];
+
+    /**
+     * The constraints of $decl's type parameters: the special ones by name, the others as types.
+     *
+     * @param array<string, Type> $typeParams
+     * @return array<string, list<string|Type>>
+     */
+    private function constraintsOf(TypeDecl|MethodDecl $decl, ResolutionContext $ctx, array $typeParams): array
+    {
+        $constraints = [];
+        foreach ($decl->constraints as $name => $refs) {
+            foreach ($refs as $ref) {
+                $constraints[$name][] = in_array($ref->name, self::SPECIAL_CONSTRAINTS, true) ? $ref->name : $this->resolver->resolve($ref, $ctx, $typeParams);
+            }
+        }
+
+        return $constraints;
+    }
+
     /**
      * Type parameters in scope inside $decl: the outer ones plus its own, with their class constraints.
      *
@@ -282,6 +306,9 @@ final class Declarator
         foreach ($decl->typeParams as $name) {
             $constraint = null;
             foreach ($decl->constraints[$name] ?? [] as $ref) {
+                if (in_array($ref->name, self::SPECIAL_CONSTRAINTS, true)) {
+                    continue;
+                }
                 $type = $this->resolver->resolve($ref, $ctx, $result);
                 if ($type->isClass()) {
                     $constraint = $type->class;
@@ -299,6 +326,7 @@ final class Declarator
         $file = $ctx->file;
         $typeParams = $this->typeParamsOf($decl, $ctx);
         $symbol->typeParamTypes = $typeParams;
+        $symbol->constraints = $this->constraintsOf($decl, $ctx, $typeParams);
 
         if ($decl->kind !== 'enum') {
             foreach ($decl->baseTypes as $ref) {
@@ -317,6 +345,12 @@ final class Declarator
                 }
                 if ($base->isEnum()) {
                     throw $this->error('SP0509', "'{$decl->name}': cannot derive from enum type '{$base->csharpName()}'", $file, $ref);
+                }
+                if ($base->isStatic) {
+                    throw $this->error('SP0709', "'{$decl->name}': cannot derive from static class '{$base->csharpName()}'", $file, $ref);
+                }
+                if ($base->isSealed) {
+                    throw $this->error('SP0509', "'{$decl->name}': cannot derive from sealed type '{$base->csharpName()}'", $file, $ref);
                 }
                 if ($symbol->baseClass !== null) {
                     throw $this->error('SP1721', "Class '{$decl->name}' cannot have multiple base classes", $file, $ref);
@@ -440,6 +474,7 @@ final class Declarator
                     self::visibility($member->modifiers, $defaultVisibility),
                 );
                 $method->isAbstract = in_array('abstract', $member->modifiers, true);
+                $method->constraints = $this->constraintsOf($member, $ctx, $methodTypeParams);
                 $method->isOverride = in_array('override', $member->modifiers, true);
                 $method->isVirtual = $method->isAbstract || $method->isOverride || in_array('virtual', $member->modifiers, true);
                 $method->isLocalFunction = $member->isLocalFunction;

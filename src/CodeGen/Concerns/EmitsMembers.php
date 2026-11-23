@@ -768,6 +768,14 @@ trait EmitsMembers
 
         $this->callerLine = $call->line;
         [$code, $values] = $this->arguments($args, $member->params, $subst, $elementHint, $runtime, phpCode: self::isPhpCode($member->owner));
+        // Array.Resize(ref numbers, 10): the new elements of an int[] are 0, as C#'s default(int).
+        if ($member->name === 'Resize' && strcasecmp($member->owner->fqn, Names::RUNTIME_NAMESPACE . '\\System\\Array_') === 0
+            && isset($values[0]) && $values[0]->type->kind === 'array' && count($args) === 2) {
+            $element = $values[0]->type->element();
+            if (!$element->nullable && $this->isValueType($element)) {
+                $code .= ', fill: ' . $this->defaultValue($element)->code;
+            }
+        }
         // Console.Write(chars) writes the chars (C#'s char[] overload); another array, its type's name.
         if (count($values) === 1 && in_array($member->name, ['Write', 'WriteLine'], true) && isset($values[0])
             && strcasecmp($member->owner->fqn, Names::RUNTIME_NAMESPACE . '\\System\\Console') === 0
@@ -788,6 +796,7 @@ trait EmitsMembers
                 $this->inferTypeArguments($param->type, $values[$i]->type, $member->typeParams, $subst);
             }
         }
+        $this->requireConstraints($member->constraints, $subst, $member->name . '<' . implode(', ', $member->typeParams) . '>(' . ParameterSymbol::describeTypes($member->params) . ')', $at);
         // Generic arguments are erased in PHP; a runtime method that needs one gets its class.
         foreach ($member->reified as $typeParam => $paramName) {
             $argument = $subst[$typeParam] ?? null;
@@ -1029,6 +1038,8 @@ trait EmitsMembers
             }
             $property = $this->symbols->findMember($symbol, $name);
             if ($property !== null && $property->isValue() && $property->type->kind === 'closure') {
+                $this->requireEventAccess($property, $callee);
+
                 return $this->callClosure(Emitted::value("$recv$arrow$name", $property->type), $args, $callee);
             }
             $fallback = $this->objectMethod($target, $name, $args) ?? $this->callExtension($target, $callee, $call);
@@ -1333,6 +1344,18 @@ trait EmitsMembers
                 $param = $params[$i] ?? ($last?->modifier === 'params' ? $last : null);
             }
 
+            // C#'s CS1620 and CS1615: ref and out are written at the call as the parameter declares them
+            // (see SymbolTable::csharpModifier() for the runtime's parameters).
+            if ($param !== null && !$phpCode) {
+                $byReference = in_array($param->modifier, ['ref', 'out'], true);
+                $passed = in_array($arg->modifier, ['ref', 'out'], true);
+                if ($byReference && (!$passed || $arg->modifier !== $param->modifier)) {
+                    throw $this->error('SP1620', 'Argument ' . ($i + 1) . " must be passed with the '{$param->modifier}' keyword", $arg->value);
+                }
+                if (!$byReference && $passed) {
+                    throw $this->error('SP1615', 'Argument ' . ($i + 1) . " may not be passed with the '{$arg->modifier}' keyword", $arg->value);
+                }
+            }
             $expected = $param?->type->substitute($subst);
             if ($param?->modifier === 'params' && $expected?->kind === 'array') {
                 $expected = $expected->element();
@@ -1431,6 +1454,50 @@ trait EmitsMembers
         $this->lastOutDefaults = $outDefaults;
 
         return [implode(', ', $codes), $values];
+    }
+
+    /**
+     * C#'s constraints of type parameters, for the type arguments of a call or a constructed type:
+     * CS0452 (class), CS0453 (struct), CS0310 (new()), CS0311 and CS0315 (a type to convert to).
+     * Arguments whose types are not known (object, type parameters, PHP values) are not checked.
+     *
+     * @param array<string, list<string|Type>> $constraints
+     * @param array<string, Type> $subst the type arguments by type parameter
+     */
+    private function requireConstraints(array $constraints, array $subst, string $what, Node $at): void
+    {
+        foreach ($constraints as $param => $list) {
+            $argument = $subst[$param] ?? null;
+            if ($argument === null || $argument->isUnknown() || $argument->kind === 'typeparam') {
+                continue;
+            }
+            $kind = $this->operandKind($argument);
+            $valueType = in_array($kind, ['number', 'bool', 'char', 'enum', 'struct'], true);
+            $name = $argument->describe();
+            foreach ($list as $constraint) {
+                if ($constraint === 'class' && ($valueType || ($argument->nullable && $argument->isValueType()))) {
+                    throw $this->error('SP0452', "The type '$name' must be a reference type in order to use it as parameter '$param' in the generic type or method '$what'", $at);
+                }
+                if ($constraint === 'struct' && $kind !== null && (!$valueType || $argument->nullable)) {
+                    throw $this->error('SP0453', "The type '$name' must be a non-nullable value type in order to use it as parameter '$param' in the generic type or method '$what'", $at);
+                }
+                if ($constraint === 'new()' && !$valueType && $kind !== null) {
+                    $symbol = $kind === 'class' ? $this->symbolForType($argument) : null;
+                    $parameterless = $symbol !== null && !$symbol->isAbstract && !$symbol->isInterface()
+                        && (($symbol->constructorParams ?? []) === []) && in_array($symbol->constructorVisibility ?? 'public', ['public'], true);
+                    if (!$parameterless && !($symbol !== null && $symbol->external && !self::isRuntimeLibrary($symbol))) {
+                        throw $this->error('SP0310', "'$name' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '$param' in the generic type or method '$what'", $at);
+                    }
+                }
+                if ($constraint instanceof Type && $kind !== null) {
+                    $target = $constraint->substitute($subst);
+                    if (!$target->isUnknown() && $target->kind !== 'typeparam' && !$this->conversions->isImplicit($argument, $target)) {
+                        $conversion = $valueType ? 'boxing conversion' : 'implicit reference conversion';
+                        throw $this->error($valueType ? 'SP0315' : 'SP0311', "The type '$name' cannot be used as type parameter '$param' in the generic type or method '$what'. There is no $conversion from '$name' to '{$target->describe()}'.", $at);
+                    }
+                }
+            }
+        }
     }
 
     /** The line of the call whose arguments are being compiled, for [CallerLineNumber]. */

@@ -18,7 +18,7 @@ use SharpPhp\Runtime\System\Threading\Tasks\Task;
  *
  * Needs PHP's curl extension.
  */
-class HttpClient
+class HttpClient implements \SharpPhp\Runtime\System\IDisposable
 {
     /** Prefix for relative request addresses: "https://api.example.com/". */
     public ?string $BaseAddress = null;

@@ -285,6 +285,17 @@ final class Emitter
         if ($this->model !== null) {
             $this->recordTypeRef($ref, $type);
         }
+        // Box<int> of a class Box<T> where T : class: the type arguments meet its constraints.
+        $symbol = $type->kind === 'class' && $type->args !== [] ? $this->symbols->symbolForType($type) : null;
+        if ($symbol !== null && $symbol->constraints !== []) {
+            $subst = [];
+            foreach ($symbol->typeParams as $i => $param) {
+                if (isset($type->args[$i])) {
+                    $subst[$param] = $type->args[$i];
+                }
+            }
+            $this->requireConstraints($symbol->constraints, $subst, $symbol->csharpName() . '<' . implode(', ', $symbol->typeParams) . '>', $ref);
+        }
 
         return $type;
     }

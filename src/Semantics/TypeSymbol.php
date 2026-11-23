@@ -30,6 +30,20 @@ final class TypeSymbol
 
     public bool $isStruct = false;
 
+    /** A sealed class or record, or a struct: nothing derives from it (CS0509). */
+    public bool $isSealed = false;
+
+    /** A static class: no instances, no variables, no derived classes (CS0712, CS0723, CS0709). */
+    public bool $isStatic = false;
+
+    /**
+     * The constraints of a generic type of the program, per type parameter: 'class', 'struct', 'new()',
+     * 'notnull', 'unmanaged', or a type the argument must convert to.
+     *
+     * @var array<string, list<string|Type>>
+     */
+    public array $constraints = [];
+
     public bool $hasConstructor = false;
     /** Declares a finalizer (~Name()), compiled to __destruct. */
     public bool $hasFinalizer = false;

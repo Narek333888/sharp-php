@@ -9,7 +9,7 @@ use SharpPhp\Runtime\System\Threading\Tasks\Task;
 /**
  * System.Net.Http.HttpContent: the body of a request or a response.
  */
-class HttpContent
+class HttpContent implements \SharpPhp\Runtime\System\IDisposable
 {
     public function __construct(
         protected string $body = '',
@@ -31,5 +31,10 @@ class HttpContent
     public function bytes(): string
     {
         return $this->body;
+    }
+
+    /** As .NET's: nothing to release in PHP. */
+    public function Dispose(): void
+    {
     }
 }

@@ -511,7 +511,8 @@ final class Parser
     /**
      * where T : class, IComparable<T>, new()
      *
-     * @return array<string, list<TypeRef>> Type constraints per type parameter (class/struct/new() are dropped).
+     * @return array<string, list<TypeRef>> constraints per type parameter; class, struct, new(), notnull
+     *     and unmanaged as TypeRefs of those names (see Declarator::SPECIAL_CONSTRAINTS)
      */
     private function parseConstraints(): array
     {
@@ -522,15 +523,18 @@ final class Parser
             $this->expect(':');
             $constraints[$param] = [];
             do {
+                $at = $this->current();
                 if ($this->check('class') || $this->check('struct')) {
-                    $this->advance();
+                    $keyword = $this->advance()->text();
                     $this->accept('?');
+                    $constraints[$param][] = (new TypeRef($keyword, [], false))->at($at);
                 } elseif ($this->check('new')) {
                     $this->advance();
                     $this->expect('(');
                     $this->expect(')');
+                    $constraints[$param][] = (new TypeRef('new()', [], false))->at($at);
                 } elseif ($this->current()->isIdentifier('notnull') || $this->current()->isIdentifier('unmanaged')) {
-                    $this->advance();
+                    $constraints[$param][] = (new TypeRef($this->advance()->text(), [], false))->at($at);
                 } else {
                     $constraints[$param][] = $this->parseType();
                 }

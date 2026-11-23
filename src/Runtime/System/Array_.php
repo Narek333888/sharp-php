@@ -68,11 +68,12 @@ final class Array_
     /**
      * @param array<mixed>|null $array
      * @param-out list<mixed> $array
+     * @param mixed $fill the elements' default value: the compiler passes 0 for an int[], ... (C#'s default(T))
      */
-    public static function Resize(?array &$array, int $newSize): void
+    public static function Resize(?array &$array, int $newSize, mixed $fill = null): void
     {
         $array ??= [];
-        $array = array_values(count($array) >= $newSize ? array_slice($array, 0, $newSize) : array_pad($array, $newSize, null));
+        $array = array_values(count($array) >= $newSize ? array_slice($array, 0, $newSize) : array_pad($array, $newSize, $fill));
     }
 
     /** @return mixed[] */

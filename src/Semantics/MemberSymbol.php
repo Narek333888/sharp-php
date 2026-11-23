@@ -70,6 +70,9 @@ final class MemberSymbol
     /** A field-like event: outside its class only += and -= may be applied to it (CS0070). */
     public bool $isEvent = false;
 
+    /** @var array<string, list<string|Type>> a generic method's constraints (see TypeSymbol::$constraints) */
+    public array $constraints = [];
+
     public ?string $csharpName = null;
 
     /**

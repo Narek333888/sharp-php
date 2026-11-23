@@ -390,7 +390,7 @@ final class SymbolTable
         $this->docFile = null;
         $params = [];
         foreach ($this->reflectionParams($function, new TypeSymbol('class', 'stdClass', true)) as $param) {
-            $params[] = $param->modifier === 'ref' ? new ParameterSymbol($param->name, Type::mixed(), 'ref', $param->optional) : $param;
+            $params[] = in_array($param->modifier, ['ref', 'out'], true) ? new ParameterSymbol($param->name, Type::mixed(), $param->modifier, $param->optional) : $param;
         }
 
         return $params;
@@ -653,7 +653,7 @@ final class SymbolTable
             $params[] = new ParameterSymbol(
                 $parameter->getName(),
                 $type,
-                $parameter->isPassedByReference() ? 'ref' : ($parameter->isVariadic() ? 'params' : null),
+                $this->csharpModifier($parameter, isset($docTypes['param-out'][$name])),
                 $parameter->isOptional(),
                 $this->isNumericUnion($parameter->getType()) || preg_match('/@sharp-char-as-int\s+\$' . $name . '\b/', (string) $method->getDocComment()) === 1,
                 // "@sharp-caller-argument-expression $paramName argument": the text of the argument passed for $argument.
@@ -664,6 +664,24 @@ final class SymbolTable
         }
 
         return $params;
+    }
+
+    /**
+     * The C# modifier of a parameter of PHP code: a parameter by reference is C#'s out when it has an
+     * "@param-out" (TryParse, TryGetValue), else ref (Interlocked.Increment, Array.Resize), but an array
+     * passed by reference only so that it changes in place (Array.Sort, PHP's arrays being values) is
+     * passed by value in C#.
+     */
+    private function csharpModifier(\ReflectionParameter $parameter, bool $paramOut): ?string
+    {
+        if ($parameter->isPassedByReference()) {
+            $type = $parameter->getType();
+            $phpArray = $type instanceof \ReflectionNamedType && $type->getName() === 'array';
+
+            return $phpArray ? ($paramOut ? 'ref' : null) : ($paramOut ? 'out' : 'ref');
+        }
+
+        return $parameter->isVariadic() ? 'params' : null;
     }
 
     private function isNumericUnion(?ReflectionType $type): bool

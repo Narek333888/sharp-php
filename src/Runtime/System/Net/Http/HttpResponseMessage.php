@@ -9,7 +9,7 @@ use SharpPhp\Runtime\System\Web\ParameterCollection;
 /**
  * System.Net.Http.HttpResponseMessage: the answer to an HttpClient request.
  */
-final class HttpResponseMessage
+final class HttpResponseMessage implements \SharpPhp\Runtime\System\IDisposable
 {
     private const REASONS = [
         200 => 'OK', 201 => 'Created', 204 => 'No Content', 301 => 'Moved Permanently', 302 => 'Found', 304 => 'Not Modified',
@@ -51,5 +51,10 @@ final class HttpResponseMessage
         }
 
         return $this;
+    }
+
+    /** As .NET's: nothing to release in PHP. */
+    public function Dispose(): void
+    {
     }
 }

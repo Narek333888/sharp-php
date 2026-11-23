@@ -96,7 +96,7 @@ trait EmitsExpressions
             $e instanceof DefaultExpr => $this->defaultValue($e->type !== null ? $this->resolveType($e->type) : $expected),
             $e instanceof SwitchExpr => $this->switchExpr($e, $expected),
             $e instanceof WithExpr => $this->withExpr($e),
-            $e instanceof ThrowExpr => Emitted::value('throw ' . $this->expr($e->value)->code, Type::mixed(), Prec::LOWEST),
+            $e instanceof ThrowExpr => Emitted::value('throw ' . $this->thrown($this->expr($e->value), $e->value)->code, Type::mixed(), Prec::LOWEST),
             $e instanceof BaseExpr => throw $this->error('SP0175', "Use of keyword 'base' is not valid in this context", $e),
             $e instanceof PredefinedTypeExpr => throw $this->error('SP0119', "'{$e->keyword}' is a type, which is not valid in the given context", $e),
             $e instanceof DeclarationExpr => throw $this->error('SP8185', 'A declaration is not allowed in this context', $e),
@@ -297,6 +297,24 @@ trait EmitsExpressions
         }
 
         return null;
+    }
+
+    /**
+     * What a throw statement or expression throws: an exception (C#'s CS0029 for throw "error"; a class
+     * of PHP code is PHP's business); throw null throws a NullReferenceException, as in C#.
+     */
+    private function thrown(Emitted $value, \SharpPhp\Syntax\Node $at): Emitted
+    {
+        if ($value->type->isNull()) {
+            return Emitted::value('new ' . $this->runtime('System\\NullReferenceException') . '()', Type::class(Names::RUNTIME_NAMESPACE . '\\System\\NullReferenceException'));
+        }
+        $kind = $this->operandKind($value->type);
+        $exception = $value->type->kind === 'class' && $this->symbols->isThrowable((string) $value->type->class);
+        if ($kind !== null && !$exception) {
+            throw $this->error('SP0029', "Cannot implicitly convert type '{$value->type->describe()}' to 'System.Exception'", $at);
+        }
+
+        return $value;
     }
 
     /** C#'s CS0023: a unary operator that is not defined for its operand (-"a", !5, ~1.5, b++ of a bool). */
@@ -1586,6 +1604,9 @@ trait EmitsExpressions
         }
         if ($symbol->isEnum()) {
             throw $this->error('SP0144', "Cannot create an instance of the enum type '{$symbol->csharpName()}'", $e);
+        }
+        if ($symbol->isStatic) {
+            throw $this->error('SP0712', "Cannot create an instance of the static class '{$symbol->csharpName()}'", $e);
         }
 
         $class = $this->classRef($symbol->fqn);

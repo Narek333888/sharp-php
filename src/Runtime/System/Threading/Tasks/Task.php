@@ -21,7 +21,7 @@ use SharpPhp\Runtime\System\Threading\CancellationToken;
  *
  * @template T
  */
-class Task
+class Task implements \SharpPhp\Runtime\System\IDisposable
 {
     /**
      * A task that has already completed.
@@ -382,6 +382,9 @@ class Task
 
         return $tasks;
     }
-}
 
-Task::$CompletedTask = Task::FromResult(null);
+    /** As .NET's: nothing to release in PHP. */
+    public function Dispose(): void
+    {
+    }
+}
