@@ -702,36 +702,85 @@ Route::get('/users', [UserController::class, 'Index']);
 - **Dependency injection and route parameters** work as for PHP controllers: Laravel passes `Request`,
   services and `{name}` by parameter type and name.
 - **Facades and helpers:** `using Illuminate.Support.Facades;` then `Log.info(...)`, `Config.get(...)`,
-  `Route.has(...)`, `DB.table(...)`; helper functions as they are: `view("welcome")`, `url("/")`,
-  `response()`. The compiler knows the facades' methods from their docblocks (`@method static ...`), so
-  arguments and results are checked, and the language server completes them. Calls it knows nothing about
-  (Eloquent's `User.where(...)`, other `__callStatic`/`__call` magic) are passed through to PHP.
+  `Cache.put(...)`, `Route.has(...)`, `DB.table(...)`, `Event.dispatch(...)`; helper functions as they are:
+  `view("welcome")`, `url("/")`, `response()`, `dispatch(job)`. The compiler knows the facades' methods from
+  their docblocks (`@method static ...`), so arguments and results are checked, and the language server
+  completes them. Calls it knows nothing about (Eloquent's `User.where(...)`, other `__callStatic`/`__call`
+  magic) are passed through to PHP.
 - **Models** in SharpPHP extend `Model` and redeclare its properties as fields; Eloquent's static and
-  instance magic works on them, and on their attributes (`post.title`), as in PHP:
+  instance magic works on them, and on their attributes (`post.title`), as in PHP. Relationships take the
+  related class as `typeof(...)`:
 
   ```csharp
   // app/Models/Post.sphp
   using Illuminate.Database.Eloquent;
+  using Illuminate.Database.Eloquent.Relations;
 
   namespace App.Models;
 
   public class Post : Model
   {
-      protected string[] fillable = new[] { "title" };
-      protected string table = "posts";
+      protected string[] fillable = new[] { "title", "body", "published" };
+      protected Dictionary<string, string> casts = new() { ["published"] = "boolean" };
+
+      public HasMany comments() => this.hasMany(typeof(Comment));   // Comment::class for PHP
 
       public string Headline() => ((string)this.title).ToUpper();
   }
 
   // in a controller
-  var post = (Post)Post.create(request.validate(new Dictionary<string, string> { ["title"] = "required|min:3" }));
-  Post? first = Post.where("title", "Hello").first();
+  var post = (Post)Post.create(request.validated());
+  post.comments().create(new Dictionary<string, object> { ["text"] = "Nice" });
+  var posts = Post.with("comments").get();               // returned: JSON with the comments
+  Post? first = (Post?)Post.where("title", "Hello").first();
   ```
 
-  A field that redeclares a property of a PHP base class (`fillable`, `table`, `casts`, a command's
-  `signature`) keeps the PHP declaration (Laravel's are untyped) and may not be more private than it
-  (SP0507). Eloquent's magic calls are not checked by the compiler; their results are `object`. A `List` or
-  `Dictionary` passed to such a call goes as a PHP array.
+  A field that redeclares a property of a PHP base class (`fillable`, `casts`, `hidden`, `table`, a
+  command's `signature`) keeps the PHP declaration (Laravel's are untyped) and may not be more private than
+  it (SP0507); a `List` or `Dictionary` there is stored as the PHP array Laravel reads. Eloquent's magic
+  calls are not checked by the compiler; their results are `object`. Migrations stay PHP files (Laravel
+  writes them as anonymous classes, which C# does not have).
+- **What Laravel calls, it gets as PHP:** in a class derived from a Laravel class, a method returning a
+  `List`, `Dictionary` or `HashSet` (`rules()`, `messages()`, `casts()`) returns it to Laravel as a PHP array,
+  while SharpPHP code calling it still gets the collection it declares. `typeof(Comment)` goes to PHP as
+  `Comment::class` wherever PHP takes a class name, and a collection given to an untyped PHP parameter
+  (`view("posts", data)`, a `dynamic` call) goes as an array, nested collections included.
+- **Form requests, middleware, jobs, events:**
+
+  ```csharp
+  public class StorePostRequest : FormRequest                    // using Illuminate.Foundation.Http;
+  {
+      public bool authorize() => true;
+      public Dictionary<string, string> rules() => new() { ["title"] = "required|min:3", ["body"] = "required" };
+  }
+
+  public class AddVersionHeader       // using HttpRequest = Illuminate.Http.Request; Route::middleware(AddVersionHeader::class)
+  {
+      public object handle(HttpRequest request, Func<HttpRequest, object> next)
+      {
+          var response = next(request);
+          ((dynamic)response).headers.set("X-App-Version", "1.0");
+          return response;
+      }
+  }
+
+  public class CountWords : ShouldQueue   // using Illuminate.Contracts.Queue; dispatch(new CountWords((int)post.id));
+  {
+      public int PostId { get; }
+      public CountWords(int postId) => PostId = postId;
+      public void handle() => Cache.put($"words:{PostId}", 42, 600);
+  }
+
+  public class LogPostCreated                                    // app/Listeners: registered automatically
+  {
+      public void handle(PostCreated e) => Log.info($"post created: {e.Post.Headline()}");
+  }
+  ```
+
+  Event listeners in `app/Listeners/*.sphp` are registered automatically, like Laravel's discovery does for
+  `.php` ones (a public `handle...()` or `__invoke()` method listens to the event class of its first
+  parameter); one the app also registers itself (`Event::listen`) is not added twice. Queued jobs are
+  serialized and run by `php artisan queue:work` as PHP ones are.
 - **Artisan commands** in `app/Console/Commands/*.sphp` are registered automatically, like PHP ones:
 
   ```csharp
@@ -746,8 +795,9 @@ Route::get('/users', [UserController::class, 'Index']);
 - **Name clashes:** `Request` is both `Illuminate.Http.Request` and the `Request` facade; with both
   namespaces imported the compiler reports the ambiguity, as C# does. Use an alias
   (`using HttpRequest = Illuminate.Http.Request;`) or the full name.
-- **Responses:** return a string, a view, a Laravel response, or SharpPHP values: a `List`, a `Dictionary`, a
-  record or an anonymous object becomes a JSON response.
+- **Responses:** return a string, a view (`view("posts", new Dictionary<string, object> { ["heading"] = "Posts" })`),
+  a Laravel response (`response().json(post, 201)`), an Eloquent model or collection, or SharpPHP values: a
+  `List`, a `Dictionary`, a record or an anonymous object becomes a JSON response.
 - **Development:** sources are recompiled on the next request after a change. Compile errors show on
   Laravel's error page with the `.sphp` file and line; Artisan keeps working and
   `php artisan sharp:build` lists them.

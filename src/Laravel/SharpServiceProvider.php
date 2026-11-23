@@ -54,6 +54,58 @@ final class SharpServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([BuildCommand::class, ...$this->sharpCommands()]);
         }
+        // After every provider has booted, so that listeners the app registers itself are known.
+        if (method_exists($this->app, 'booted')) { // @phpstan-ignore function.alreadyNarrowedType (a bare Container in tests)
+            $this->app->booted(fn () => $this->registerListeners());
+        } else {
+            $this->registerListeners();
+        }
+    }
+
+    /**
+     * Event listeners written in SharpPHP (app/Listeners/*.sphp): Laravel discovers listeners by their
+     * .php files, so the .sphp ones are registered here as its discovery would: each public handle...()
+     * or __invoke() method listens to the event class of its first parameter. A listener the app
+     * registered itself (Event::listen) is not added a second time.
+     */
+    private function registerListeners(): void
+    {
+        if (!$this->app->bound('events')) {
+            return;
+        }
+        $events = $this->app->make('events');
+        if (!$events instanceof \Illuminate\Events\Dispatcher) {
+            return;
+        }
+        foreach ($this->app->make(Project::class)->loadedClasses() as $class => $source) {
+            if (!str_contains(str_replace('\\', '/', $source), '/Listeners/') || !class_exists($class)) {
+                continue;
+            }
+            $reflection = new \ReflectionClass($class);
+            if (!$reflection->isInstantiable()) {
+                continue;
+            }
+            foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+                if ($method->isStatic() || !(str_starts_with($method->getName(), 'handle') || $method->getName() === '__invoke')) {
+                    continue;
+                }
+                $type = ($method->getParameters()[0] ?? null)?->getType();
+                $eventTypes = $type instanceof \ReflectionUnionType ? $type->getTypes() : [$type];
+                foreach ($eventTypes as $eventType) {
+                    if (!$eventType instanceof \ReflectionNamedType || $eventType->isBuiltin()) {
+                        continue;
+                    }
+                    $listener = [$reflection->getName(), $method->getName()];
+                    $registered = (array) ($events->getRawListeners()[$eventType->getName()] ?? []);
+                    $known = array_filter($registered, static fn (mixed $l): bool => $l === $listener
+                        || $l === $listener[0] . '@' . $listener[1]
+                        || ($l === $listener[0] && $listener[1] === 'handle'));
+                    if ($known === []) {
+                        $events->listen($eventType->getName(), $listener);
+                    }
+                }
+            }
+        }
     }
 
     /**

@@ -37,6 +37,9 @@ final class FunctionContext
     /** @var array<string, true> the names used inside the method's lambdas */
     public array $capturedByLambdas = [];
 
+    /** Values returned go to PHP code as PHP arrays (MemberSymbol::$phpArrayOf: Laravel's rules()). */
+    public bool $toPhpArray = false;
+
     /** The local function this method was compiled from (see Parser::tryParseLocalFunction()). */
     public ?\SharpPhp\Syntax\MethodDecl $localFunction = null;
 

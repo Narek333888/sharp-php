@@ -466,7 +466,7 @@ trait EmitsStatements
                 ? $this->error('SP1997', "Since this is an async method that returns 'Task', a return keyword must not be followed by an object expression. Did you intend to return 'Task<T>'?", $s)
                 : $this->error('SP0127', 'Since this method returns void, a return keyword must not be followed by an object expression', $s);
         } else {
-            $this->w->line('return ' . $this->convert($s->value, $this->currentFunction()->returnType)->code . ';');
+            $this->w->line('return ' . $this->returnedToPhp($this->convert($s->value, $this->currentFunction()->returnType)->code) . ';');
         }
         $this->requireOutParamsAssigned($s);
         $this->flow->markUnreachable();

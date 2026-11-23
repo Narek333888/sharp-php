@@ -977,7 +977,7 @@ trait EmitsExpressions
             $name = $symbol->csharpName();
             $this->checkArguments($e->args, $ctorParams, $name, $this->signature("$name.{$symbol->shortName()}", $ctorParams), $e, constructor: true, runtime: self::isRuntimeLibrary($symbol));
         }
-        [$args] = $this->arguments($e->args, $ctorParams ?? [], $symbol->substitutionFor($type), runtime: $symbol->external);
+        [$args] = $this->arguments($e->args, $ctorParams ?? [], $symbol->substitutionFor($type), runtime: $symbol->external, phpCode: self::isPhpCode($symbol));
         $of = $this->collectionElementSpec($type, $symbol);
         $items = $e->initializer->items ?? [];
         $elementType = $this->elementTypeOf($type);

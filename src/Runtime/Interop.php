@@ -7,6 +7,8 @@ namespace SharpPhp\Runtime;
 use SharpPhp\Runtime\System\Collections\Generic\Dictionary;
 use SharpPhp\Runtime\System\Collections\Generic\HashSet;
 use SharpPhp\Runtime\System\Collections\Generic\List_;
+use SharpPhp\Runtime\System\Collections\Generic\Queue;
+use SharpPhp\Runtime\System\Collections\Generic\Stack;
 
 /**
  * Conversions between SharpPHP collections and PHP arrays, where SharpPHP code and PHP code
@@ -22,7 +24,8 @@ final class Interop
 {
     /**
      * A PHP array: lists, sets, queues and stacks become lists; dictionaries become key => value
-     * arrays. Other values (arrays, null) are returned as they are.
+     * arrays, also when they are inside one another (Laravel's rules: ["tags"] = new List<string> { ... }).
+     * Other values (arrays, objects, null) are returned as they are.
      */
     public static function toArray(mixed $value): mixed
     {
@@ -30,16 +33,23 @@ final class Interop
             $array = [];
             foreach ($value as $pair) {
                 $key = $pair->Key;
-                $array[is_int($key) || is_string($key) ? $key : Op::str($key)] = $pair->Value;
+                $array[is_int($key) || is_string($key) ? $key : Op::str($key)] = self::nested($pair->Value);
             }
 
             return $array;
         }
         if ($value instanceof \Traversable) {
-            return iterator_to_array($value, false);
+            return array_map(self::nested(...), iterator_to_array($value, false));
         }
 
         return $value;
+    }
+
+    /** An element of a collection given to PHP: a collection inside becomes an array too. */
+    private static function nested(mixed $value): mixed
+    {
+        return $value instanceof Dictionary || $value instanceof List_ || $value instanceof HashSet
+            || $value instanceof Queue || $value instanceof Stack ? self::toArray($value) : $value;
     }
 
     /**

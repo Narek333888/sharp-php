@@ -1,0 +1,39 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+// typeof(X) where PHP code takes a class name (Laravel's hasMany(Comment::class), app(...))
+Console.WriteLine(class_exists(typeof(Rules)));
+Console.WriteLine(is_string(typeof(Rules)));
+Console.WriteLine(typeof(Rules).Name);
+
+// A List or Dictionary given to an untyped parameter of PHP code (Laravel's view("x", data)) is a PHP array
+Console.WriteLine(is_array(new List<int> { 1, 2 }) + " " + is_array(new Dictionary<string, int> { ["a"] = 1 }));
+Console.WriteLine(json_encode(new Dictionary<string, object> { ["n"] = 1, ["tags"] = new List<string> { "x" } }));
+
+// Members of a class derived from a PHP class that PHP code reads are PHP arrays (Laravel's $casts, rules())
+var rules = new Rules();
+var fromPhp = new ReflectionMethod(rules, "rules").invoke(rules);
+Console.WriteLine(is_array(fromPhp) + " " + is_array(rules.@params));
+var mine = rules.rules();
+Console.WriteLine(mine["title"] + " " + mine.Count() + " " + string.Join(",", rules.Names()));
+Dictionary<string, string> copy = rules.rules();
+Console.WriteLine(copy.ContainsKey("body"));
+
+public class Rules : php_user_filter
+{
+    public Dictionary<string, string> @params = new() { ["mode"] = "strict" };
+
+    public Dictionary<string, string> rules() => new()
+    {
+        ["title"] = "required|min:3",
+        ["body"] = "required",
+    };
+
+    public List<string> Names()
+    {
+        var names = new List<string>();
+        foreach (var (key, _) in rules()) names.Add(key);
+        return names;
+    }
+}

@@ -46,6 +46,14 @@ final class MemberSymbol
      */
     public ?MemberSymbol $instanceVariant = null;
 
+    /**
+     * A field or method that PHP code reads (in a class derived from a PHP class: Laravel's $casts,
+     * rules()): the List/Dictionary/HashSet type it was declared with. A field holds a PHP array ($type
+     * is that); a method returns one to PHP and keeps $type, as calls from SharpPHP convert it back.
+     * Null for other members.
+     */
+    public ?Type $phpArrayOf = null;
+
     public ?string $csharpName = null;
 
     /**

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.2
+
+Laravel, checked in a Laravel 13 app (controllers, models, relationships, form requests, validation,
+middleware, Blade, queued jobs, events, Artisan):
+
+- Eloquent relationships: `this.hasMany(typeof(Comment))` (it was a compile error: `typeof` gave a
+  `System.Type`, PHP takes the class name). `typeof(X)` goes to PHP code as `X::class` wherever it takes a
+  class name: a `string` parameter, or an untyped one of PHP code
+- `casts`, `hidden`, ... declared as a `Dictionary` or `List` (a field that redeclares a property of a PHP
+  base class) are stored as the PHP array Laravel reads (loading any model with `casts` failed)
+- `rules()`, `messages()`, `casts()` ... of a form request or model return their `Dictionary`/`List` to
+  Laravel as a PHP array (validation failed); SharpPHP code calling them still gets the collection
+- A `List` or `Dictionary` given to an untyped parameter of PHP code (`view("posts", data)`) or in a call on a
+  `dynamic` value is a PHP array, nested collections included (Blade views got an object)
+- Event listeners in `app/Listeners/*.sphp` are registered automatically (Laravel only discovers `.php`
+  files); one the app registers itself is not added twice
+
 ## 0.8.1
 
 - Faster collections (measured on PHP 8.4, 1M elements): `List.Add` 2.2× faster than 0.8.0 (and 0.7.1),

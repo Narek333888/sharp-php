@@ -126,6 +126,27 @@ final class LaravelTest extends TestCase
         $this->assertSame("Hello, Ann!\n", $output->fetch());
     }
 
+    public function testEventListenersWrittenInSharpPhpAreRegistered(): void
+    {
+        mkdir("$this->root/app/Events", 0777, true);
+        mkdir("$this->root/app/Listeners", 0777, true);
+        file_put_contents("$this->root/app/Events/Greeted.sphp", "namespace {$this->ns}.Events;\n\npublic class Greeted\n{\n    public string Name { get; }\n    public Greeted(string name) => Name = name;\n}\n");
+        file_put_contents("$this->root/app/Listeners/RememberGreeting.sphp", "using {$this->ns}.Events;\n\nnamespace {$this->ns}.Listeners;\n\npublic class RememberGreeting\n{\n    public static List<string> Seen = new();\n    public void handle(Greeted e) => Seen.Add(e.Name);\n}\n");
+        $app = $this->app('local', console: false);
+        $events = new \Illuminate\Events\Dispatcher($app);
+        $app->instance('events', $events);
+        $provider = new SharpServiceProvider($app);
+        $provider->register();
+        $listener = "{$this->ns}\\Listeners\\RememberGreeting";
+        $event = "{$this->ns}\\Events\\Greeted";
+        $events->listen($event, $listener); // registered by the app as well: must not run twice
+        $provider->boot();
+
+        $events->dispatch(new $event('Ann'));
+        $this->assertSame(['Ann'], iterator_to_array($listener::$Seen, false), 'found without a .php file in app/Listeners, called once');
+        $this->assertCount(1, $events->getRawListeners()[$event]);
+    }
+
     private function app(string $env, bool $console = true): Container
     {
         $root = $this->root;

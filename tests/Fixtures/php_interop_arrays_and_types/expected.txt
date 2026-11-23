@@ -1,0 +1,8 @@
+True
+True
+Rules
+True True
+{"n":1,"tags":["x"]}
+True True
+required|min:3 2 title,body
+True

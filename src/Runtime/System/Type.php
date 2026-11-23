@@ -54,6 +54,16 @@ final class Type
         return $this->class;
     }
 
+    /**
+     * The name PHP code knows the type by: its PHP class (App\\Models\\Comment), else the .NET name.
+     *
+     * @internal the compiler passes it where PHP code takes a class name (Laravel's hasMany(...))
+     */
+    public function phpName(): string
+    {
+        return $this->class ?? $this->FullName;
+    }
+
     /** typeof(long), typeof(int[]): a type without a PHP class, by its .NET name ("System.Int64"). */
     public static function named(string $fullName): self
     {

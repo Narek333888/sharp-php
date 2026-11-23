@@ -26,6 +26,7 @@ use SharpPhp\Syntax\NameExpr;
 use SharpPhp\Syntax\Node;
 use SharpPhp\Syntax\PredefinedTypeExpr;
 use SharpPhp\Syntax\ThisExpr;
+use SharpPhp\Syntax\TypeOfExpr;
 use SharpPhp\Syntax\TypeRef;
 
 /**
@@ -451,20 +452,8 @@ trait EmitsMembers
      */
     private function untypedPhpArguments(array $args): string
     {
-        [, $values] = $this->arguments($args, [], runtime: true);
-        $codes = [];
-        foreach ($args as $i => $arg) {
-            $value = $values[$i] ?? null;
-            if ($value === null) {
-                continue;
-            }
-            $code = $arg->modifier === null && $this->conversions->collectionName($value->type) !== null
-                ? $this->runtime('Interop') . '::toArray(' . $value->code . ')'
-                : $value->code;
-            $codes[] = ($arg->name !== null ? $arg->name . ': ' : '') . $code;
-        }
-
-        return implode(', ', $codes);
+        // arguments() passes List/Dictionary/HashSet values (and System.Type) the way PHP code takes them.
+        return $this->arguments($args, [], runtime: true, phpCode: true)[0];
     }
 
     /**
@@ -655,7 +644,7 @@ trait EmitsMembers
 
             return match ($result->kind) {
                 'method' => $this->callMember($result->code, $result->member ?? throw new \LogicException('A method group has a member'), $e, null, $callee->typeArgs, null, $callee),
-                'function' => Emitted::value($result->code . '(' . $this->arguments($e->args, $this->symbols->functionParams($callee->name), runtime: true)[0] . ')', $result->type),
+                'function' => Emitted::value($result->code . '(' . $this->arguments($e->args, $this->symbols->functionParams($callee->name), runtime: true, phpCode: true)[0] . ')', $result->type),
                 'value' => $this->callClosure($result, $e->args, $callee),
                 default => throw $this->error('SP1955', "Non-invocable member '{$callee->name}' cannot be used like a method", $callee),
             };
@@ -735,7 +724,7 @@ trait EmitsMembers
             }
         }
 
-        [$code, $values] = $this->arguments($args, $member->params, $subst, $elementHint, $runtime);
+        [$code, $values] = $this->arguments($args, $member->params, $subst, $elementHint, $runtime, phpCode: self::isPhpCode($member->owner));
 
         foreach ($member->params as $i => $param) {
             if (isset($values[$i])) {
@@ -750,7 +739,13 @@ trait EmitsMembers
             }
         }
 
-        return $this->valueTypeDefault($member->name, Emitted::value($prefix . $member->name . '(' . $code . ')', $this->resultType($member, $subst, $values)), $elementHint);
+        $result = Emitted::value($prefix . $member->name . '(' . $code . ')', $this->resultType($member, $subst, $values));
+        if ($member->phpArrayOf !== null) {
+            // rules() returns a PHP array, for Laravel; SharpPHP code gets the Dictionary it declares.
+            $result = $this->convertedAtPhpBoundary(Emitted::value($result->code, Type::phpArray()), $result->type);
+        }
+
+        return $this->valueTypeDefault($member->name, $result, $elementHint);
     }
 
     /**
@@ -925,12 +920,14 @@ trait EmitsMembers
         if ($extension !== null) {
             return $extension;
         }
-        [$code] = $this->arguments($args, []);
         if (in_array($name, self::DYNAMIC_METHODS, true)) {
+            [$code] = $this->arguments($args, []);
             $dyn = $this->runtime('Dyn');
 
             return $this->nullSafe($target, $nc, static fn (string $c): string => "$dyn::call($c, '$name'" . ($code !== '' ? ", $code" : '') . ')', Type::mixed());
         }
+        // A method of a value of unknown type (dynamic, object): PHP code, as far as the compiler knows.
+        $code = $this->untypedPhpArguments($args);
 
         return Emitted::value("$recv$arrow$name($code)", Type::mixed());
     }
@@ -1136,6 +1133,30 @@ trait EmitsMembers
         return $symbol->external && str_starts_with($symbol->fqn, Names::RUNTIME_NAMESPACE . '\\');
     }
 
+    /** A PHP class (or Laravel's, a Composer package's), not SharpPHP code or its runtime library. */
+    private static function isPhpCode(TypeSymbol $symbol): bool
+    {
+        return $symbol->external && !self::isRuntimeLibrary($symbol);
+    }
+
+    private function isSystemType(Type $type): bool
+    {
+        return $type->isClass() && strcasecmp((string) $type->class, Names::RUNTIME_NAMESPACE . '\\System\\Type') === 0;
+    }
+
+    /** The PHP class name of a System.Type: Comment::class for typeof(Comment). */
+    private function phpClassName(Emitted $type, Expr $expr): Emitted
+    {
+        if ($expr instanceof TypeOfExpr) {
+            $resolved = $this->resolveType($expr->type);
+            if ($resolved->isClass()) {
+                return Emitted::value($this->classRef((string) $resolved->class) . '::class', Type::string());
+            }
+        }
+
+        return Emitted::value($this->wrap($type, Prec::ATOM) . '->phpName()', Type::string()->withNullable($type->type->nullable));
+    }
+
     /** @param list<ParameterSymbol> $params "Program.Sq(int)" */
     private function signature(string $name, array $params): string
     {
@@ -1152,9 +1173,11 @@ trait EmitsMembers
      * @param list<Argument> $args
      * @param list<ParameterSymbol> $params
      * @param array<string, Type> $subst
+     * @param bool $phpCode the callee is PHP code (not SharpPHP's): a System.Type for an untyped parameter
+     *                      goes as the PHP class name too (Laravel's hasMany(Comment::class), app(...))
      * @return array{0: string, 1: array<int, Emitted>}
      */
-    private function arguments(array $args, array $params, array $subst = [], ?Type $elementHint = null, bool $runtime = false): array
+    private function arguments(array $args, array $params, array $subst = [], ?Type $elementHint = null, bool $runtime = false, bool $phpCode = false): array
     {
         $codes = [];
         $values = [];
@@ -1202,6 +1225,16 @@ trait EmitsMembers
                 }
             } else {
                 $value = $this->expr($arg->value, $expected);
+                // typeof(Comment) where PHP takes a class name: C# has no conversion from Type to string, so
+                // a string parameter can only mean that; an untyped one of PHP code too.
+                if ($this->isSystemType($value->type) && ($expected?->isString() === true || ($phpCode && ($expected === null || $expected->isUnknown())))) {
+                    $value = $this->phpClassName($value, $arg->value);
+                }
+                // view("posts", new Dictionary<...> { ... }): an untyped parameter of PHP code takes a PHP array.
+                if ($phpCode && ($expected === null || $expected->isUnknown()) && $arg->modifier === null
+                    && $this->conversions->collectionName($value->type) !== null) {
+                    $value = Emitted::value($this->runtime('Interop') . '::toArray(' . $value->code . ')', Type::phpArray($this->elementTypeOf($value->type)));
+                }
                 // Sum(numbers) for Sum(params int[] xs): an array passed alone is the params array itself.
                 $isParamsArray = $param?->modifier === 'params' && $arg->name === null && $value->type->kind === 'array'
                     && count($args) === count($params) && $i === count($params) - 1;

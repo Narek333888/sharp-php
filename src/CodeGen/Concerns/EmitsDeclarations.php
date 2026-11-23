@@ -44,6 +44,9 @@ use SharpPhp\Syntax\YieldStmt;
  */
 trait EmitsDeclarations
 {
+    /** @var array<string, true> "Class::$this->field": fields that hold PHP arrays (MemberSymbol::$phpArrayOf) */
+    private array $phpArrayFields = [];
+
     private function emitType(TypeDecl $decl): void
     {
         $this->class = $this->declarator->symbolOf($decl);
@@ -251,7 +254,11 @@ trait EmitsDeclarations
 
             $inherited = $this->inheritedPhpProperty($declarator->name);
             $fieldReadonly = $readonly && ($inherited === null || $inherited->isReadOnly());
-            [$phpType, $default] = $this->storageFor($type, $declarator->init, $fieldReadonly, $static, '$this->' . $declarator->name, 'self::$' . $declarator->name, $instanceInits, $staticInits, $declarator->line);
+            // Model::$casts = new() { ... }: built as the Dictionary it is declared as, stored as a PHP array.
+            [$phpType, $default] = $this->storageFor($member->phpArrayOf ?? $type, $declarator->init, $fieldReadonly, $static, '$this->' . $declarator->name, 'self::$' . $declarator->name, $instanceInits, $staticInits, $declarator->line);
+            if ($member->phpArrayOf !== null) {
+                $this->phpArrayFields[$this->currentClass()->fqn . '::$this->' . $declarator->name] = true;
+            }
             if ($inherited !== null) {
                 // A field that redeclares a PHP base class's property (Laravel's Model::$fillable,
                 // Command::$signature) must keep its PHP type: none for Laravel's properties.
@@ -582,7 +589,10 @@ trait EmitsDeclarations
     {
         foreach ($instanceInits as [$target, $init, $type, $line]) {
             $this->w->sourceLine = $line;
-            $this->w->line("$target = " . $this->convert($init, $type)->code . ';');
+            $code = $this->convert($init, $type)->code;
+            // A field that PHP code reads (Laravel's $casts): a PHP array.
+            $toArray = isset($this->phpArrayFields[$symbol->fqn . '::' . $target]);
+            $this->w->line("$target = " . ($toArray ? $this->runtime('Interop') . "::toArray($code)" : $code) . ';');
         }
 
         $this->w->sourceLine = $constructor->line ?? $decl->line;
@@ -597,7 +607,8 @@ trait EmitsDeclarations
             if ($baseParams !== null) {
                 $this->checkArguments($constructor->initializerArgs, $baseParams, Names::csharpName((string) $symbol->baseClass), $this->baseConstructorSignature($symbol, $baseParams), $constructor, constructor: true);
             }
-            [$args] = $this->arguments($constructor->initializerArgs, $baseParams ?? [], runtime: $this->symbols->find((string) $symbol->baseClass)->external ?? false);
+            $base = $this->symbols->find((string) $symbol->baseClass);
+            [$args] = $this->arguments($constructor->initializerArgs, $baseParams ?? [], runtime: $base->external ?? false, phpCode: $base !== null && self::isPhpCode($base));
             $this->w->line("parent::__construct($args);");
         } elseif ($symbol->baseClass !== null && $this->symbols->hasConstructor($symbol->baseClass)) {
             $baseParams = $this->baseConstructorParams($symbol);
@@ -683,7 +694,8 @@ trait EmitsDeclarations
         }
 
         $async = in_array('async', $modifiers, true);
-        $bodyType = $member->type;
+        // A method Laravel calls (rules()) is written with its List/Dictionary type and returns a PHP array.
+        $bodyType = $member->phpArrayOf ?? $member->type;
         if ($async) {
             $bodyType = $this->asyncResultType($member->type)
                 ?? throw $this->error('SP1983', "The return type of an async method must be void, Task or Task<T>", $method);
@@ -702,6 +714,7 @@ trait EmitsDeclarations
 
         $context = new FunctionContext($static, $bodyType, $typeParams);
         $context->isAsync = $async;
+        $context->toPhpArray = $member->phpArrayOf !== null;
         $context->localFunction = $method->isLocalFunction ? $method : null;
         self::analyzeCaptures($context, [$method]);
         $this->inFunction($context, function () use ($method, $member, $modifiers, $static, $abstract, $inInterface, $isGenerator, $async, $bodyType): void {
@@ -711,7 +724,7 @@ trait EmitsDeclarations
                     . (in_array('sealed', $modifiers, true) ? 'final ' : '')
                     . $visibility . ($static ? ' static' : '');
                 $params = $this->parameters($method->params, $inInterface ? null : $this->inheritedMethod($method->name));
-                $return = $isGenerator ? 'iterable' : $this->typeDecl($member->type);
+                $return = $isGenerator ? 'iterable' : ($member->phpArrayOf !== null ? ($member->type->nullable ? '?array' : 'array') : $this->typeDecl($member->type));
                 $signature = "$prefix function {$method->name}($params)" . ($return !== null ? ": $return" : '');
 
                 if ($method->body === null && $method->exprBody === null) {
@@ -727,7 +740,7 @@ trait EmitsDeclarations
                 if ($async) {
                     $this->asyncBody($member->type, $static, array_map(static fn ($p): string => $p->name, $method->params), fn () => $this->methodBody($method, $bodyType));
                 } else {
-                    $this->methodBody($method, $member->type);
+                    $this->methodBody($method, $bodyType);
                 }
                 $this->requireOutParamsAssigned($method);
                 if ($method->body !== null && $bodyType->kind !== 'void') {
@@ -805,12 +818,18 @@ trait EmitsDeclarations
         return false;
     }
 
+    /** A returned List/Dictionary as a PHP array, in a method that PHP code calls (FunctionContext::$toPhpArray). */
+    private function returnedToPhp(string $code): string
+    {
+        return $this->currentFunction()->toPhpArray ? $this->runtime('Interop') . "::toArray($code)" : $code;
+    }
+
     private function methodBody(MethodDecl $method, Type $returnType): void
     {
         if ($method->exprBody !== null) {
             $this->w->sourceLine = $method->exprBody->line;
             $value = $returnType->kind === 'void' ? $this->expr($method->exprBody) : $this->convert($method->exprBody, $returnType);
-            $this->w->line(($returnType->kind === 'void' ? '' : 'return ') . $value->code . ';');
+            $this->w->line(($returnType->kind === 'void' ? '' : 'return ') . $this->returnedToPhp($value->code) . ';');
 
             return;
         }

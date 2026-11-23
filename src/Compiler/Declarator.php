@@ -349,6 +349,11 @@ final class Declarator
                     );
                     $field->isReadonly = in_array('readonly', $member->modifiers, true);
                     $field->constantValue = $member->isConst ? $declarator->init : null;
+                    // Laravel's Model::$casts, $hidden, ...: a field redeclaring a property of a PHP base
+                    // class is read by PHP code, which takes a PHP array, not a Dictionary or List.
+                    if (!$static && $this->phpBaseProperty($symbol, $declarator->name)) {
+                        $this->storeAsPhpArray($field);
+                    }
                     $this->add($symbol, $field, $file, $declarator);
                 }
             } elseif ($member instanceof PropertyDecl) {
@@ -421,6 +426,11 @@ final class Declarator
                 );
                 $method->isAbstract = in_array('abstract', $member->modifiers, true);
                 $method->isLocalFunction = $member->isLocalFunction;
+                // Laravel calls rules(), casts(), messages() ... of the classes derived from its own, and
+                // takes PHP arrays from them: such a method returns its List/Dictionary as one.
+                if (!$isStatic && $method->visibility !== 'private' && !$member->isLocalFunction && $this->hasPhpBaseClass($symbol)) {
+                    $this->storeAsPhpArray($method, keepType: true);
+                }
                 $this->declareExtension($decl, $member, $method, $file);
                 $method->extensionProperty = $member->extensionProperty;
                 if ($member->extensionOf !== null) {
@@ -490,6 +500,63 @@ final class Declarator
         }
         $member->location = [$file->path, $at->line, $at->column];
         $symbol->addMember($member);
+    }
+
+    /**
+     * A List, Dictionary or HashSet member becomes a PHP array (MemberSymbol::$phpArrayOf). A method keeps
+     * its type for SharpPHP code, which gets the collection back from the array (see EmitsMembers).
+     */
+    private function storeAsPhpArray(MemberSymbol $member, bool $keepType = false): void
+    {
+        $type = $member->type;
+        $collections = [
+            Names::RUNTIME_NAMESPACE . '\\System\\Collections\\Generic\\List_' => 0,
+            Names::RUNTIME_NAMESPACE . '\\System\\Collections\\Generic\\HashSet' => 0,
+            Names::RUNTIME_NAMESPACE . '\\System\\Collections\\Generic\\Dictionary' => 1,
+        ];
+        if (!$type->isClass() || !isset($collections[(string) $type->class])) {
+            return;
+        }
+        $member->phpArrayOf = $type;
+        if (!$keepType) {
+            $member->type = Type::phpArray($type->args[$collections[(string) $type->class]] ?? null)->withNullable($type->nullable);
+        }
+    }
+
+    /** The class derives from a PHP class (Laravel's Model, Controller, FormRequest), not from SharpPHP's own. */
+    private function hasPhpBaseClass(TypeSymbol $symbol): bool
+    {
+        for ($base = $symbol->baseClass; $base !== null; $base = $this->symbols->find($base)?->baseClass) {
+            $baseSymbol = $this->symbols->find($base);
+            if ($baseSymbol === null) {
+                return false;
+            }
+            if ($baseSymbol->external) {
+                return !str_starts_with($baseSymbol->fqn, Names::RUNTIME_NAMESPACE . '\\');
+            }
+        }
+
+        return false;
+    }
+
+    /** A non-private property of the nearest PHP base class has this name (Model::$casts). */
+    private function phpBaseProperty(TypeSymbol $symbol, string $name): bool
+    {
+        if (!$this->hasPhpBaseClass($symbol)) {
+            return false;
+        }
+        for ($base = $symbol->baseClass; $base !== null; $base = $this->symbols->find($base)?->baseClass) {
+            $baseSymbol = $this->symbols->find($base);
+            if ($baseSymbol !== null && $baseSymbol->external) {
+                if (!class_exists($baseSymbol->fqn) || !property_exists($baseSymbol->fqn, $name)) {
+                    return false;
+                }
+
+                return !(new \ReflectionProperty($baseSymbol->fqn, $name))->isPrivate();
+            }
+        }
+
+        return false;
     }
 
     /** @param list<string> $modifiers */
