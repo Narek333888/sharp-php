@@ -45,17 +45,40 @@ final class Conversions
         }
 
         return match ($from->kind) {
-            'int' => in_array($to->kind, ['int', 'float'], true) || ($isZeroLiteral && $this->isEnum($to)),
+            'int' => ($to->kind === 'int' && self::integralConverts($from->integralName(), $to->integralName()))
+                || $to->kind === 'float' || ($isZeroLiteral && $this->isEnum($to)),
             'float', 'bool' => $to->kind === $from->kind,
             // Arrays and IEnumerable<T> are covariant: Dog[] is an Animal[] and an IEnumerable<Animal>.
             'array' => in_array($to->kind, ['array', 'iterable'], true) && $this->argumentConverts($from->element(), $to->element(), 'out'),
-            'char' => in_array($to->kind, ['char', 'int', 'float'], true) || ($charAsString && $to->isString()),
+            'char' => in_array($to->kind, ['char', 'float'], true) || ($to->kind === 'int' && self::integralConverts('ushort', $to->integralName()))
+                || ($charAsString && $to->isString()),
             'string' => in_array($to->kind, ['string', 'iterable'], true),
             'closure' => ($to->kind === 'closure' && $this->delegateConverts($from, $to)) || ($to->isClass() && strcasecmp((string) $to->class, 'Closure') === 0),
             'iterable' => !$this->isPrimitive($to) && ($to->kind !== 'iterable' || $this->argumentConverts($from->element(), $to->element(), 'out')),
             'class' => $this->isImplicitFromClass($from, $to),
             default => true,
         };
+    }
+
+    /**
+     * C#'s implicit numeric conversions between integral types: to a type that holds every value
+     * (byte -> int, int -> long, uint -> ulong), never to a narrower one (int -> byte, long -> int).
+     */
+    public static function integralConverts(string $from, string $to): bool
+    {
+        if ($from === $to || $from === Type::UNSIZED || $to === Type::UNSIZED) {
+            return true;
+        }
+
+        return in_array($to, match ($from) {
+            'sbyte' => ['short', 'int', 'long'],
+            'byte' => ['short', 'ushort', 'int', 'uint', 'long', 'ulong'],
+            'short' => ['int', 'long'],
+            'ushort' => ['int', 'uint', 'long', 'ulong'],
+            'int' => ['long'],
+            'uint' => ['long', 'ulong'],
+            default => [],
+        }, true);
     }
 
     /**

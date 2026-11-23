@@ -1168,6 +1168,27 @@ final class Parser
         return (new ExprStmt($expr))->at($token);
     }
 
+    /**
+     * The type of an integer literal, as in C#: 10L is a long, 10u a uint, 10UL a ulong; without a
+     * suffix the first of int, uint, long that holds the value (3000000000 is a uint).
+     */
+    private function integerLiteralType(Token $token): string
+    {
+        $text = strtolower(substr($this->file->text, $token->offset, $token->length));
+        $suffix = substr($text, strlen(rtrim($text, 'ul')));
+        $value = is_int($token->value) ? $token->value : 0;
+        $fits = static fn (string $type): bool => $value >= \SharpPhp\Semantics\Type::INTEGRAL_RANGES[$type][0] && $value <= \SharpPhp\Semantics\Type::INTEGRAL_RANGES[$type][1];
+
+        return match (true) {
+            str_contains($suffix, 'u') && str_contains($suffix, 'l') => 'ulong',
+            $suffix === 'l' => 'long',
+            $suffix === 'u' => $fits('uint') ? 'uint' : 'ulong',
+            $fits('int') => 'int',
+            $fits('uint') => 'uint',
+            default => 'long',
+        };
+    }
+
     /** lock (gate) { ... } */
     private function parseLock(): LockStmt
     {
@@ -1855,7 +1876,7 @@ final class Parser
             case TokenType::Int:
                 $this->advance();
 
-                return (new LiteralExpr('int', $token->value))->at($token);
+                return (new LiteralExpr('int', $token->value, $this->integerLiteralType($token)))->at($token);
             case TokenType::Float:
                 $this->advance();
 

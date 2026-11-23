@@ -33,6 +33,16 @@ trait ChecksTypes
     private function converted(Emitted $value, Type $target, Node $at, ?int $argument = null, bool $runtimeParameter = false): Emitted
     {
         $isZero = $value->type->isInt() && $value->intValue === 0;
+        // byte b = 200: an int constant converts to a smaller integral type that holds it (CS0031 otherwise).
+        if ($value->type->isInt() && $value->intValue !== null && $target->kind === 'int'
+            && !$this->conversions->isImplicit($value->type, $target) && $value->type->integralName() === 'int') {
+            [$min, $max] = Type::INTEGRAL_RANGES[$target->integralName()] ?? [PHP_INT_MIN, PHP_INT_MAX];
+            if ($value->intValue < $min || $value->intValue > $max) {
+                throw $this->error('SP0031', "Constant value '{$value->intValue}' cannot be converted to a '{$target->withNullable(false)->describe()}'", $at);
+            }
+
+            return new Emitted($value->code, $target, $value->prec, intValue: $value->intValue);
+        }
         if (!$this->conversions->isImplicit($value->type, $target, $isZero, $runtimeParameter)) {
             throw $this->conversionError($value, $target, $at, $argument);
         }

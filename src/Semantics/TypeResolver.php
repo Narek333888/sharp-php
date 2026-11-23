@@ -28,6 +28,12 @@ final class TypeResolver
         'Single' => 'float', 'Double' => 'float', 'Decimal' => 'float', 'Boolean' => 'bool', 'Object' => 'mixed',
     ];
 
+    /** System.Int64 and friends: the C# integral type they are. */
+    private const SYSTEM_INTEGRALS = [
+        'Int16' => 'short', 'Int32' => 'int', 'Int64' => 'long', 'UInt16' => 'ushort', 'UInt32' => 'uint',
+        'UInt64' => 'ulong', 'Byte' => 'byte', 'SByte' => 'sbyte',
+    ];
+
     /** Keyword type used as an expression (int.Parse) => runtime helper class. */
     public const KEYWORD_RUNTIME_CLASSES = [
         'string' => 'System.String', 'char' => 'System.Char', 'int' => 'System.Int32', 'long' => 'System.Int64',
@@ -58,6 +64,10 @@ final class TypeResolver
         $args = array_map(fn (TypeRef $a): Type => $this->resolve($a, $ctx, $typeParams), $ref->args);
 
         if (isset(self::KEYWORDS[$ref->name])) {
+            if (isset(Type::INTEGRAL_RANGES[$ref->name])) {
+                return Type::integral($ref->name)->withNullable($ref->nullable);
+            }
+
             return $this->primitive(self::KEYWORDS[$ref->name])->withNullable($ref->nullable);
         }
 
@@ -68,6 +78,10 @@ final class TypeResolver
         $simple = str_starts_with($ref->name, 'System.') ? substr($ref->name, 7) : $ref->name;
         // A project type named like a System alias (class Single) shadows it, as in C#.
         if (isset(self::SYSTEM_PRIMITIVES[$simple]) && $args === [] && !$this->isProjectType($ref->name, $ctx)) {
+            if (isset(self::SYSTEM_INTEGRALS[$simple])) {
+                return Type::integral(self::SYSTEM_INTEGRALS[$simple])->withNullable($ref->nullable);
+            }
+
             return $this->primitive(self::SYSTEM_PRIMITIVES[$simple])->withNullable($ref->nullable);
         }
         if (in_array($simple, self::DELEGATES, true)) {

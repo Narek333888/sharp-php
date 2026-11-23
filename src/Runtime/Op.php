@@ -470,6 +470,25 @@ final class Op
         }
     }
 
+    /**
+     * A number cut to a smaller integral type, as C# does without overflow checks: (byte)300 is 44,
+     * (sbyte)200 is -56; also what byte b += 100 stores.
+     *
+     * @internal the compiler emits it for casts and for compound assignments to byte, short, ...
+     */
+    public static function narrow(int $value, string $type): int
+    {
+        return match ($type) {
+            'byte' => $value & 0xFF,
+            'sbyte' => (($value + 0x80) & 0xFF) - 0x80,
+            'short' => (($value + 0x8000) & 0xFFFF) - 0x8000,
+            'ushort' => $value & 0xFFFF,
+            'int' => (($value + 0x80000000) & 0xFFFFFFFF) - 0x80000000,
+            'uint' => $value & 0xFFFFFFFF,
+            default => $value,
+        };
+    }
+
     /** The size of new T[n]: .NET throws OverflowException for a negative one. */
     public static function arraySize(int $size): int
     {

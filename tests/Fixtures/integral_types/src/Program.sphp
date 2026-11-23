@@ -1,0 +1,53 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+// Constants in range convert to the smaller types; arithmetic promotes as in C#
+byte a = 200;
+short s = -300;
+long big = 5_000_000_000;
+var u = 3000000000;     // a uint
+var l = 10L;            // a long
+int i = a + s;          // byte + short is an int
+long sum = i + big;     // int + long is a long
+uint ui = 5;
+var mixed = ui + i;     // uint + int is a long
+Console.WriteLine($"{a} {s} {big} {u} {l} {i} {sum} {mixed}");
+
+// Explicit casts cut the value, as C# does without overflow checks
+int n = 300;
+long huge = 5000000000;
+long minusOne = -1;
+Console.WriteLine($"{(byte)n} {(sbyte)(n - 100)} {(int)huge} {(ushort)(n * 300)} {(byte)'A'} {(int)3.9} {(uint)minusOne}");
+
+// Compound assignments and ++/-- keep the variable's range
+byte b = 250;
+b += 10;
+byte max = 255;
+max++;
+byte zero = 0;
+var before = zero--;
+sbyte sb = 127;
+sb++;
+ushort us = 65535;
+us += 2;
+short sh = 10;
+sh *= 5000;
+var bytes = new List<byte> { 10, 20 };
+bytes[0] += 250;
+var counter = new Counter();
+for (int k = 0; k < 300; k++) counter.Hits++;
+Console.WriteLine($"{b} {max} {before} {zero} {sb} {us} {sh} {bytes[0]} {counter.Hits}");
+
+// char converts to ushort and wider; library calls take any integer
+char c = 'A';
+ushort code = c;
+byte parsed = byte.Parse("42");
+byte converted = Convert.ToByte("200");
+byte largest = new byte[] { 3, 250, 7 }.Max();
+Console.WriteLine($"{code} {parsed} {converted} {largest} {Pick(a, 1000)}");
+try { Convert.ToByte(300); } catch (OverflowException e) { Console.WriteLine(e.Message); }
+
+static T Pick<T>(T x, T y) where T : IComparable<T> => x.CompareTo(y) >= 0 ? x : y;
+
+class Counter { public byte Hits { get; set; } }

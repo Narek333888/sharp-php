@@ -52,6 +52,36 @@ final class Type
         return self::$cache['int'] ??= new self('int');
     }
 
+    /**
+     * An integer of unknown size: an int of PHP code or of the runtime library (whose signatures do not
+     * say byte or long). It converts to and from every integral type.
+     */
+    public const UNSIZED = '*';
+
+    /** C#'s integral types and their ranges (ulong is limited to PHP's int). */
+    public const INTEGRAL_RANGES = [
+        'sbyte' => [-128, 127],
+        'byte' => [0, 255],
+        'short' => [-32768, 32767],
+        'ushort' => [0, 65535],
+        'int' => [-2147483648, 2147483647],
+        'uint' => [0, 4294967295],
+        'long' => [PHP_INT_MIN, PHP_INT_MAX],
+        'ulong' => [0, PHP_INT_MAX],
+    ];
+
+    /** byte, short, long, ... (all PHP ints at run time); "int" is Type::int(). */
+    public static function integral(string $name): self
+    {
+        return $name === 'int' ? self::int() : (self::$cache["int:$name"] ??= new self('int', null, [], false, $name));
+    }
+
+    /** byte, short, int, long, ... of an integral type; "*" for one of unknown size (see UNSIZED). */
+    public function integralName(): string
+    {
+        return $this->kind === 'int' ? ($this->param ?? 'int') : 'int';
+    }
+
     public static function float(): self
     {
         return self::$cache['float'] ??= new self('float');
@@ -295,7 +325,8 @@ final class Type
     public function describe(): string
     {
         $text = match ($this->kind) {
-            'int', 'float', 'string', 'char', 'bool', 'void' => $this->kind === 'float' ? 'double' : $this->kind,
+            'int' => $this->param === null || $this->param === self::UNSIZED ? 'int' : $this->param,
+            'float', 'string', 'char', 'bool', 'void' => $this->kind === 'float' ? 'double' : $this->kind,
             'mixed' => 'object',
             'null' => 'null',
             'array' => $this->isPhpArray() ? 'array' : $this->element()->describe() . '[]',

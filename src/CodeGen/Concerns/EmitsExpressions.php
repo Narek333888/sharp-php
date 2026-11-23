@@ -113,7 +113,7 @@ trait EmitsExpressions
         return match ($e->kind) {
             'int' => $expected !== null && $expected->isFloat()
                 ? Emitted::value(self::phpFloat($e->floatValue()), Type::float())
-                : new Emitted((string) $e->intValue(), Type::int(), intValue: $e->intValue()),
+                : new Emitted((string) $e->intValue(), Type::integral($e->integral), intValue: $e->intValue()),
             'float' => Emitted::value(self::phpFloat($e->floatValue()), Type::float()),
             'string' => Emitted::value(self::phpString($e->stringValue()), Type::string()),
             'char' => new Emitted(self::phpString($e->stringValue()), Type::char(), intValue: mb_ord($e->stringValue())),
@@ -186,11 +186,12 @@ trait EmitsExpressions
         if (!$value->type->isChar()) {
             return $value;
         }
+        // A char's code is a ushort (char converts to ushort, int, long ...; arithmetic promotes it to int).
         if ($value->intValue !== null) {
-            return Emitted::value((string) $value->intValue, Type::int());
+            return new Emitted((string) $value->intValue, Type::integral('ushort'), intValue: $value->intValue);
         }
 
-        return Emitted::value('\\mb_ord(' . $value->code . ')', Type::int());
+        return Emitted::value('\\mb_ord(' . $value->code . ')', Type::integral('ushort'));
     }
 
     /** An enum used as a number: its underlying value (C# compares enums numerically). */
@@ -262,6 +263,20 @@ trait EmitsExpressions
                 return Emitted::value("\\mb_chr(\\mb_ord($assign) $back 1)", Type::char());
             }
 
+            $narrow = $target->type->isInt() ? $target->type->withNullable(false)->integralName() : null;
+            if ($narrow !== null && in_array($narrow, self::NARROW_INTEGRALS, true)) {
+                // byte 255 + 1 is 0 in C#: the variable keeps its type's range.
+                $step = $op === '++' ? '+' : '-';
+                $narrowFn = $this->runtime('Op') . '::narrow';
+                $assign = "{$target->code} = $narrowFn({$target->code} $step 1, '$narrow')";
+                if (!$e->postfix || $this->discarded === $e) {
+                    return Emitted::value($assign, $target->type, Prec::ASSIGN);
+                }
+                $back = $op === '++' ? '-' : '+';
+
+                return Emitted::value("$narrowFn(($assign) $back 1, '$narrow')", $target->type);
+            }
+
             return Emitted::value($e->postfix ? $target->code . $op : $op . $target->code, $target->type, Prec::UNARY);
         }
 
@@ -272,16 +287,58 @@ trait EmitsExpressions
         }
 
         // -5 is a constant too (array sizes, CS0248).
+        // -x of a byte or short is an int; of a uint a long (C#'s unary promotion).
+        $negated = $operand->type->isInt()
+            ? (in_array($operand->type->integralName(), ['uint'], true) ? Type::integral('long') : self::promotedIntegral($operand->type, $operand->type))
+            : $operand->type;
         if ($op === '-' && $operand->type->isInt() && $operand->intValue !== null && $operand->intValue !== PHP_INT_MIN) {
-            return new Emitted('-' . $this->unaryOperand($operand, '-'), Type::int(), Prec::UNARY, intValue: -$operand->intValue);
+            $literal = $operand->type->integralName() === 'long' || $operand->type->integralName() === 'ulong' ? $negated : Type::int();
+
+            return new Emitted('-' . $this->unaryOperand($operand, '-'), $literal, Prec::UNARY, intValue: -$operand->intValue);
         }
 
         return match ($op) {
-            '-' => Emitted::value('-' . $this->unaryOperand($operand, '-'), $operand->type->isNumeric() ? $operand->type : Type::mixed(), Prec::UNARY),
-            '+' => $operand,
+            '-' => Emitted::value('-' . $this->unaryOperand($operand, '-'), $operand->type->isNumeric() ? $negated : Type::mixed(), Prec::UNARY),
+            '+' => $operand->type->isInt() ? new Emitted($operand->code, self::promotedIntegral($operand->type, $operand->type), $operand->prec, intValue: $operand->intValue) : $operand,
             '!' => Emitted::value('!' . $this->wrap($operand, Prec::NOT), Type::bool(), Prec::NOT),
-            '~' => Emitted::value('~' . $this->unaryOperand($operand, '~'), Type::int(), Prec::UNARY),
+            '~' => Emitted::value('~' . $this->unaryOperand($operand, '~'), $operand->type->isInt() ? self::promotedIntegral($operand->type, $operand->type) : Type::int(), Prec::UNARY),
             default => throw $this->error('SP1010', "Unsupported operator '$op'", $e),
+        };
+    }
+
+    /** Integral types smaller than PHP's int (or unsigned): what C# stores in them wraps around. */
+    private const NARROW_INTEGRALS = ['sbyte', 'byte', 'short', 'ushort', 'uint'];
+
+    /**
+     * A number cut to an integral type as C# does without overflow checks: (byte)300 is 44, (int)x of a
+     * long keeps its low 32 bits. Types of 64 bits (and unknown sizes) are PHP's int already.
+     */
+    private function narrowed(Emitted $value, Type $target): Emitted
+    {
+        $name = $target->integralName();
+        if (in_array($name, ['long', 'ulong', Type::UNSIZED], true)) {
+            return new Emitted($value->code, $target, $value->prec);
+        }
+
+        return Emitted::value($this->runtime('Op') . '::narrow(' . $value->code . ", '$name')", $target);
+    }
+
+    /**
+     * The type of arithmetic on two integers, as C#'s binary numeric promotion: int unless an operand is
+     * long (long), ulong (ulong), or uint (uint; long with a signed operand). byte, short, char: int.
+     */
+    private static function promotedIntegral(Type $a, Type $b): Type
+    {
+        $names = [$a->kind === 'int' ? $a->integralName() : 'int', $b->kind === 'int' ? $b->integralName() : 'int'];
+        if (in_array(Type::UNSIZED, $names, true)) {
+            return Type::integral(Type::UNSIZED);
+        }
+
+        return match (true) {
+            in_array('ulong', $names, true) => Type::integral('ulong'),
+            in_array('long', $names, true) => Type::integral('long'),
+            in_array('uint', $names, true) => array_diff($names, ['uint', 'byte', 'ushort']) === [] ? Type::integral('uint') : Type::integral('long'),
+            default => Type::int(),
         };
     }
 
@@ -336,7 +393,8 @@ trait EmitsExpressions
 
         $lt = $l->type;
         $rt = $r->type;
-        $numericType = $lt->isFloat() || $rt->isFloat() ? Type::float() : Type::int();
+        // C#'s numeric promotion: byte + byte is an int, int + long a long, uint + int a long.
+        $numericType = $lt->isFloat() || $rt->isFloat() ? Type::float() : self::promotedIntegral($lt, $rt);
         $bothNumeric = $lt->isNumeric() && $rt->isNumeric();
         $bothInt = $lt->isInt() && $rt->isInt();
         $op_ = $this->runtime('Op');
@@ -356,7 +414,7 @@ trait EmitsExpressions
                 return $this->infix($op, $l, $r, $op === '*' ? Prec::MUL : Prec::ADD, $bothNumeric ? $numericType : Type::mixed());
             case '/':
                 if ($bothInt) {
-                    return Emitted::value("\\intdiv({$l->code}, {$r->code})", Type::int());
+                    return Emitted::value("\\intdiv({$l->code}, {$r->code})", $numericType);
                 }
                 if ($bothNumeric) {
                     // fdiv: 1.0 / 0 is Infinity (and 0.0 / 0 NaN) as in C#; PHP's "/" throws there.
@@ -366,7 +424,7 @@ trait EmitsExpressions
                 return Emitted::value("$op_::div({$l->code}, {$r->code})", Type::mixed());
             case '%':
                 if ($bothInt) {
-                    return $this->infix('%', $l, $r, Prec::MUL, Type::int());
+                    return $this->infix('%', $l, $r, Prec::MUL, $numericType);
                 }
                 if ($bothNumeric) {
                     return Emitted::value("\\fmod({$l->code}, {$r->code})", Type::float());
@@ -375,7 +433,8 @@ trait EmitsExpressions
                 return Emitted::value("$op_::mod({$l->code}, {$r->code})", Type::mixed());
             case '<<':
             case '>>':
-                return $this->infix($op, $l, $r, Prec::SHIFT, Type::int());
+                // The type of a shift is the left operand's, promoted: byte << 1 is an int, long << 1 a long.
+                return $this->infix($op, $l, $r, Prec::SHIFT, self::promotedIntegral($lt, $lt));
             case '&':
             case '|':
             case '^':
@@ -388,7 +447,7 @@ trait EmitsExpressions
                     return Emitted::value('(bool) (' . $this->infix($op, $l, $r, $prec, Type::int())->code . ')', Type::bool(), Prec::UNARY);
                 }
 
-                return $this->infix($op, $l, $r, $prec, Type::int());
+                return $this->infix($op, $l, $r, $prec, $bothInt ? $numericType : Type::int());
             case '==':
             case '!=':
                 return $this->equality($op === '==', $l, $r);
@@ -612,6 +671,17 @@ trait EmitsExpressions
             $value = $this->charToInt($value);
             $vt = $value->type;
         }
+        // byte b += 10: C# computes in int and stores the result cut to the variable's type (b = (byte)(b + 10)),
+        // when the value converts to that type (b += 1000 is CS0031, b += anInt CS0266).
+        $narrow = $type->isInt() ? $type->withNullable(false)->integralName() : null;
+        if ($narrow !== null && in_array($narrow, self::NARROW_INTEGRALS, true) && $vt->isInt()) {
+            if ($binaryOp !== '<<' && $binaryOp !== '>>') {
+                $this->converted($value, $type->withNullable(false), $e->value);
+            }
+            $combined = $this->binaryOperation($binaryOp, $target, $value, $e);
+
+            return Emitted::value($target->code . ' = ' . $this->runtime('Op') . "::narrow({$combined->code}, '$narrow')", $type, Prec::ASSIGN);
+        }
         $bothNumeric = $type->isNumeric() && $vt->isNumeric();
         $bothInt = $type->isInt() && $vt->isInt();
 
@@ -675,6 +745,10 @@ trait EmitsExpressions
         $oldName = $this->temp($at);
         $old = Emitted::value($oldName, $elementType);
         $new = $this->binaryOperation($operator, $old, $value !== null ? $this->expr($value) : Emitted::value('1', Type::int()), $at);
+        $narrow = $elementType->isInt() ? $elementType->withNullable(false)->integralName() : null;
+        if ($narrow !== null && in_array($narrow, self::NARROW_INTEGRALS, true) && $new->type->isInt()) {
+            $new = $this->narrowed($new, $elementType->withNullable(false)); // bytes[0] += 250 wraps, as in C#
+        }
         if ($elementType->isChar() && !$new->type->isString()) {
             $new = $this->intToChar($new);
         }
@@ -735,6 +809,14 @@ trait EmitsExpressions
         if ($b->isNull()) {
             return $a->withNullable();
         }
+        if ($a->isInt() && $b->isInt()) {
+            // cond ? aByte : anInt is an int: the type both convert to.
+            $plainA = $a->withNullable(false);
+            $plainB = $b->withNullable(false);
+            $wider = $this->conversions->isImplicit($plainA, $plainB) ? $plainB : ($this->conversions->isImplicit($plainB, $plainA) ? $plainA : Type::integral('long'));
+
+            return $wider->withNullable($a->nullable || $b->nullable);
+        }
         if ($a->isNumeric() && $b->isNumeric()) {
             return Type::float();
         }
@@ -780,14 +862,33 @@ trait EmitsExpressions
 
         switch ($target->kind) {
             case 'int':
-                if ($source->isInt()) {
-                    return $value;
+                $plain = $target->withNullable(false);
+                if ($source->isInt() || $source->isChar()) {
+                    $number = $this->charToInt($value);
+                    // (byte)300 as a constant: C#'s CS0221; (byte)x wraps at run time (unchecked).
+                    if ($number->intValue !== null) {
+                        [$min, $max] = Type::INTEGRAL_RANGES[$plain->integralName()] ?? [PHP_INT_MIN, PHP_INT_MAX];
+                        if ($number->intValue < $min || $number->intValue > $max) {
+                            throw $this->error('SP0221', "Constant value '{$number->intValue}' cannot be converted to a '{$plain->describe()}' (use 'unchecked' syntax to override)", $e);
+                        }
+
+                        return new Emitted($number->code, $target, $number->prec, intValue: $number->intValue);
+                    }
+                    if ($this->conversions->isImplicit($number->type->withNullable(false), $plain)) {
+                        return new Emitted($number->code, $target, $number->prec);
+                    }
+
+                    return $this->narrowed($number, $plain);
                 }
                 if ($sourceSymbol !== null && $sourceSymbol->isEnum()) {
-                    return Emitted::value($this->wrap($value, Prec::ATOM) . '->value', Type::int());
+                    return $this->narrowed(Emitted::value($this->wrap($value, Prec::ATOM) . '->value', Type::int()), $plain);
                 }
 
-                return Emitted::value('(int) ' . $this->wrap($value, Prec::UNARY), Type::int(), Prec::UNARY);
+                // (int)3.9 is 3; a double out of the type's range has no defined result in C#.
+                $truncated = Emitted::value('(int) ' . $this->wrap($value, Prec::UNARY), $target, Prec::UNARY);
+
+                return in_array($plain->integralName(), self::NARROW_INTEGRALS, true) && $plain->integralName() !== 'uint'
+                    ? $this->narrowed($truncated, $plain) : $truncated;
             case 'float':
                 return $source->isFloat() ? $value : Emitted::value('(float) ' . $this->wrap($value, Prec::UNARY), Type::float(), Prec::UNARY);
             case 'bool':

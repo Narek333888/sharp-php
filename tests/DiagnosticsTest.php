@@ -153,6 +153,11 @@ class P { static void Main() { "x".Size = 2; } }', 'SP0200', 'Property or indexe
         yield 'event of a non-delegate type' => ['class B { public event int E; }', 'SP0066', "'B.E': event must be of a delegate type", 1, 28];
         yield 'await in a lock' => ["class P\n{\n    static async System.Threading.Tasks.Task Main()\n    {\n        var o = new object(); lock (o) { await System.Threading.Tasks.Task.Delay(1); }\n    }\n}\n", 'SP1996', 'Cannot await in the body of a lock statement', 5, 31];
         yield 'lock on a value type' => [$main('int x = 1; lock (x) { }'), 'SP0185', "'int' is not a reference type as required by the lock statement", 6, 26];
+        yield 'constant out of a byte' => [$main('byte x = 10000;'), 'SP0031', "Constant value '10000' cannot be converted to a 'byte'", 6, 18];
+        yield 'byte plus byte is an int' => [$main('byte x = 1; byte y = 2; byte z = x + y;'), 'SP0266', "Cannot implicitly convert type 'int' to 'byte'. An explicit conversion exists (are you missing a cast?)", 6, 44];
+        yield 'long to int' => [$main('long l = 5; int i = l;'), 'SP0266', "Cannot implicitly convert type 'long' to 'int'. An explicit conversion exists (are you missing a cast?)", 6, 29];
+        yield 'constant cast out of range' => [$main('var s = (short)70000;'), 'SP0221', "Constant value '70000' cannot be converted to a 'short' (use 'unchecked' syntax to override)", 6, 17];
+        yield 'byte += an int' => [$main('byte b = 1; int i = 5; b += i;'), 'SP0266', "Cannot implicitly convert type 'int' to 'byte'. An explicit conversion exists (are you missing a cast?)", 6, 37];
         yield 'default interface method' => ["interface I { string Name() => \"d\"; }\nclass A : I { }", 'SP8701', 'Default interface methods are not supported; use an abstract base class', 1, 22];
     }
 

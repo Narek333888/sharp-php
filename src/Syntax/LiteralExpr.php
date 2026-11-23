@@ -12,6 +12,8 @@ final class LiteralExpr extends Expr
     public function __construct(
         public readonly string $kind,
         public readonly mixed $value,
+        /** An integer literal's C# type: int, uint, long or ulong (from its suffix and its size). */
+        public readonly string $integral = 'int',
     ) {
     }
 

@@ -643,7 +643,7 @@ final class SymbolTable
     private function valueType(mixed $value): Type
     {
         return match (true) {
-            is_int($value) => Type::int(),
+            is_int($value) => Type::integral(Type::UNSIZED),
             is_float($value) => Type::float(),
             is_string($value) => Type::string(),
             is_bool($value) => Type::bool(),
@@ -676,7 +676,10 @@ final class SymbolTable
     private function namedType(string $name, TypeSymbol $self): Type
     {
         return match (strtolower($name)) {
-            'int' => Type::int(),
+            // PHP's int does not say byte or long: it converts to and from every C# integral type.
+            'int' => Type::integral(Type::UNSIZED),
+            // C#'s integral types in docblocks of the runtime library (@sharp-return byte).
+            'byte', 'sbyte', 'short', 'ushort', 'uint', 'long', 'ulong' => Type::integral(strtolower($name)),
             'float' => Type::float(),
             'string' => Type::string(),
             'char' => Type::char(),
@@ -738,7 +741,7 @@ final class SymbolTable
         // PHPStan's refined scalars: int<0, max>, positive-int, non-empty-string, class-string<T>, array-key.
         $base = strtolower((string) preg_replace('/\s*<.*$/s', '', $s));
         $scalar = match (true) {
-            $base === 'int' && str_contains($s, '<'), str_ends_with($base, '-int'), $base === 'int-mask', $base === 'int-mask-of' => Type::int(),
+            $base === 'int' && str_contains($s, '<'), str_ends_with($base, '-int'), $base === 'int-mask', $base === 'int-mask-of' => Type::integral(Type::UNSIZED),
             str_ends_with($base, '-string') => Type::string(),
             $base === 'array-key', $base === 'scalar', $base === 'mixed' && str_contains($s, '<') => Type::mixed(),
             str_ends_with($base, '-float') => Type::float(),
@@ -770,7 +773,7 @@ final class SymbolTable
         if (in_array($s, $self->typeParams, true) || in_array($s, $this->methodTemplates, true)) {
             return Type::typeParam($s)->withNullable($nullable);
         }
-        if (in_array(strtolower($s), ['int', 'float', 'string', 'char', 'bool', 'array', 'iterable', 'void', 'mixed', 'callable', 'object', 'self', 'static', 'true', 'false', 'never', 'closure', '\\closure'], true)
+        if (in_array(strtolower($s), ['int', 'float', 'string', 'char', 'bool', 'array', 'iterable', 'void', 'mixed', 'callable', 'object', 'self', 'static', 'true', 'false', 'never', 'closure', '\\closure', 'byte', 'sbyte', 'short', 'ushort', 'uint', 'long', 'ulong'], true)
             || $s === '$this') {
             return $this->namedType(ltrim($s === '$this' ? 'static' : $s, '\\'), $self)->withNullable($nullable);
         }
