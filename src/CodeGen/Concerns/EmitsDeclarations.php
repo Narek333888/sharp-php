@@ -739,7 +739,7 @@ trait EmitsDeclarations
                     . $visibility . ($static ? ' static' : '');
                 $params = $this->parameters($method->params, $inInterface ? null : $this->inheritedMethod($method->name));
                 $return = $isGenerator ? 'iterable' : ($member->phpArrayOf !== null ? ($member->type->nullable ? '?array' : 'array') : $this->typeDecl($member->type));
-                $signature = "$prefix function {$method->name}($params)" . ($return !== null ? ": $return" : '');
+                $signature = "$prefix function " . ($member->phpName ?? $method->name) . "($params)" . ($return !== null ? ": $return" : '');
 
                 if ($method->body === null && $method->exprBody === null) {
                     $this->w->line($signature . ';');

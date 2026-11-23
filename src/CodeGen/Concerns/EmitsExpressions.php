@@ -799,6 +799,16 @@ trait EmitsExpressions
 
     private function assignment(AssignExpr $e): Emitted
     {
+        // order?.Total = 5 (C# 14): assigns, and evaluates 5, only when order is not null; the value is null otherwise.
+        if ($e->target instanceof MemberAccessExpr && $e->target->nullConditional) {
+            $receiver = $this->expr($e->target->target);
+            $temp = $this->currentFunction()->temp('target');
+            $this->scope->declare(substr($temp, 1), $receiver->type->withNullable(false));
+            $plain = (new MemberAccessExpr((new NameExpr(substr($temp, 1), []))->at($e->target->target), $e->target->name, false, $e->target->typeArgs))->at($e->target);
+            $assigned = $this->assignment((new AssignExpr($e->operator, $plain, $e->value))->at($e));
+
+            return Emitted::value("(($temp = {$receiver->code}) === null ? null : " . $this->wrap($assigned, Prec::TERNARY + 1) . ')', $assigned->type->withNullable());
+        }
         if ($e->operator !== '=' && $e->operator !== '??=') {
             $update = $this->collectionElementUpdate($e->target, substr($e->operator, 0, -1), $e->value, $e);
             if ($update !== null) {

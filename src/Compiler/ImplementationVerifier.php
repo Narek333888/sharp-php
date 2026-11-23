@@ -52,9 +52,57 @@ final class ImplementationVerifier
         }
     }
 
+    /** @var array<string, true> classes whose hiding methods are resolved */
+    private array $hidingResolved = [];
+
+    /**
+     * Methods that hide a method of a SharpPHP base class get a PHP name of their own (see
+     * MemberSymbol::$phpName); an override takes the name of the method it overrides, and overriding a
+     * method that is not virtual is CS0506. Base classes first.
+     */
+    private function resolveHiding(TypeSymbol $symbol, SourceFile $file, TypeDecl $decl): void
+    {
+        if (isset($this->hidingResolved[$symbol->fqn])) {
+            return;
+        }
+        $this->hidingResolved[$symbol->fqn] = true;
+        $base = $this->baseOf($symbol);
+        if ($base === null || $base->external) {
+            return;
+        }
+        $this->resolveHiding($base, $file, $decl);
+        $interfaceMembers = [];
+        foreach ($this->symbols->interfacesOf($symbol) as $interface) {
+            foreach ($interface->members as $m) {
+                $interfaceMembers[strtolower($m->name)] = true;
+            }
+        }
+        foreach ($symbol->members as $member) {
+            if ($member->kind !== 'method' || $member->isStatic || $member->isLocalFunction || $member->name === '__construct') {
+                continue;
+            }
+            $hidden = $this->mostDerived($base, $member->name);
+            if ($hidden === null || $hidden->kind !== 'method' || $hidden->isStatic || $hidden->owner->external) {
+                continue;
+            }
+            if ($member->isOverride) {
+                if (!$hidden->isVirtual) {
+                    throw $this->error('SP0506', "'{$member->displayName()}': cannot override inherited member '{$hidden->displayName()}' because it is not marked virtual, abstract, or override", $file, $decl);
+                }
+                $member->phpName = $hidden->phpName;
+            } elseif ($hidden->isAbstract && !$symbol->isAbstract) {
+                // Without override the method hides the abstract one, which stays unimplemented (CS0534).
+                throw $this->error('SP0534', "'{$symbol->csharpName()}' does not implement inherited abstract member '{$hidden->displayName()}'", $file, $decl);
+            } elseif (!isset($interfaceMembers[strtolower($member->name)])) {
+                $member->phpName = $member->name . '__' . $symbol->shortName();
+            }
+        }
+    }
+
     private function verifyType(TypeDecl $decl, TypeSymbol $symbol, SourceFile $file): void
     {
         $name = $symbol->csharpName();
+        $this->resolveHiding($symbol, $file, $decl);
 
         if (!$symbol->isAbstract) {
             foreach ($symbol->members as $member) {

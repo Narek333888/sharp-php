@@ -226,7 +226,7 @@ trait EmitsMembers
         $member = $result->member ?? throw new \LogicException('A method group has a member');
 
         return Emitted::value(
-            $result->code . $member->name . '(...)',
+            $result->code . ($member->phpName ?? $member->name) . '(...)',
             Type::closure([...array_map(static fn (ParameterSymbol $p): Type => $p->type, $member->params), $member->type]),
         );
     }
@@ -579,7 +579,7 @@ trait EmitsMembers
             if ($method !== null) {
                 $this->requireAccessible($method, $e);
 
-                return Emitted::value($this->wrap($target, Prec::ATOM) . "->$name(...)", Type::closure());
+                return Emitted::value($this->wrap($target, Prec::ATOM) . '->' . ($method->phpName ?? $name) . '(...)', Type::closure());
             }
             if ($member !== null) {
                 throw $this->error('SP0176', "Member '{$symbol->csharpName()}.$name' cannot be accessed with an instance reference; qualify it with a type name instead", $e);
@@ -788,7 +788,7 @@ trait EmitsMembers
         }
 
         $outDefaults = $this->lastOutDefaults;
-        $result = Emitted::value($prefix . $member->name . '(' . $code . ')', $this->resultType($member, $subst, $values, $elementHint));
+        $result = Emitted::value($prefix . ($member->phpName ?? $member->name) . '(' . $code . ')', $this->resultType($member, $subst, $values, $elementHint));
         $this->lastOutDefaults = $outDefaults;
         $result = $this->linqAggregate($member, $this->withOutDefaults($result), $elementHint, $values);
         // list.Find(...) and dict.GetValueOrDefault(key) return T (declared T|null for PHP): for a value

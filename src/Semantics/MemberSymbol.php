@@ -12,6 +12,19 @@ final class MemberSymbol
     /** Declared "abstract" (members of project classes only; interface members are not flagged). */
     public bool $isAbstract = false;
 
+    /** Declared virtual, abstract or override: a derived class may override it. */
+    public bool $isVirtual = false;
+
+    /** Declared override. */
+    public bool $isOverride = false;
+
+    /**
+     * The PHP name of a method that hides one of a base class (public new void M(), or M() without
+     * override): PHP's methods are all virtual, so the hiding one has a name of its own (M__Derived) and
+     * calls choose by the static type, as in C#.
+     */
+    public ?string $phpName = null;
+
     /** Project properties: visibility of the set accessor, 'init', or null when there is none. */
     public ?string $setter = null;
 

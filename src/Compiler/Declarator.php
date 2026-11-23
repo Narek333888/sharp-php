@@ -440,6 +440,8 @@ final class Declarator
                     self::visibility($member->modifiers, $defaultVisibility),
                 );
                 $method->isAbstract = in_array('abstract', $member->modifiers, true);
+                $method->isOverride = in_array('override', $member->modifiers, true);
+                $method->isVirtual = $method->isAbstract || $method->isOverride || in_array('virtual', $member->modifiers, true);
                 $method->isLocalFunction = $member->isLocalFunction;
                 // Laravel calls rules(), casts(), messages() ... of the classes derived from its own, and
                 // takes PHP arrays from them: such a method returns its List/Dictionary as one.
