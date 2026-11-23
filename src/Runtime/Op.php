@@ -143,6 +143,61 @@ final class Op
     }
 
     /**
+     * default(T) of a struct: an instance whose fields have their defaults (0, false, null), made without
+     * running a constructor, as C# zeroes a struct.
+     *
+     * @internal
+     * @template T of object
+     * @param class-string<T> $class
+     * @return T
+     */
+    public static function defaultStruct(string $class): object
+    {
+        return (new \ReflectionClass($class))->newInstanceWithoutConstructor();
+    }
+
+    /**
+     * After a call with an out argument of a value type: the variable's default (0, false, ...) when the
+     * runtime method left it null, as C#'s out parameters are always assigned. Returns the call's result.
+     *
+     * @internal
+     */
+    public static function outDefault(mixed $result, mixed &$variable, mixed $default): mixed
+    {
+        $variable ??= $default;
+
+        return $result;
+    }
+
+    /**
+     * A double converted to an integral type, as .NET 9 and later do: NaN is 0, values out of range
+     * saturate (int.MaxValue for (int)3e10). Narrower types go through int and are cut by the caller.
+     *
+     * @internal
+     * @param 'int'|'long'|'uint'|'ulong' $type
+     */
+    public static function truncate(float $value, string $type): int
+    {
+        if (is_nan($value)) {
+            return 0;
+        }
+        [$min, $max] = match ($type) {
+            'long' => [-9.2233720368547758E18, 9.2233720368547758E18],
+            'ulong' => [0.0, 9.2233720368547758E18],
+            'uint' => [0.0, 4294967295.0],
+            default => [-2147483648.0, 2147483647.0],
+        };
+        if ($value >= $max) {
+            return $max >= 9.2233720368547758E18 ? PHP_INT_MAX : (int) $max;
+        }
+        if ($value <= $min) {
+            return $min <= -9.2233720368547758E18 ? PHP_INT_MIN : (int) $min;
+        }
+
+        return (int) $value;
+    }
+
+    /**
      * An array as text: its type's name ("System.Int32[]"), which the compiler knows; null is "".
      *
      * @internal

@@ -781,7 +781,19 @@ trait EmitsMembers
             }
         }
 
+        $outDefaults = $this->lastOutDefaults;
         $result = Emitted::value($prefix . $member->name . '(' . $code . ')', $this->resultType($member, $subst, $values, $elementHint));
+        $this->lastOutDefaults = $outDefaults;
+        $result = $this->withOutDefaults($result);
+        // list.Find(...) and dict.GetValueOrDefault(key) return T (declared T|null for PHP): for a value
+        // type T its default, not null.
+        if (in_array($member->name, ['Find', 'FindLast', 'GetValueOrDefault', 'FirstOrDefault', 'LastOrDefault', 'SingleOrDefault', 'ElementAtOrDefault'], true)
+            && self::isRuntimeLibrary($member->owner) && $member->type->kind === 'typeparam' && isset($subst[(string) $member->type->param])) {
+            $element = $subst[(string) $member->type->param];
+            if (!$element->nullable && $this->isValueType($element)) {
+                $result = Emitted::value($this->wrap($result, Prec::COALESCE + 1) . ' ?? ' . $this->defaultValue($element)->code, $element, Prec::COALESCE);
+            }
+        }
         if ($member->phpArrayOf !== null) {
             // rules() returns a PHP array, for Laravel; SharpPHP code gets the Dictionary it declares.
             $result = $this->convertedAtPhpBoundary(Emitted::value($result->code, Type::phpArray()), $result->type);
@@ -1140,6 +1152,11 @@ trait EmitsMembers
             }
         }
         $type = $this->resultType($member, $subst, $values, $elementType);
+        if ($this->lastOutDefaults !== []) {
+            $call = $this->withOutDefaults(Emitted::value("$classRef::$name({$target->code}" . ($code !== '' ? ", $code" : '') . ')', $type));
+
+            return $call;
+        }
 
         return $this->valueTypeDefault($name, $this->nullSafe(
             $target,
@@ -1266,6 +1283,7 @@ trait EmitsMembers
     {
         $codes = [];
         $values = [];
+        $outDefaults = [];
         $last = $params !== [] ? $params[array_key_last($params)] : null;
 
         foreach ($args as $i => $arg) {
@@ -1334,11 +1352,37 @@ trait EmitsMembers
                 }
             }
 
+            // A value-type out variable of a runtime method gets its default when the method leaves it
+            // null (TryGetValue of a missing key gives 0, as in C#).
+            if ($runtime && $arg->modifier === 'out' && !$value->type->nullable && in_array($value->type->kind, ['int', 'float', 'bool', 'char'], true) && str_starts_with($value->code, '$')) {
+                $outDefaults[] = [$value->code, $this->defaultValue($value->type->withNullable(false))->code];
+            }
+
             $values[$i] = $value;
             $codes[] = ($arg->name !== null ? $arg->name . ': ' : '') . $value->code;
         }
+        $this->lastOutDefaults = $outDefaults;
 
         return [implode(', ', $codes), $values];
+    }
+
+    /** @var list<array{0: string, 1: string}> the out variables of the last arguments() and their defaults */
+    private array $lastOutDefaults = [];
+
+    /** The call, then each value-type out variable it left null set to its default (see arguments()). */
+    private function withOutDefaults(Emitted $call): Emitted
+    {
+        $outs = $this->lastOutDefaults;
+        $this->lastOutDefaults = [];
+        if ($outs === []) {
+            return $call;
+        }
+        $code = $call->code;
+        foreach ($outs as [$variable, $default]) {
+            $code = $this->runtime('Op') . "::outDefault($code, $variable, $default)";
+        }
+
+        return Emitted::value($code, $call->type);
     }
 
     // ------------------------------------------------------------------

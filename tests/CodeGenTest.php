@@ -42,7 +42,8 @@ final class CodeGenTest extends TestCase
         yield 'switch expression' => ['int n = 2; var s = n switch { 1 => "a", 2 => "b", _ => "c" };', "\$n = 2;\n\$s = match (\$n) {\n1 => 'a',\n2 => 'b',\ndefault => 'c',\n};"];
         yield 'generic list' => ['var l = new System.Collections.Generic.List<int> { 1, 2 };', "\$l = new List_([1, 2], of: 'int');"];
         yield 'checked unboxing' => ['object o = 1; int i = (int)o;', "\$o = 1;\n\$i = Op::cast(\$o, 'int');"];
-        yield 'float truncation' => ['int i = (int)3.9;', "\$i = (int) 3.9;"];
+        yield 'float truncation' => ['int i = (int)3.9;', "\$i = 3;"];
+        yield 'saturating double cast' => ['double d = 3.9; int i = (int)d;', "\$d = 3.9;\n\$i = Op::truncate(\$d, 'int');"];
         yield 'escaped string' => ['var s = "a\nb$c";', "\$s = \"a\\nb\\\$c\";"];
         yield 'static member' => ['Console.WriteLine(Math.PI);', 'Console::WriteLine(Math::PI);'];
         yield 'array element write' => ['int[] a = new int[2]; a[1] = 5; a[0]++;', "\$a = \\array_fill(0, 2, 0);\n\$a[Op::index(\$a, 1)] = 5;\n\$a[Op::index(\$a, 0)]++;"];

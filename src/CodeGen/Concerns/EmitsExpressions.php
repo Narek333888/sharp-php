@@ -924,10 +924,25 @@ trait EmitsExpressions
                     return $this->narrowed(Emitted::value($this->wrap($value, Prec::ATOM) . '->value', Type::int()), $plain);
                 }
 
-                // (int)3.9 is 3; a double out of the type's range has no defined result in C#.
-                $truncated = Emitted::value('(int) ' . $this->wrap($value, Prec::UNARY), $target, Prec::UNARY);
+                // A constant: (int)3.9 is the constant 3; out of the type's range it is C#'s CS0221.
+                if ($source->kind === 'float' && is_numeric($value->code)) {
+                    $constant = (float) $value->code;
+                    [$min, $max] = Type::INTEGRAL_RANGES[$plain->integralName()] ?? [PHP_INT_MIN, PHP_INT_MAX];
+                    $whole = $constant < 0 ? ceil($constant) : floor($constant);
+                    if ($whole < $min || $whole > $max || !is_finite($constant)) {
+                        throw $this->error('SP0221', "Constant value '" . \SharpPhp\Runtime\Op::shortest($constant) . "' cannot be converted to a '{$plain->describe()}' (use 'unchecked' syntax to override)", $e);
+                    }
+                    $folded = (int) $whole;
 
-                return in_array($plain->integralName(), self::NARROW_INTEGRALS, true) && $plain->integralName() !== 'uint'
+                    return new Emitted((string) $folded, $target, $folded < 0 ? Prec::UNARY : Prec::ATOM, intValue: $folded);
+                }
+                // (int)3.9 is 3; out of range a double saturates (.NET 9): (int)3e10 is int.MaxValue,
+                // (uint)-1.0 is 0. byte, short, ... go through int: (byte)300.7 is 44.
+                $name = $plain->integralName();
+                $via = in_array($name, ['long', 'ulong', 'uint'], true) ? $name : 'int';
+                $truncated = Emitted::value($this->runtime('Op') . '::truncate(' . $value->code . ", '$via')", $target);
+
+                return in_array($name, self::NARROW_INTEGRALS, true) && $name !== 'uint'
                     ? $this->narrowed($truncated, $plain) : $truncated;
             case 'float':
                 return $source->isFloat() ? $value : Emitted::value('(float) ' . $this->wrap($value, Prec::UNARY), Type::float(), Prec::UNARY);
@@ -1052,7 +1067,19 @@ trait EmitsExpressions
             return Emitted::value($this->classRef($symbol->fqn) . '::tryFrom(0)', $type);
         }
         if ($type !== null && $symbol !== null && $symbol->isStruct && $symbol->external) {
+            // A runtime struct's default value: Guid.Empty, TimeSpan.Zero, DateTime.MinValue.
+            foreach (['Empty', 'Zero', 'MinValue'] as $name) {
+                $member = $symbol->members[$name] ?? null;
+                if ($member !== null && $member->isStatic && $member->kind === 'property') {
+                    return Emitted::value($this->classRef($symbol->fqn) . '::$' . $name, $type);
+                }
+            }
+
             return Emitted::value('new ' . $this->classRef($symbol->fqn) . '()', $type);
+        }
+        if ($type !== null && $symbol !== null && $symbol->isStruct && !$symbol->external) {
+            // default(Point) of a struct: every field at its default, no constructor run.
+            return Emitted::value($this->runtime('Op') . '::defaultStruct(' . $this->classRef($symbol->fqn) . '::class)', $type);
         }
 
         return match ($type?->kind) {

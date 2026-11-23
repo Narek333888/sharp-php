@@ -67,6 +67,7 @@ class Queue implements \IteratorAggregate, \Countable, \JsonSerializable
         return $this->items[0];
     }
 
+    /** @param-out T|null $result */
     public function TryDequeue(mixed &$result): bool
     {
         if ($this->items === []) {
