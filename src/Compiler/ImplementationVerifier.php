@@ -6,6 +6,7 @@ namespace SharpPhp\Compiler;
 
 use SharpPhp\Semantics\MemberSymbol;
 use SharpPhp\Semantics\Names;
+use SharpPhp\Semantics\ParameterSymbol;
 use SharpPhp\Semantics\SymbolTable;
 use SharpPhp\Semantics\TypeSymbol;
 use SharpPhp\Syntax\CompilationUnit;
@@ -87,7 +88,7 @@ final class ImplementationVerifier
                 if ($implementation !== null && $implementation->isStatic) {
                     throw $this->error('SP0736', "'{$implementation->displayName()}' cannot implement interface member '{$member->displayName()}' because it is static", $file, $decl);
                 }
-                if ($implementation === null || !$this->matches($implementation, $member)) {
+                if ($implementation === null || !$this->matches($implementation, $member, phpInterface: $interface->external)) {
                     throw $this->error('SP0535', "'$name' does not implement interface member '{$member->displayName()}'", $file, $decl);
                 }
             }
@@ -123,11 +124,23 @@ final class ImplementationVerifier
         return null;
     }
 
-    /** A method for a method with as many parameters, a property or field for a property. (PHP would refuse the class otherwise.) */
-    private function matches(MemberSymbol $implementation, MemberSymbol $interfaceMember): bool
+    /**
+     * A method for a method with as many parameters, a property or field for a property. (PHP would refuse the class otherwise.)
+     * A PHP interface's method may also be implemented with more parameters when they are optional,
+     * as PHP allows: List<T>.count(predicate = null) implements Countable::count().
+     */
+    private function matches(MemberSymbol $implementation, MemberSymbol $interfaceMember, bool $phpInterface = false): bool
     {
         if ($interfaceMember->kind === 'method') {
-            return $implementation->kind === 'method' && count($implementation->params) === count($interfaceMember->params);
+            if ($implementation->kind !== 'method') {
+                return false;
+            }
+            $extra = array_slice($implementation->params, count($interfaceMember->params));
+            if ($phpInterface && count($implementation->params) > count($interfaceMember->params)) {
+                return array_filter($extra, static fn (ParameterSymbol $p): bool => !$p->optional) === [];
+            }
+
+            return count($implementation->params) === count($interfaceMember->params);
         }
 
         return $implementation->isValue();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SharpPhp\Runtime\System\Collections\Generic;
 
 use SharpPhp\Runtime\Op;
+use SharpPhp\Runtime\System\Linq\Enumerable;
 use SharpPhp\Runtime\TypeCheck;
 use SharpPhp\Runtime\TypeName;
 
@@ -109,9 +110,13 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
         return new \ArrayIterator(array_values($this->items));
     }
 
-    public function count(): int
+    /**
+     * LINQ's Count() and Count(x => ...), and Countable's count() (PHP method names ignore case,
+     * so the two must be one method).
+     */
+    public function Count(?\Closure $predicate = null): int
     {
-        return count($this->items);
+        return $predicate === null ? count($this->items) : Enumerable::Count($this, $predicate);
     }
 
     private function key(mixed $item): string

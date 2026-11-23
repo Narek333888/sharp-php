@@ -125,6 +125,31 @@ class P { static void Main() {} }', 'SP0106', 'The modifier \'public\' is not va
         yield 'finalizer in a static class' => ['static class A { ~A() {} }
 class P { static void Main() {} }', 'SP0711', 'Static classes cannot contain destructors', 1, 18];
         yield 'object constructor arguments' => [$main('var o = new object(1);'), 'SP1729', '\'object\' does not contain a constructor that takes 1 arguments', 6, 17];
+        yield 'extension block: instance member without a receiver name' => ['static class E { extension(string) { public int Size => 1; } }
+class P { static void Main() {} }', 'SP9303', 'An extension block without a receiver name can only declare static members: extension(Type name) { ... }', 1, 38];
+        yield 'extension block: auto-property' => ['static class E { extension(string s) { public int Size { get; } } }
+class P { static void Main() {} }', 'SP9282', 'An extension property must have a get accessor with a body: it has no storage for an auto-property', 1, 40];
+        yield 'extension block: setter' => ['static class E { extension(string s) { public int Size { get => 1; set { } } } }
+class P { static void Main() {} }', 'SP1010', 'Extension properties with a \'set\' accessor are not supported; declare a method instead', 1, 68];
+        yield 'extension block: field' => ['static class E { extension(string s) { int count; } }
+class P { static void Main() {} }', 'SP9282', 'Only methods and properties can be declared in an extension block', 1, 40];
+        yield 'extension block: modifier' => ['static class E { public extension(string s) { } }
+class P { static void Main() {} }', 'SP0106', 'The modifier \'public\' is not valid for this item', 1, 18];
+        yield 'extension block in a non-static class' => ['class E { extension(string) { public static int Zero => 0; } }
+class P { static void Main() {} }', 'SP1106', 'Extension members must be defined in a non-generic static class', 1, 31];
+        yield 'assigning an extension property' => ['static class E { extension(string s) { public int Size => s.Length; } }
+class P { static void Main() { "x".Size = 2; } }', 'SP0200', 'Property or indexer \'E.Size\' cannot be assigned to -- it is read only', 2, 36];
+        yield 'array initializer too long' => [$main('var a = new string[2] { "a", "b", "c" };'), 'SP0847', 'An array initializer of length \'2\' is expected', 6, 17];
+        yield 'negative constant array size' => [$main('var a = new int[-1];'), 'SP0248', 'Cannot create an array with a negative size', 6, 25];
+        yield 'combining enum values' => [$main('var o = StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries;'), 'SP1010', 'Combining enum values with \'|\' ([Flags] enums) is not supported: SharpPHP\'s enums are PHP enums, which have no combined values; combine their numbers instead: (int)A | (int)B', 6, 55];
+        yield 'string constructor arguments' => [$main('var s = new string(1.5);'), 'SP1729', '\'string\' does not contain a constructor that takes these arguments (use new string(char c, int count) or new string(char[] value))', 6, 17];
+        yield 'local function uses an outer variable' => [$main('int total = 5; Show(); void Show() => Console.WriteLine(total);'), 'SP8421', "The local function 'Show' cannot use the variable 'total' of the code around it: SharpPHP compiles local functions to methods. Pass 'total' as a parameter, or use a lambda", 6, 65];
+        yield 'local function named like a member' => ["class K\n{\n    int A() { return H(); int H() => 1; }\n    int H() => 2;\n}", 'SP0128', "A local function is compiled to a private method of 'K', which already has a member called 'H' (PHP method names are case-insensitive): rename one of them", 4, 5];
+        yield 'two top-level local functions with one name' => ["System.Console.WriteLine(F());\nint F() => 1;\nint F() => 2;", 'SP0128', "A local function named 'F' is already declared in the top-level statements (local functions are compiled to methods of Program, whose names are case-insensitive)", 3, 5];
+        yield 'nested initializer on a value' => ["class P { public int N { get; set; } static void Main() { var x = new P { N = { } }; } }", 'SP1918', "Members of 'N' cannot be initialized with an object or collection initializer: its type 'int' is not a class", 1, 75];
+        yield 'unknown method of a library class' => [$main('new System.Collections.Generic.List<int>().Foo();'), 'SP1061', "'System.Collections.Generic.List' does not contain a definition for 'Foo'", 6, 52];
+        yield 'unknown property of a library class' => [$main('var n = new System.Collections.Generic.List<int>().Lenght;'), 'SP1061', "'System.Collections.Generic.List' does not contain a definition for 'Lenght'", 6, 60];
+        yield 'default interface method' => ["interface I { string Name() => \"d\"; }\nclass A : I { }", 'SP8701', 'Default interface methods are not supported; use an abstract base class', 1, 22];
     }
 
     #[DataProvider('errors')]

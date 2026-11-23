@@ -137,6 +137,12 @@ trait EmitsStatements
                 throw $this->error('SP0815', 'Cannot assign void to an implicitly-typed variable', $declarator);
             }
             $this->declareLocal($declarator->name, $declared ?? $value->type, $declarator);
+            $root = $this->fn?->root();
+            if ($root !== null && isset($root->reassigned[$declarator->name], $root->capturedByLambdas[$declarator->name])
+                && in_array('loop', $this->fn->breakables, true)) {
+                // A lambda captures this variable by reference: each iteration needs a new one, as in C#.
+                $this->w->line('unset($' . $declarator->name . ');');
+            }
             $this->w->line('$' . $declarator->name . ' = ' . $value->code . ';');
         }
     }

@@ -1,0 +1,57 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+
+// Regex: static and instance methods, groups, replacements, evaluators
+Console.WriteLine(Regex.IsMatch("abc123", @"\d+") + " " + Regex.IsMatch("ABC", "abc", RegexOptions.IgnoreCase) + " " + Regex.IsMatch("a/b", "a/b"));
+Console.WriteLine(Regex.Replace("a1b2", @"\d", "#") + " " + Regex.Replace("John Smith", @"(\w+) (\w+)", "$2, $1") + " " + Regex.Replace("2024-05", @"(?<y>\d+)-(?<m>\d+)", "${m}/${y}") + " " + Regex.Replace("x", "x", "$$"));
+var match = Regex.Match("x=42, y=7", @"(\w)=(\d+)");
+Console.WriteLine($"{match.Success} {match.Value} {match.Index} {match.Length} {match.Groups[1].Value}{match.Groups[2].Value} {match.NextMatch().Value} {match.NextMatch().NextMatch().Success}");
+foreach (Match word in Regex.Matches("héllo wörld", @"(?<word>\w+)"))
+{
+    Console.Write(word.Groups["word"].Value + "@" + word.Index + " ");
+}
+Console.WriteLine();
+Console.WriteLine(Regex.Matches("a1b22c333", @"\d+").Count + " " + string.Join(",", Regex.Matches("a1b22c333", @"\d+").Select(m => m.Value)));
+Console.WriteLine(string.Join("|", Regex.Split("a, b,c", @",\s*")) + " " + Regex.Replace("1 2 3", @"\d", d => (int.Parse(d.Value) * 2).ToString()));
+var digits = new Regex(@"^\d+$");
+Console.WriteLine($"{digits.IsMatch("123")} {digits.IsMatch("12a")} {digits.Match("77").Value} {digits.Replace("5", "five")} {new Regex("a+").Matches("aa b aaa").Count}");
+Console.WriteLine(Regex.Escape("a.b*c") + " " + Regex.Match("abc", @"\d").Success + " [" + Regex.Match("abc", @"\d").Value + "]");
+Console.WriteLine(Regex.IsMatch("Line1\nLINE2", "^line2$", (int)RegexOptions.Multiline | (int)RegexOptions.IgnoreCase));
+try
+{
+    Regex.IsMatch("x", "((");
+}
+catch (ArgumentException)
+{
+    Console.WriteLine("bad pattern");
+}
+
+// System.IO
+var dir = Path.Combine(Path.GetTempPath(), "sharpphp_fixture_" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(dir);
+var path = Path.Combine(dir, "notes.txt");
+File.WriteAllText(path, "one\ntwo\n");
+File.AppendAllText(path, "three");
+File.WriteAllLines(Path.Combine(dir, "b.log"), new[] { "x", "y" });
+Console.WriteLine($"{File.ReadAllText(path).Length} {File.ReadAllLines(path).Length} {File.Exists(path)} {Directory.GetFiles(dir, "*.log").Length} {Path.GetFileName(Directory.GetFiles(dir, "*.txt")[0])}");
+Console.WriteLine($"{Path.GetExtension(path)} {Path.GetFileNameWithoutExtension(path)} {Path.ChangeExtension("a/b.txt", ".md")} {Path.Combine("a", "/b")} {Path.GetDirectoryName("/a/b.txt")}");
+try { File.ReadAllText(Path.Combine(dir, "missing.txt")); } catch (FileNotFoundException) { Console.WriteLine("FileNotFoundException"); }
+try { Directory.Delete(dir); } catch (IOException) { Console.WriteLine("not empty"); }
+Directory.Delete(dir, recursive: true);
+Console.WriteLine(Directory.Exists(dir));
+
+// Guid, Stopwatch, MidpointRounding, MinBy/MaxBy/DistinctBy/Chunk
+var id = Guid.NewGuid();
+var text = "0f8fad5b-d9cb-469f-a165-70867728950e";
+Console.WriteLine($"{id.ToString().Length} {id.ToString("N").Length} {Guid.Parse(id.ToString()) == id} {Guid.Parse(text) == Guid.Parse(text.ToUpper())} {Guid.Empty} {Guid.TryParse("nope", out var bad)} {bad == Guid.Empty}");
+var watch = Stopwatch.StartNew();
+watch.Stop();
+Console.WriteLine(watch.ElapsedMilliseconds >= 0 && !watch.IsRunning && watch.Elapsed.TotalSeconds < 5);
+Console.WriteLine($"{Math.Round(2.5, MidpointRounding.AwayFromZero)} {Math.Round(-2.5, MidpointRounding.AwayFromZero)} {Math.Round(2.5)} {Math.Round(2.345, 2, MidpointRounding.AwayFromZero)} {Math.Round(2.7, MidpointRounding.ToZero)}");
+var people = new[] { new Person("a", 3), new Person("b", 1), new Person("c", 3) };
+Console.WriteLine(people.MinBy(p => p.Age)!.Name + people.MaxBy(p => p.Age)!.Name + " " + string.Join(",", people.DistinctBy(p => p.Age).Select(p => p.Name)) + " " + string.Join("|", Enumerable.Range(1, 5).Chunk(2).Select(c => string.Join(",", c))));
+
+record Person(string Name, int Age);

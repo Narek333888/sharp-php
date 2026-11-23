@@ -29,8 +29,42 @@ final class String_
         return implode($separator, $parts);
     }
 
+    /**
+     * new string('-', 5) and new string(chars[, start, length]): C#'s string constructors.
+     *
+     * @internal the compiler calls it for "new string(...)"
+     * @param string|list<mixed> $value a char, or an array of chars
+     */
+    public static function __new(string|array $value, int $countOrStart = 0, ?int $length = null): string
+    {
+        if (is_string($value)) {
+            if ($countOrStart < 0) {
+                throw new ArgumentOutOfRangeException('count', 'Non-negative number required.');
+            }
+
+            return str_repeat($value, $countOrStart);
+        }
+        $chars = $value;
+        if ($length === null) {
+            return implode('', array_map(Op::str(...), $chars));
+        }
+        if ($countOrStart < 0 || $length < 0 || $countOrStart + $length > count($chars)) {
+            throw new ArgumentOutOfRangeException('startIndex', 'Index and length must refer to a location within the string.');
+        }
+
+        return implode('', array_map(Op::str(...), array_slice($chars, $countOrStart, $length)));
+    }
+
+    /**
+     * string.Concat(a, b, ...), and string.Concat(sequence) of a List, an array or a LINQ result, whose
+     * elements are concatenated (C#'s Concat(IEnumerable<string>) and Concat<T>(IEnumerable<T>)).
+     */
     public static function Concat(mixed ...$values): string
     {
+        if (count($values) === 1 && is_iterable($values[0])) {
+            $values = is_array($values[0]) ? $values[0] : iterator_to_array($values[0], false);
+        }
+
         return implode('', array_map(Op::str(...), $values));
     }
 
@@ -219,12 +253,16 @@ final class String_
      * @param string|list<string>|null $separator
      * @return string[]
      */
-    public static function Split(string $s, string|array|null $separator = null, int $options = 0): array
+    public static function Split(string $s, string|array|null $separator = null, StringSplitOptions|int $options = 0): array
     {
+        $flags = $options instanceof StringSplitOptions ? $options->value : $options;
         $separators = $separator === null ? [' '] : (array) $separator;
         $pattern = '/' . implode('|', array_map(static fn (string $p): string => preg_quote($p, '/'), $separators)) . '/u';
         $parts = preg_split($pattern, $s) ?: [$s];
-        if ($options & 1) { // StringSplitOptions.RemoveEmptyEntries
+        if ($flags & StringSplitOptions::TrimEntries->value) {
+            $parts = array_map(static fn (string $p): string => trim($p), $parts);
+        }
+        if ($flags & StringSplitOptions::RemoveEmptyEntries->value) {
             $parts = array_values(array_filter($parts, static fn (string $p): bool => $p !== ''));
         }
 
@@ -262,6 +300,17 @@ final class String_
     public static function ToCharArray(string $s): array
     {
         return mb_str_split($s);
+    }
+
+    /**
+     * The chars of a string used as an IEnumerable<char> ("text".Reverse()); null stays null for ?.
+     *
+     * @internal
+     * @return list<string>|null
+     */
+    public static function chars(?string $s): ?array
+    {
+        return $s === null ? null : mb_str_split($s);
     }
 
     public static function CompareTo(string $s, ?string $other): int

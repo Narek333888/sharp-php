@@ -104,6 +104,7 @@ final class Enumerable
     /**
      * @template TSource
      * @param iterable<TSource> $source
+     * @return int<0, max>
      */
     public static function Count(iterable $source, ?\Closure $predicate = null): int
     {
@@ -561,6 +562,91 @@ final class Enumerable
         }
 
         return true;
+    }
+
+    /**
+     * The element with the smallest key (the first of equal ones); null for an empty sequence.
+     *
+     * @template TSource
+     * @param iterable<TSource> $source
+     * @return TSource|null
+     */
+    public static function MinBy(iterable $source, \Closure $keySelector): mixed
+    {
+        return self::extremeBy($source, $keySelector, -1);
+    }
+
+    /**
+     * The element with the largest key (the first of equal ones); null for an empty sequence.
+     *
+     * @template TSource
+     * @param iterable<TSource> $source
+     * @return TSource|null
+     */
+    public static function MaxBy(iterable $source, \Closure $keySelector): mixed
+    {
+        return self::extremeBy($source, $keySelector, 1);
+    }
+
+    /**
+     * @template TSource
+     * @param iterable<TSource> $source
+     * @return TSource|null
+     */
+    private static function extremeBy(iterable $source, \Closure $keySelector, int $direction): mixed
+    {
+        $best = null;
+        $bestKey = null;
+        $found = false;
+        foreach ($source as $item) {
+            $key = $keySelector($item);
+            if (!$found || Op::compare($key, $bestKey) === $direction) {
+                [$best, $bestKey, $found] = [$item, $key, true];
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * The elements whose key was not seen before, in order.
+     *
+     * @template TSource
+     * @param iterable<TSource> $source
+     * @return List_<TSource>
+     */
+    public static function DistinctBy(iterable $source, \Closure $keySelector): List_
+    {
+        $keys = [];
+        $result = [];
+        foreach ($source as $item) {
+            $key = $keySelector($item);
+            if (!self::Contains($keys, $key)) {
+                $keys[] = $key;
+                $result[] = $item;
+            }
+        }
+
+        return new List_($result);
+    }
+
+    /**
+     * The elements in arrays of $size (the last one may be shorter): [1, 2, 3].Chunk(2) is [1, 2], [3].
+     *
+     * @template TSource
+     * @param iterable<TSource> $source
+     * @return List_<TSource[]>
+     */
+    public static function Chunk(iterable $source, int $size): List_
+    {
+        if ($size < 1) {
+            throw new ArgumentOutOfRangeException('size');
+        }
+
+        /** @var List_<TSource[]> $chunks */
+        $chunks = new List_(array_chunk(self::materialize($source), $size));
+
+        return $chunks;
     }
 
     /** @return List_<int> */

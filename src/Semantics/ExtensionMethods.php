@@ -55,8 +55,79 @@ final class ExtensionMethods
      */
     public function best(Type $receiver, ResolutionContext $context, string $name): array
     {
-        $candidates = $this->applicable($receiver, $context, $name);
+        // Property getters of extension blocks (get_Name) are found through bestProperty().
+        $candidates = array_values(array_filter($this->applicable($receiver, $context, $name), static fn (MemberSymbol $m): bool => $m->extensionProperty === null));
 
+        return $this->mostSpecific($candidates);
+    }
+
+    /**
+     * What receiver.$name can read: the getters of extension properties (C# 14 extension blocks) named
+     * $name that apply to the receiver, the most specific first; more than one when ambiguous.
+     *
+     * @return list<MemberSymbol>
+     */
+    public function bestProperty(Type $receiver, ResolutionContext $context, string $name): array
+    {
+        $candidates = array_values(array_filter($this->applicable($receiver, $context, 'get_' . $name), static fn (MemberSymbol $m): bool => $m->extensionProperty === $name));
+
+        return $this->mostSpecific($candidates);
+    }
+
+    /**
+     * Static members of extension blocks that Type.$name means: methods (property false) or property
+     * getters (property true) of blocks extending $type, in a namespace the file sees.
+     *
+     * @return list<MemberSymbol>
+     */
+    public function staticMembers(Type $type, ResolutionContext $context, ?string $name, bool $property): array
+    {
+        $namespaces = array_flip($context->namespacesInScope());
+        $found = [];
+        foreach ($this->symbols->staticExtensions() as $member) {
+            $extended = $member->staticExtensionOf;
+            if ($extended === null || ($member->extensionProperty !== null) !== $property || !isset($namespaces[$member->owner->csharpNamespace()])) {
+                continue;
+            }
+            $memberName = $member->extensionProperty ?? $member->name;
+            if (($name === null || ($property ? $memberName === $name : strcasecmp($memberName, $name) === 0)) && $this->sameTypeAs($type, $extended)) {
+                $found[] = $member;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * A type used as a receiver (string. is the runtime class String_, List<int>. a generic class) is the
+     * type an extension block names.
+     */
+    private function sameTypeAs(Type $receiver, Type $extended): bool
+    {
+        $class = static function (Type $t): ?string {
+            if ($t->kind === 'class') {
+                return strtolower(ltrim((string) $t->class, '\\'));
+            }
+            $keyword = match ($t->kind) {
+                'string' => 'string', 'int' => 'int', 'float' => 'double', 'bool' => 'bool', 'char' => 'char', 'mixed' => 'object',
+                default => null,
+            };
+            $dotted = $keyword !== null ? TypeResolver::KEYWORD_RUNTIME_CLASSES[$keyword] : null;
+
+            return $dotted !== null ? strtolower(Names::phpClass($dotted)) : null;
+        };
+        $a = $class($receiver);
+        $b = $class($extended);
+
+        return $a !== null && $a === $b;
+    }
+
+    /**
+     * @param list<MemberSymbol> $candidates
+     * @return list<MemberSymbol>
+     */
+    private function mostSpecific(array $candidates): array
+    {
         return array_values(array_filter($candidates, function (MemberSymbol $candidate) use ($candidates): bool {
             foreach ($candidates as $other) {
                 if ($other !== $candidate && $this->moreSpecific($other, $candidate)) {

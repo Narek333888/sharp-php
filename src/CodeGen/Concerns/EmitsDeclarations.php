@@ -11,9 +11,11 @@ use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\ParameterSymbol;
 use SharpPhp\Semantics\Type;
 use SharpPhp\Semantics\TypeSymbol;
-use SharpPhp\Syntax\AwaitExpr;
 use SharpPhp\Syntax\Accessor;
+use SharpPhp\Syntax\Argument;
 use SharpPhp\Syntax\ArrayCreationExpr;
+use SharpPhp\Syntax\AssignExpr;
+use SharpPhp\Syntax\AwaitExpr;
 use SharpPhp\Syntax\BinaryExpr;
 use SharpPhp\Syntax\Block;
 use SharpPhp\Syntax\CompilationUnit;
@@ -21,6 +23,7 @@ use SharpPhp\Syntax\ConditionalExpr;
 use SharpPhp\Syntax\DefaultExpr;
 use SharpPhp\Syntax\Expr;
 use SharpPhp\Syntax\FieldDecl;
+use SharpPhp\Syntax\LambdaExpr;
 use SharpPhp\Syntax\LiteralExpr;
 use SharpPhp\Syntax\MemberAccessExpr;
 use SharpPhp\Syntax\MethodDecl;
@@ -467,6 +470,7 @@ trait EmitsDeclarations
     {
         $isGet = $accessor->kind === 'get';
         $context = new FunctionContext($static, $isGet ? $type : Type::void(), $this->class->typeParamTypes ?? []);
+        self::analyzeCaptures($context, [$accessor]);
         $this->inFunction($context, function () use ($accessor, $isGet, $type, $property, $static): void {
             $this->inScope(function () use ($accessor, $isGet, $type, $property, $static): void {
                 if (!$isGet) {
@@ -535,6 +539,7 @@ trait EmitsDeclarations
     {
         $this->w->sourceLine = $constructor->line ?? $decl->line;
         $context = new FunctionContext(false, Type::void(), $symbol->typeParamTypes, isConstructor: true);
+        self::analyzeCaptures($context, [$constructor]);
 
         $this->inFunction($context, function () use ($constructor, $decl, $symbol, $instanceInits): void {
             $this->inScope(function () use ($constructor, $decl, $symbol, $instanceInits): void {
@@ -697,6 +702,8 @@ trait EmitsDeclarations
 
         $context = new FunctionContext($static, $bodyType, $typeParams);
         $context->isAsync = $async;
+        $context->localFunction = $method->isLocalFunction ? $method : null;
+        self::analyzeCaptures($context, [$method]);
         $this->inFunction($context, function () use ($method, $member, $modifiers, $static, $abstract, $inInterface, $isGenerator, $async, $bodyType): void {
             $this->inScope(function () use ($method, $member, $modifiers, $static, $abstract, $inInterface, $isGenerator, $async, $bodyType): void {
                 $visibility = $inInterface ? 'public' : $member->visibility;
@@ -1118,6 +1125,7 @@ trait EmitsDeclarations
         $this->w->indent();
         $context = new FunctionContext(true, $returnType);
         $context->isAsync = $async;
+        self::analyzeCaptures($context, $unit->topLevelStatements);
         $this->inFunction($context, function () use ($unit, $async, $mainType): void {
             $this->inScope(function () use ($unit, $async, $mainType): void {
                 $this->scope->declare('args', Type::array(Type::string()));
@@ -1130,6 +1138,10 @@ trait EmitsDeclarations
         });
         $this->w->outdent();
         $this->w->line('}');
+        foreach ($unit->localFunctions as $function) {
+            $this->w->blank();
+            $this->tolerating(fn () => $this->emitMethod($function, false));
+        }
         $this->w->outdent();
         $this->w->line('}');
         $this->class = null;
@@ -1276,6 +1288,39 @@ trait EmitsDeclarations
             is_string($value) => self::phpString($value),
             default => throw new \LogicException('Not a constant value: ' . get_debug_type($value)),
         };
+    }
+
+    /**
+     * Finds the variables a lambda must capture by reference: C# lambdas capture variables, not
+     * values, so "() => count" sees a later "count = 10". PHP's fn () => captures by value, which
+     * stays right for variables that are never reassigned (a per-iteration "var item = ...").
+     *
+     * @param list<Node|null> $roots
+     */
+    private static function analyzeCaptures(FunctionContext $context, array $roots): void
+    {
+        $reassigned = [];
+        $inLambdas = [];
+        foreach (NodeFinder::all($roots, static fn (Node $n): bool => $n instanceof AssignExpr || $n instanceof UnaryExpr
+            || $n instanceof Argument || $n instanceof LambdaExpr) as $node) {
+            $target = match (true) {
+                $node instanceof AssignExpr => $node->target,
+                $node instanceof UnaryExpr => in_array($node->operator, ['++', '--'], true) ? $node->operand : null,
+                $node instanceof Argument => in_array($node->modifier, ['ref', 'out'], true) ? $node->value : null,
+                default => null,
+            };
+            if ($target instanceof NameExpr) {
+                $reassigned[$target->name] = true;
+            }
+            if ($node instanceof LambdaExpr) {
+                foreach (NodeFinder::all([$node->body], static fn (Node $n): bool => $n instanceof NameExpr) as $name) {
+                    \assert($name instanceof NameExpr);
+                    $inLambdas[$name->name] = true;
+                }
+            }
+        }
+        $context->reassigned = $reassigned;
+        $context->capturedByLambdas = $inLambdas;
     }
 
     /**

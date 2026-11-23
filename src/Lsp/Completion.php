@@ -125,7 +125,7 @@ final class Completion
     {
         return match (true) {
             $receiver['kind'] === 'namespace' => $this->namespaceItems((string) $receiver['namespace'], $symbols),
-            $receiver['kind'] === 'type' && $receiver['symbol'] !== null => $this->typeMembers($receiver['symbol'], true, $receiver['class'], $symbols),
+            $receiver['kind'] === 'type' && $receiver['symbol'] !== null => [...$this->typeMembers($receiver['symbol'], true, $receiver['class'], $symbols), ...$this->staticExtensionItems($receiver['type'], $receiver['context'], $symbols)],
             $receiver['kind'] === 'value' => [...$this->valueMembers($receiver, $symbols), ...$this->extensionItems($receiver['type'], $receiver['context'], $symbols)],
             default => $this->valueMembers($receiver, $symbols),
         };
@@ -194,8 +194,32 @@ final class Completion
     {
         $items = [];
         foreach ((new ExtensionMethods($symbols, new Conversions($symbols)))->applicable($type, $context) as $method) {
+            if ($method->extensionProperty !== null) {
+                $items[] = self::item($method->extensionProperty, self::PROPERTY, $method->type->describe() . " {$method->owner->shortName()}.{$method->extensionProperty}");
+                continue;
+            }
             $detail = $method->type->describe() . " {$method->owner->shortName()}.{$method->name}(" . self::describeParams(array_slice($method->params, 1)) . ')';
             $items[] = self::item($method->name, self::METHOD, $detail);
+        }
+
+        return $items;
+    }
+
+    /**
+     * Static members of extension blocks (C# 14) for "Type.": string.Repeat(...), Type.Property.
+     *
+     * @return list<Item>
+     */
+    private function staticExtensionItems(Type $type, ResolutionContext $context, SymbolTable $symbols): array
+    {
+        $extensions = new ExtensionMethods($symbols, new Conversions($symbols));
+        $items = [];
+        foreach ([false, true] as $property) {
+            foreach ($extensions->staticMembers($type, $context, null, $property) as $member) {
+                $items[] = $property
+                    ? self::item((string) $member->extensionProperty, self::PROPERTY, $member->type->describe() . " {$member->owner->shortName()}.{$member->extensionProperty}")
+                    : self::item($member->name, self::METHOD, $member->type->describe() . " {$member->owner->shortName()}.{$member->name}(" . self::describeParams($member->params) . ')');
+            }
         }
 
         return $items;
@@ -212,6 +236,10 @@ final class Completion
         $seen = [];
         foreach ($this->hierarchy($type, $symbols) as $symbol) {
             foreach ($symbol->members as $member) {
+                // regex.IsMatch(input) next to the static Regex.IsMatch(input, pattern) (@sharp-instance)
+                if (!$static && $member->instanceVariant !== null) {
+                    $member = $member->instanceVariant;
+                }
                 $isStatic = $member->isStatic || $member->kind === 'const' || $member->kind === 'case';
                 $key = strtolower($member->name);
                 if (isset($seen[$key]) || $isStatic !== $static || !$this->visible($member, $current, $symbols) || $this->hidden($member)) {
@@ -278,10 +306,14 @@ final class Completion
             }
         }
         $class = $scope['class'];
-        if ($class !== null && $class->fqn !== Declarator::TOP_LEVEL_CLASS) {
+        if ($class !== null) {
             $members = $this->typeMembers($class, true, $class, $symbols);
             if (!$scope['static']) {
                 $members = [...$members, ...$this->typeMembers($class, false, $class, $symbols)];
+            }
+            if ($class->fqn === Declarator::TOP_LEVEL_CLASS) {
+                // Top-level statements: their local functions (Program's methods), not Main itself.
+                $members = array_filter($members, static fn (array $item): bool => $item['label'] !== 'Main');
             }
             foreach ($members as $item) {
                 $item['sortText'] = '1' . $item['label'];
@@ -467,15 +499,16 @@ final class Completion
     private static function memberItem(MemberSymbol $member): array
     {
         $owner = $member->owner->csharpName();
+        $name = $member->csharpName ?? $member->name;
         [$kind, $detail] = match ($member->kind) {
-            'method' => [self::METHOD, $member->type->describe() . " $owner.{$member->name}(" . self::describeParams($member->params) . ')'],
+            'method' => [self::METHOD, $member->type->describe() . " $owner.$name(" . self::describeParams($member->params) . ')'],
             'field' => [self::FIELD, $member->type->describe() . " $owner.{$member->name}"],
             'const' => [self::CONSTANT, 'const ' . $member->type->describe() . " $owner.{$member->name}"],
             'case' => [self::ENUM_MEMBER, "$owner.{$member->name}"],
             default => [self::PROPERTY, $member->type->describe() . " $owner.{$member->name}"],
         };
 
-        return self::item($member->name, $kind, $detail);
+        return self::item($name, $kind, $detail);
     }
 
     /** @return Item */

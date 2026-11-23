@@ -1,0 +1,32 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+// The capacity is room, not a limit: the list grows (from 4, doubling), as in .NET.
+List<string> fruits = new List<string>(2) { "a", "b", "c" };
+Console.WriteLine($"{fruits.Count} {fruits.Capacity}");
+fruits.Add("d");
+fruits.Add("e");
+Console.WriteLine($"{fruits.Count} {fruits.Capacity}");
+var empty = new List<int>();
+Console.WriteLine(empty.Capacity);
+empty.AddRange(Enumerable.Range(1, 10).ToArray());
+Console.WriteLine(empty.Capacity);
+Console.WriteLine(empty.EnsureCapacity(25));
+fruits.TrimExcess();
+Console.WriteLine(fruits.Capacity);
+try { new List<int>(-1); } catch (ArgumentOutOfRangeException e) { Console.WriteLine(e.Message); }
+try { fruits.Capacity = 1; } catch (ArgumentOutOfRangeException) { Console.WriteLine("capacity below count"); }
+
+// Arrays have a fixed length.
+var arr = new string[2];
+try { arr[2] = "c"; } catch (IndexOutOfRangeException) { Console.WriteLine("index out of range"); }
+int n = -1;
+try { var bad = new int[n]; } catch (OverflowException) { Console.WriteLine("negative size"); }
+
+// String constructors, Concat over sequences, split options.
+Console.WriteLine(new string('-', 3) + new string(new[] { 'o', 'k' }) + new string(new[] { 'x', 'y', 'z' }, 1, 2));
+Console.WriteLine(string.Concat(new List<string> { "p", "q" }) + string.Concat(Enumerable.Range(1, 3)) + string.Concat("x", 1, true));
+Console.WriteLine(string.Join("|", " a , ,b ".Split(',', StringSplitOptions.TrimEntries)));
+Console.WriteLine(string.Join("|", "a,,b".Split(',', StringSplitOptions.RemoveEmptyEntries)));
+Console.WriteLine(string.Join("|", " a , ,b ".Split(',', (int)StringSplitOptions.RemoveEmptyEntries | (int)StringSplitOptions.TrimEntries)));

@@ -107,11 +107,29 @@ final class LanguageService
     private static function describe(array $ref): string
     {
         $member = $ref['member'];
+        if ($member !== null && $member->extensionProperty !== null) {
+            // A property of an extension block (C# 14): shown on the type it extends.
+            $extended = $member->staticExtensionOf ?? ($member->params[0]->type ?? null);
+
+            return '(extension) ' . $ref['type']->describe() . ' ' . ($extended?->describe() ?? $member->owner->shortName()) . '.' . $member->extensionProperty;
+        }
+        if ($member !== null && $member->staticExtensionOf !== null) {
+            return '(extension) ' . $member->type->describe() . ' ' . $member->staticExtensionOf->describe() . ".{$member->name}(" . implode(', ', array_map(
+                static fn (ParameterSymbol $p): string => $p->type->describe() . ' ' . $p->name,
+                $member->params,
+            )) . ')';
+        }
+        if ($member !== null && $member->isLocalFunction) {
+            return '(local function) ' . $member->type->describe() . " {$member->name}(" . implode(', ', array_map(
+                static fn (ParameterSymbol $p): string => ($p->modifier !== null ? $p->modifier . ' ' : '') . $p->type->describe() . ' ' . $p->name . ($p->optional ? ' = ...' : ''),
+                $member->params,
+            )) . ')';
+        }
         if ($member !== null) {
             $owner = $member->owner->shortName();
 
             return match ($member->kind) {
-                'method' => ($member->isExtension ? '(extension) ' : '(method) ') . $member->type->describe() . " $owner.{$member->name}(" . implode(', ', array_map(
+                'method' => ($member->isExtension ? '(extension) ' : '(method) ') . $member->type->describe() . " $owner." . ($member->csharpName ?? $member->name) . '(' . implode(', ', array_map(
                     static fn (ParameterSymbol $p): string => ($p->modifier !== null ? $p->modifier . ' ' : '') . $p->type->describe() . ' ' . $p->name . ($p->optional ? ' = ...' : ''),
                     $member->params,
                 )) . ')',

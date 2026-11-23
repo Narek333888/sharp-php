@@ -1,0 +1,70 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+// Local functions can be called before they are declared, be recursive, generic, iterators or async,
+// and take ref/out/params/optional/named arguments.
+Console.WriteLine(Square(4));
+Console.WriteLine(Sum(1, 2, 3) + " " + Sum());
+Console.WriteLine(Greet("Ann") + " | " + Greet(greeting: "Hi", name: "Bob"));
+int a = 1;
+Increment(ref a);
+Split(7, out var half, out var rest);
+Console.WriteLine($"{a} {half} {rest}");
+Console.WriteLine(Max(3, 9) + " " + Max("a", "b"));
+Console.WriteLine(Fibonacci(10));
+Console.WriteLine(string.Join(" ", Evens(7)));
+Console.WriteLine(await Twice(21));
+Console.WriteLine(new Calculator(10).Run());
+Console.WriteLine(new Wrapper().Wrap("x") + new Wrapper().Wrap(5));
+
+int Square(int x) => x * x;
+static int Sum(params int[] xs) => xs.Sum();
+static string Greet(string name, string greeting = "Hello") => $"{greeting}, {name}";
+static void Increment(ref int x) => x++;
+static void Split(int n, out int q, out int r)
+{
+    q = n / 2;
+    r = n % 2;
+}
+static T Max<T>(T a, T b) where T : IComparable<T> => a.CompareTo(b) >= 0 ? a : b;
+static int Fibonacci(int n) => n < 2 ? n : Fibonacci(n - 1) + Fibonacci(n - 2);
+static IEnumerable<int> Evens(int n)
+{
+    for (int i = 0; i < n; i++)
+    {
+        if (i % 2 == 0) yield return i;
+    }
+}
+static async Task<int> Twice(int x)
+{
+    await Task.Delay(1);
+    return x * 2;
+}
+
+class Calculator
+{
+    private readonly int start;
+
+    public Calculator(int start) => this.start = start;
+
+    public int Run()
+    {
+        return Add(5) + One();
+
+        // A local function of an instance method may use this
+        int Add(int n) => start + n;
+        static int One() => 1;
+    }
+}
+
+class Wrapper
+{
+    // ...and the type parameters of a generic method
+    public string Wrap<T>(T value)
+    {
+        return Format(value);
+        string Format(T x) => $"[{x}]";
+    }
+}

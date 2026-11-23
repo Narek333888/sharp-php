@@ -21,6 +21,30 @@ trait EnumerableMethods
         return Enumerable::Where($this, $predicate);
     }
 
+    /** @return T|null */
+    public function MinBy(\Closure $keySelector): mixed
+    {
+        return Enumerable::MinBy($this, $keySelector);
+    }
+
+    /** @return T|null */
+    public function MaxBy(\Closure $keySelector): mixed
+    {
+        return Enumerable::MaxBy($this, $keySelector);
+    }
+
+    /** @return List_<T> */
+    public function DistinctBy(\Closure $keySelector): List_
+    {
+        return Enumerable::DistinctBy($this, $keySelector);
+    }
+
+    /** @return List_<T[]> */
+    public function Chunk(int $size): List_
+    {
+        return Enumerable::Chunk($this, $size);
+    }
+
     /** @return List_<mixed> */
     public function Select(\Closure $selector): List_
     {
@@ -43,10 +67,8 @@ trait EnumerableMethods
         return Enumerable::All($this, $predicate);
     }
 
-    public function Count(?\Closure $predicate = null): int
-    {
-        return Enumerable::Count($this, $predicate);
-    }
+    // No Count() here: PHP method names ignore case, so it would clash with Countable's count();
+    // each collection declares Count(?Closure $predicate = null), which is both.
 
     /** @return T */
     public function First(?\Closure $predicate = null): mixed

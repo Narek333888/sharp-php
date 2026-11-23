@@ -1,0 +1,32 @@
+using System;
+using System.Collections.Generic;
+using App.Extensions;
+
+namespace App;
+
+public class Program
+{
+    public static void Main()
+    {
+        var text = "the quick  brown fox";
+        Console.WriteLine(text.WordCount);
+        Console.WriteLine("hi".Shout());
+        Console.WriteLine("ab".Repeat(3));
+        Console.WriteLine(string.Line(5));
+        Console.WriteLine(string.Greeting + ", " + "world".Quote());
+
+        var numbers = new List<int> { 10, 20, 30 };
+        Console.WriteLine(numbers.IsEmpty);
+        Console.WriteLine(new List<string>().IsEmpty);
+        int second = numbers.SecondOrDefault();
+        Console.WriteLine(second + 1);
+
+        Point p = Point.Of(3, 4);
+        Console.WriteLine(p.Length);
+        Console.WriteLine(Point.Origin);
+
+        string? missing = null;
+        Console.WriteLine(missing?.WordCount ?? -1);
+        Console.WriteLine(TextExtensions.Shout("static form"));
+    }
+}

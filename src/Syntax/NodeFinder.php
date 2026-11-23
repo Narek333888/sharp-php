@@ -39,4 +39,36 @@ final class NodeFinder
 
         return false;
     }
+
+    /**
+     * Every node in $roots and their descendants that $predicate matches, lambdas included.
+     *
+     * @param list<Node|null> $roots
+     * @param callable(Node): bool $predicate
+     * @return list<Node>
+     */
+    public static function all(array $roots, callable $predicate): array
+    {
+        $found = [];
+        $stack = array_values(array_filter($roots, static fn (?Node $n): bool => $n !== null));
+        while ($stack !== []) {
+            $node = array_pop($stack);
+            if ($predicate($node)) {
+                $found[] = $node;
+            }
+            foreach (get_object_vars($node) as $value) {
+                if ($value instanceof Node) {
+                    $stack[] = $value;
+                } elseif (is_array($value)) {
+                    foreach ($value as $item) {
+                        if ($item instanceof Node) {
+                            $stack[] = $item;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $found;
+    }
 }

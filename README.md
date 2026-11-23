@@ -30,15 +30,16 @@ public record Person(string Name, int Age);
 ## Features
 
 - **The C# you know:** classes, records, structs, interfaces, enums, properties, generics with constraints and
-  variance, extension methods, lambdas and closures, LINQ, pattern matching, `switch` expressions, exceptions
-  with filters, `using` and `IDisposable`, `yield return`, `async`/`await`: see the [Language guide](#language-guide)
+  variance, extension methods and C# 14 extension blocks, local functions, lambdas and closures, LINQ, pattern
+  matching, `switch` expressions, exceptions with filters, `using` and `IDisposable`, `yield return`,
+  `async`/`await`: see the [Language guide](#language-guide)
 - **C#'s semantics, not PHP's:** integer division, value equality of records, banker's rounding, checked casts,
   `IndexOutOfRangeException` and `NullReferenceException`: see [Semantics that match C#](#semantics-that-match-c)
 - **The C# compiler's errors at compile time:** types, arguments, definite assignment, access rules, missing
   returns, with C#'s messages; exceptions are reported with `.sphp` lines: see [Errors](#errors)
 - **A .NET-style library:** `Console`, `Math`, `string`, `StringBuilder`, `DateTime`, `TimeSpan`, `List`,
-  `Dictionary`, `HashSet`, `Queue`, `Stack`, LINQ, `Task`, `HttpClient`, `JsonSerializer`, `GC`: see
-  [Runtime library](#runtime-library)
+  `Dictionary`, `HashSet`, `Queue`, `Stack`, LINQ, `Regex`, `File`, `Path`, `Guid`, `Stopwatch`, `Task`,
+  `HttpClient`, `JsonSerializer`, `GC`: see [Runtime library](#runtime-library)
 - **Web apps** in the style of ASP.NET Core minimal APIs: `app.MapGet("/users/{id:int}", ...)`, see [Web apps](#web-apps)
 - **Async and await** on PHP fibers, with HTTP requests running at the same time: see [Async and await](#async-and-await)
 - **PHP both ways:** SharpPHP calls PHP classes, functions and Composer packages; PHP calls SharpPHP classes;
@@ -75,22 +76,28 @@ composer require armdevstack/sharp-php
 ### Upgrading
 
 ```bash
-composer update armdevstack/sharp-php        # bug-fix releases: 0.7.0 → 0.7.x
-composer require armdevstack/sharp-php:^0.7  # a newer minor version: 0.6.x → 0.7.x
+composer require armdevstack/sharp-php:^0.8  # a newer minor version: 0.7.x → 0.8.x
+composer update armdevstack/sharp-php        # bug-fix releases: 0.8.0 → 0.8.x
 ```
 
 While SharpPHP is 0.x, a plain `composer update` stays within the minor version you installed: the
-constraint Composer writes for you, e.g. `^0.7.0`, means `>=0.7.0 <0.8.0`, because `^` does not cross a 0.x
+constraint Composer writes for you, e.g. `^0.7.1`, means `>=0.7.1 <0.8.0`, because `^` does not cross a 0.x
 minor version. Require the newer version once, as above, and `composer update` follows it from then on.
 `composer show armdevstack/sharp-php` prints the installed version; [CHANGELOG.md](CHANGELOG.md) lists
 what changed. The build in `var/sharp` is redone automatically after an upgrade.
 
+**After upgrading, restart the language server** so that the editor uses the new version: in PhpStorm
+**View → Tool Windows → Language Servers**, right-click **SharpPHP** → **Restart**; in VS Code, Command
+Palette → **SharpPHP: Restart Language Server** (and run `vendor/bin/sharp vscode` once to update the
+extension).
+
 **On Windows, stop the language server before upgrading.** While an editor runs it, it keeps
 `vendor/bin/sharp` open, Windows does not let Composer replace that file, and the upgrade stops half-way
 (`Failed to open stream: Permission denied`). In PhpStorm: **View → Tool Windows → Language Servers**,
-right-click **SharpPHP** → **Stop**; in VS Code: close the project's window. Upgrade, then open a `.sphp`
-file and the server starts again. After a failed upgrade, stopping the server and running
-`composer install` completes it.
+right-click **SharpPHP** → **Stop** (this also disables it); in VS Code: close the project's window.
+Upgrade, then in PhpStorm right-click **SharpPHP** → **Enable and Start** (VS Code starts it when the
+project is opened again). After a failed upgrade, stopping the server and running `composer install`
+completes it.
 
 ## Quick start
 
@@ -260,26 +267,38 @@ PhpStorm (and every other JetBrains IDE) gets highlighting, completion, paramete
 hover and go to definition for `.sphp` files. Setting it up takes about two minutes and is done **once per IDE**: it
 then works in every project that requires `armdevstack/sharp-php` (parameter info needs 0.6 or newer:
 `composer show armdevstack/sharp-php` prints the version, [Upgrading](#upgrading) tells how to update).
+Run `composer require armdevstack/sharp-php` first: both steps use files of the installed package.
 
 ### 1. Syntax highlighting
 
-1. **Settings → Editor → TextMate Bundles**, click **+**.
-2. Choose the folder `vendor/armdevstack/sharp-php/editors/sharpphp` of your project and click **OK**.
+1. **Settings** (macOS: **PhpStorm → Settings...**, ⌘,; Windows/Linux: **File → Settings...**, Ctrl+Alt+S)
+   **→ Editor → TextMate Bundles**, click **+**.
+2. Choose the folder `vendor/armdevstack/sharp-php/editors/sharpphp` of your project and click **OK**, then
+   **OK** in Settings.
 
 Keywords, types, strings, numbers and comments in `.sphp` files are now colored.
 
 ### 2. Completion, parameter info, errors while typing, hover, go to definition
 
 These come from the SharpPHP language server (`vendor/bin/sharp lsp`) through the free
-[LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) plugin by Red Hat:
+[LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) plugin by Red Hat (these steps are checked
+with LSP4IJ 0.30):
 
 1. **Settings → Plugins → Marketplace**: search **LSP4IJ**, click **Install** (restart PhpStorm if it asks).
 2. **Settings → Languages & Frameworks → Language Servers (LSP4IJ)**, click **+**.
-3. In the **New Language Server** dialog, open the **Template** list, choose **Import template...** and
-   select the folder `vendor/armdevstack/sharp-php/editors/lsp4ij/sharpphp`. Click **OK**.
+3. The **New Language Server** dialog opens. Next to **Template:**, click the link **Import template...**,
+   select the folder `vendor/armdevstack/sharp-php/editors/lsp4ij/sharpphp` of your project and confirm.
+   The dialog is now filled in: name **SharpPHP**, **Command:** `php $PROJECT_DIR$/vendor/bin/sharp lsp`,
+   and on the **Mappings** tab `*.sphp` files with the language id `sharpphp`.
+4. **macOS with Homebrew PHP:** PhpStorm started from the Dock or Finder does not see Homebrew's
+   `/opt/homebrew/bin`, so replace `php` in **Command:** with the full path that `which php` prints in a
+   terminal, e.g. `/opt/homebrew/bin/php $PROJECT_DIR$/vendor/bin/sharp lsp`. (Elsewhere, if `php` is not
+   on the `PATH`, do the same with its full path, e.g. `C:\php\php.exe $PROJECT_DIR$/vendor/bin/sharp lsp`.)
+5. Click **OK**, then **OK** in Settings.
 
 **Check it:** open a `.sphp` file, type `Console.` inside `Main`: `WriteLine`, `Write`, `ReadLine` are listed.
-**View → Tool Windows → Language Servers** shows the SharpPHP server running.
+**View → Tool Windows → Language Servers** shows the SharpPHP server running. The server belongs to the IDE,
+not to one project: other projects that require SharpPHP use it too, each with its own `vendor/bin/sharp`.
 
 What you get:
 
@@ -313,8 +332,10 @@ indexed: PhpStorm then completes those classes in `.php` files too. Otherwise ri
 |---|---|
 | `.sphp` files are plain text | Remove `*.sphp` under **Settings → Editor → File Types → Text**, if it is there; check step 1 |
 | No completion and no error marks | Check that LSP4IJ is installed (**Settings → Plugins → Installed**) and step 2 was done. The project must require SharpPHP: `composer require armdevstack/sharp-php`. Restarting PhpStorm alone does not turn completion on |
-| The **Language Servers** window shows that SharpPHP cannot start | PhpStorm did not find `php` (common on macOS, where an IDE started from the Dock does not see Homebrew). In **Settings → Languages & Frameworks → Language Servers (LSP4IJ) → SharpPHP**, set **Command:** to the full path of PHP: `/opt/homebrew/bin/php $PROJECT_DIR$/vendor/bin/sharp lsp` (`which php` in a terminal prints the path) |
-| You want to see what the server does | **View → Tool Windows → Language Servers** → SharpPHP: the **Logs** tab; for every request set **Trace:** to `verbose` on the server's **Debug** tab |
+| The **Language Servers** window shows that SharpPHP cannot start | PhpStorm did not find `php` (common on macOS, where an IDE started from the Dock does not see Homebrew), or found a PHP older than 8.4. In **Settings → Languages & Frameworks → Language Servers (LSP4IJ) → SharpPHP**, set **Command:** to the full path of PHP 8.4+: `/opt/homebrew/bin/php $PROJECT_DIR$/vendor/bin/sharp lsp` (`which php` in a terminal prints the path, `php -v` its version) |
+| Completion shows old members after `composer update` | The server still runs the old version: **View → Tool Windows → Language Servers**, right-click **SharpPHP** → **Restart** |
+| The server was stopped (or disabled after failed starts) | **View → Tool Windows → Language Servers**, right-click **SharpPHP** → **Enable and Start** |
+| You want to see what the server does | **View → Tool Windows → Language Servers** → SharpPHP: the **Logs** tab; to see every request, set **Trace:** to `verbose` on the server's **Debug** tab (in Settings), then look at the **Traces** tab |
 | No completion after a dot | The file has a syntax error somewhere else: fix it first (it is underlined) |
 | `composer update` fails on Windows with `vendor\bin/sharp): Failed to open stream: Permission denied` | The running language server keeps that file open: stop it (**Language Servers** → right-click **SharpPHP** → **Stop**), run `composer install`, then open a `.sphp` file again (see [Upgrading](#upgrading)) |
 
@@ -336,11 +357,13 @@ completion, parameter info, errors while typing (also in the **Problems** panel)
 
 | Problem | What to do |
 |---|---|
-| "PHP was not found" | Set **Settings → Extensions → SharpPHP → Php: Path** (`sharpphp.php.path`) to the full path of PHP 8.4+, e.g. `/opt/homebrew/bin/php` (`which php` prints it) |
+| "PHP was not found" | Set **Settings → Extensions → SharpPHP → Php: Path** (`sharpphp.php.path`) to the full path of PHP 8.4+, e.g. `/opt/homebrew/bin/php` (`which php` prints it; on Windows `where php`, e.g. `C:\php\php.exe`) |
+| `code` is not found by `sharp vscode` | In VS Code: Command Palette → **Shell Command: Install 'code' command in PATH** (macOS), or use `--package=sharpphp.vsix` and **Install from VSIX...** as in step 1 |
 | No completion and no error marks | **View → Output → SharpPHP** says why: no `vendor/bin/sharp` (`composer require armdevstack/sharp-php`) or an untrusted workspace |
 | Anything else | Command Palette → **SharpPHP: Restart Language Server**; details in [editors/sharpphp](editors/sharpphp/README.md#troubleshooting) |
 
-After upgrading SharpPHP, run `vendor/bin/sharp vscode` again to update the extension.
+After upgrading SharpPHP, run `vendor/bin/sharp vscode` again to update the extension, and
+**SharpPHP: Restart Language Server** (or reload the window) so that the server runs the new version.
 
 ### Other editors
 
@@ -377,10 +400,11 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - Fields, `const`, `readonly`, `static`
 - Properties: auto (`{ get; set; }`, `{ get; private set; }`, `{ get; init; }`, get-only), with initializers, expression-bodied (`=> ...`), full `get { } set { }` with `value`, abstract and interface properties, static properties (with accessor bodies they become `get_Name()`/`set_Name()` methods)
 - Methods: `virtual` / `override` / `abstract` (an override may return a more derived type), expression bodies, default and named arguments, `params`, `ref`, `out` (incl. `out var x` and the discard `out _`), `in`
-- Extension methods: a static method of a non-generic `static class` whose first parameter is declared `this` is called like a method of that parameter's type, see [Extension methods](#extension-methods)
+- Extension methods and C# 14 extension blocks (`extension(string s) { ... }`, with extension properties and static extension members such as `string.Repeat(...)`), see [Extension methods](#extension-methods)
+- Local functions: `static int Square(int x) => x * x;` inside a method or in top-level statements, callable before their declaration, recursive, generic, iterators or `async`. They are compiled to private methods of the class, so they cannot use the local variables of the code around them (SP8421: pass them as parameters, or use a lambda); in an instance method they may use `this` and the class's members
 - Finalizers `~Name() { ... }`, which run when the object is freed (see [Memory](#memory))
 - Records: `record Point(int X, int Y);` with value equality (`==`), C#-style `ToString()` (every public property) and `with` expressions (`p with { X = 5 }`)
-- Enums: `enum Color { Red, Green = 5 }`, `(int)color`, `(Color)1`, `color.ToString()`
+- Enums: `enum Color { Red, Green = 5 }`, `(int)color`, `(Color)1`, `color.ToString()`, and `System.Enum`: `Enum.GetNames(typeof(Color))`, `Enum.GetValues<Color>()`, `Enum.Parse<Color>("Green")` (also `ignoreCase: true`), `Enum.TryParse<Color>(text, out var c)`, `Enum.IsDefined(typeof(Color), 2)`, `Enum.GetName(...)`. `[Flags]` combinations (`A | B`) do not exist: see [Differences from C#](#differences-from-c)
 - Nullable value types: `int?`, `Color?`, `DateTime?` with `HasValue`, `Value` (`InvalidOperationException` when there is none) and `GetValueOrDefault()`; `default(T)`, new arrays and `FirstOrDefault()` give C#'s defaults (`0`, `false`, an enum's member of value 0, `DateTime.MinValue`, `null` for `int?`)
 
 ### Generics
@@ -423,6 +447,42 @@ new List<string> { "a", "b" }.Second();    // "b", a string: T comes from the re
 - Only in a non-generic `static class`, as a `static` method, with `this` on the first parameter (SP1106, SP1105, SP1100)
 - Completion after a dot lists the extension methods that apply; parameter info and hover show them as C# does
 
+**Extension blocks (C# 14)** add extension properties and static extension members, in the same kind of
+`static class`:
+
+```csharp
+public static class TextExtensions
+{
+    extension(string text)                  // members of a string, which they name "text"
+    {
+        public int WordCount => text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        public string Shout() => text.ToUpper() + "!";
+    }
+
+    extension(string)                       // static members: called on the type
+    {
+        public static string Line(int width) => new string('-', width);
+    }
+
+    extension<T>(IEnumerable<T> items)      // generic: T comes from the receiver
+    {
+        public bool IsEmpty => !items.Any();
+    }
+}
+```
+
+```csharp
+using App.Extensions;
+
+Console.WriteLine("the quick brown fox".WordCount);   // 4
+Console.WriteLine("hi".Shout());                      // HI!
+Console.WriteLine(string.Line(5));                    // -----
+Console.WriteLine(new List<int>().IsEmpty);           // True
+```
+
+Extension properties are read-only (a property with `set` or `init`, or an auto-property, is an error), and
+only methods and properties can be declared in a block.
+
 ### Statements and expressions
 
 - `if`/`else`, `while`, `do`, `for`, `foreach` (incl. `foreach (var (key, value) in dict)`), `break`, `continue`
@@ -430,11 +490,12 @@ new List<string> { "a", "b" }.Second();    // "b", a string: T comes from the re
 - `try`/`catch`/`finally`, exception filters (`catch (E e) when (...)`), `throw;`, throw expressions (`x ?? throw ...`)
 - `using (var file = Open()) { ... }`, `using (expression) ...` and `using var file = Open();` (disposed at the end of the block): `Dispose()` runs however the block is left, in reverse order for several resources
 - `yield return` / `yield break` with `IEnumerable<T>`
-- Lambdas `x => x * 2`, `(a, b) => { ... }`, closures with C# capture semantics, method groups (`list.ForEach(Print)`)
+- Lambdas `x => x * 2`, `(a, b) => { ... }`, method groups (`list.ForEach(Print)`), closures with C#'s capture semantics: a lambda sees the variable, not a copy (`Func<int> get = () => count; count = 10; get()` is 10), a `for` loop's variable is one variable for all iterations, and a variable declared in a loop body is a new one in every iteration
+- A string is an `IEnumerable<char>`: `foreach (char c in text)`, `text.Reverse()`, `text.Count(char.IsDigit)`, `text.Distinct()`, `new HashSet<char>(text)`; `string`'s own methods (`Contains`, `IndexOf`, ...) win over LINQ's
 - Pattern matching: `is T x`, `is null`, `is not null`, `is > 0 and < 10`, `or`, `not`, `var`, `_`, property patterns (`Circle { R: > 10 } c`, `{ Name: var n, Age: >= 18 }`, `{ Home.City: "Paris" }`)
-- String interpolation with format specifiers `$"{price:F2}"`, verbatim strings `@"C:\path"`, `$@"..."`
+- String interpolation with format specifiers and alignment: `$"{price:F2}"`, `$"{name,-10}|{total,8:N2}"` (also in `string.Format("{0,5}", x)`); verbatim strings `@"C:\path"`, `$@"..."`
 - `?.`, `?[]`, `??`, `??=`, `is`, `as`, casts, `typeof` / `GetType()` (a `System.Type` with `Name`, `FullName`, `Namespace`), `nameof`, `default`
-- Object and collection initializers: `new User { Name = "Ann" }`, `new Dictionary<string, int> { ["a"] = 1 }`, `new()`, `[1, 2, 3]`
+- Object and collection initializers: `new User { Name = "Ann" }`, `new Dictionary<string, int> { ["a"] = 1 }`, `new()`, `[1, 2, 3]`, and nested ones, which fill the object a property already holds: `new Order { Items = { "a", "b" }, Address = { City = "Paris" } }`
 - Anonymous types: `new { Id = 1, user.Name }`, with read-only typed properties, value equality and C#'s `ToString()` (`{ Id = 1, Name = Ann }`)
 
 ### Semantics that match C#
@@ -442,6 +503,7 @@ new List<string> { "a", "b" }.Second();    // "b", a string: T comes from the re
 | C# | Generated PHP |
 |---|---|
 | `7 / 2` (ints) | `\intdiv(7, 2)` → 3 |
+| `7.0 / 2`, `1.0 / 0` | `\fdiv(7.0, 2)` → 3.5, `∞` (`0.0 / 0` is `NaN`; an integer division by zero throws `DivideByZeroException`) |
 | `"a" + 1` | `'a' . 1` |
 | `a == b` | `$a === $b` (records compare by value) |
 | `true.ToString()` | `"True"` |
@@ -456,6 +518,8 @@ new List<string> { "a", "b" }.Second();    // "b", a string: T comes from the re
 | `end - start`, `date + span` (`DateTime`, `TimeSpan`) | `DateTime::op_Subtraction($end, $start)` (a `TimeSpan`), `DateTime::op_Addition($date, $span)` |
 | `a < b`, `a == b` (dates, spans) | `DateTime::Compare($a, $b) < 0`, `DateTime::Compare($a, $b) == 0` (by value) |
 | `n.HasValue`, `n.Value` (`int? n`) | `$n !== null`, `$n ?? throw new InvalidOperationException(...)` |
+| changing a `List<T>` in a `foreach` over it | `InvalidOperationException` ("Collection was modified") at the next step of the loop |
+| `list.Foo()`, `list.Lenght` (not a member) | a compile error (SP1061), also for the runtime library's types |
 
 ## Runtime library
 
@@ -466,12 +530,12 @@ below need a `using`.
 | Type | Members |
 |---|---|
 | `Console` | `WriteLine`, `Write`, `ReadLine`; composite formatting: `Console.WriteLine("{0} costs {1:F2}", name, price)` |
-| `Math` | `Abs`, `Atan2`, `Cbrt`, `Ceiling`, `Clamp`, `Cos`, `Exp`, `Floor`, `Log`, `Log10`, `Log2`, `Max`, `Min`, `Pow`, `Round` (banker's rounding), `Sign`, `Sin`, `Sqrt`, `Tan`, `Truncate`; `PI`, `E`, `Tau` |
-| `string` / `String` | `Length`, `s[i]`; `Compare`, `CompareTo`, `Concat`, `Contains`, `EndsWith`, `Equals`, `Format`, `IndexOf`, `Insert`, `IsNullOrEmpty`, `IsNullOrWhiteSpace`, `Join`, `LastIndexOf`, `PadLeft`, `PadRight`, `Remove`, `Replace`, `Split`, `StartsWith`, `Substring`, `ToCharArray`, `ToLower`, `ToLowerInvariant`, `ToUpper`, `ToUpperInvariant`, `Trim`, `TrimEnd`, `TrimStart`; `string.Empty`. `Equals`, `Compare`, `Contains`, `StartsWith`, `EndsWith`, `IndexOf`, `LastIndexOf` and `Replace` take a `StringComparison` (`OrdinalIgnoreCase`, ...): the IgnoreCase kinds ignore case, and as SharpPHP has no cultures the culture kinds compare as `Ordinal` |
+| `Math` | `Abs`, `Atan2`, `Cbrt`, `Ceiling`, `Clamp`, `Cos`, `Exp`, `Floor`, `Log`, `Log10`, `Log2`, `Max`, `Min`, `Pow`, `Round` (banker's rounding; `Round(x, digits)`, `Round(x, MidpointRounding.AwayFromZero)`, `Round(x, digits, mode)`), `Sign`, `Sin`, `Sqrt`, `Tan`, `Truncate`; `PI`, `E`, `Tau` |
+| `string` / `String` | `Length`, `s[i]`; `Compare`, `CompareTo`, `Concat`, `Contains`, `EndsWith`, `Equals`, `Format`, `IndexOf`, `Insert`, `IsNullOrEmpty`, `IsNullOrWhiteSpace`, `Join`, `LastIndexOf`, `PadLeft`, `PadRight`, `Remove`, `Replace`, `Split`, `StartsWith`, `Substring`, `ToCharArray`, `ToLower`, `ToLowerInvariant`, `ToUpper`, `ToUpperInvariant`, `Trim`, `TrimEnd`, `TrimStart`; `string.Empty`; `new string('-', 5)`, `new string(chars)`, `new string(chars, start, length)`; `Split(separators, StringSplitOptions.RemoveEmptyEntries)` (also `TrimEntries`); `string.Concat(sequence)`; LINQ over the chars (`text.Reverse()`). `Equals`, `Compare`, `Contains`, `StartsWith`, `EndsWith`, `IndexOf`, `LastIndexOf` and `Replace` take a `StringComparison` (`OrdinalIgnoreCase`, ...): the IgnoreCase kinds ignore case, and as SharpPHP has no cultures the culture kinds compare as `Ordinal` |
 | `StringBuilder` (`System.Text`) | `Append`, `AppendLine`, `AppendFormat`, `AppendJoin`, `Insert`, `Remove`, `Replace`, `Clear`, `ToString`, `Length` (settable), `Capacity`, `sb[i]`; the changing methods return the builder, so calls chain |
 | `char` | `IsDigit`, `IsLetter`, `IsLetterOrDigit`, `IsLower`, `IsUpper`, `IsWhiteSpace`, `ToLower`, `ToUpper`; a `char` is a number in arithmetic (`c - '0'`) |
 | `int`, `long`, `short`, `byte`, `sbyte`, `ushort`, `uint`, `ulong` | `Parse`, `TryParse` (`OverflowException` out of range), `MaxValue`, `MinValue`, `CompareTo`, `ToString("D3")` |
-| `double`, `float`, `decimal` | `Parse`, `TryParse`, `IsNaN`, `IsInfinity`, `NaN`, `PositiveInfinity`, `NegativeInfinity`, `Epsilon`, `MaxValue`, `MinValue`, `ToString("F2")` |
+| `double`, `float`, `decimal` | `Parse`, `TryParse`, `IsNaN`, `IsInfinity`, `NaN`, `PositiveInfinity`, `NegativeInfinity`, `Epsilon`, `MaxValue`, `MinValue`; `ToString()` with up to 15 significant digits (`0.1 + 0.2` is `0.3`), `ToString("R")` with the shortest exact digits (`0.30000000000000004`), `"F2"`, `"N2"`, `"G5"`, `"E3"`, `"P1"`, `"C"`, `"0.00"` |
 | `bool` | `Parse`, `TryParse`; `ToString()` gives `True` / `False` |
 | `DateTime` | `Now`, `UtcNow`, `Today`, `MinValue`, `MaxValue`, `UnixEpoch`; `new DateTime(2024, 12, 31[, 18, 30, 0[, 500]][, DateTimeKind.Utc])`, `new DateTime(ticks)`; `Year`, `Month`, `Day`, `Hour`, `Minute`, `Second`, `Millisecond`, `Microsecond`, `DayOfWeek`, `DayOfYear`, `Date`, `TimeOfDay`, `Ticks`, `Kind`; `Add`, `AddYears`, `AddMonths` (Jan 31 + 1 month is the end of February), `AddDays`, `AddHours`, `AddMinutes`, `AddSeconds`, `AddMilliseconds`, `AddTicks`, `Subtract`, `ToUniversalTime`, `ToLocalTime`, `SpecifyKind`, `Compare`, `CompareTo`, `Equals`, `DaysInMonth`, `IsLeapYear`; `ToString()` with the standard formats (`d`, `D`, `f`, `F`, `g`, `G`, `M`, `o`, `R`, `s`, `t`, `T`, `u`, `U`, `Y`) and custom ones (`yyyy-MM-dd HH:mm:ss.fff`, `ddd`, `dddd`, `MMM`, `MMMM`, `h`, `tt`, `zzz`, `K`, `'literal'`), also `$"{date:yyyy-MM-dd}"`; `ToShortDateString`, `ToLongDateString`, `ToShortTimeString`, `ToLongTimeString`; `Parse`, `TryParse`, `ParseExact`; `date - date` (a `TimeSpan`), `date + span`, `date - span`, `+=`, `-=`, `<`, `>`, `<=`, `>=`, `==`, `!=`; JSON as ISO 8601 (`"2024-01-15T09:30:00"`); `DateTimeKind`, `DayOfWeek` |
 | `TimeSpan` | `new TimeSpan(h, m, s)`, `(d, h, m, s[, ms])`, `(ticks)`; `FromDays`, `FromHours`, `FromMinutes`, `FromSeconds`, `FromMilliseconds`, `FromTicks`, `Zero`, `MaxValue`, `MinValue`; `Days`, `Hours`, `Minutes`, `Seconds`, `Milliseconds`, `Microseconds`, `Ticks`, `TotalDays`, `TotalHours`, `TotalMinutes`, `TotalSeconds`, `TotalMilliseconds`; `Add`, `Subtract`, `Negate`, `Duration`, `Multiply`, `Divide`, `Compare`, `CompareTo`, `Equals`; `ToString()` (`c`, `g`, `G`, custom `hh\:mm\:ss`, `d\.hh\:mm`), `Parse`, `TryParse`; `+`, `-`, `-span`, comparisons; `OverflowException` beyond its range |
@@ -480,19 +544,24 @@ below need a `using`.
 | `Random` | `Next`, `NextDouble` |
 | `Array` | `Empty`, `Exists`, `Fill`, `Find`, `IndexOf`, `Resize`, `Reverse`, `Sort`; arrays have `Length` and the LINQ methods |
 | `Type` (`typeof(T)`, `value.GetType()`) | `Name`, `FullName`, `Namespace` |
-| `List<T>` | `Count`, `list[i]`, `Add`, `AddRange`, `Clear`, `Contains`, `Exists`, `Find`, `FindAll`, `FindIndex`, `ForEach`, `GetRange`, `IndexOf`, `Insert`, `Remove`, `RemoveAll`, `RemoveAt`, `Reverse`, `Sort`, `ToArray`, `TrueForAll` |
+| `Enum` | `GetNames`, `GetValues<TEnum>()`, `GetName`, `IsDefined`, `Parse<TEnum>(text[, ignoreCase])`, `Parse(typeof(TEnum), text)`, `TryParse<TEnum>(text, out var value)` |
+| `Guid` | `NewGuid`, `Parse`, `TryParse`, `Empty`, `ToString()` / `ToString("N")` (`"B"`, `"P"`), `==` and `!=` by value, `Equals`, `CompareTo`; JSON as its text |
+| `List<T>` | `Count`, `list[i]`, `Capacity` (grows as in .NET; it is never a limit), `Add`, `AddRange`, `Clear`, `Contains`, `EnsureCapacity`, `Exists`, `Find`, `FindAll`, `FindIndex`, `ForEach`, `GetRange`, `IndexOf`, `Insert`, `Remove`, `RemoveAll`, `RemoveAt`, `Reverse`, `Sort`, `ToArray`, `TrimExcess`, `TrueForAll`; `new List<T>(capacity)`, `new List<T>(collection)` |
 | `Dictionary<TKey, TValue>` | `Count`, `Keys`, `Values`, `dict[key]` (`KeyNotFoundException` when missing), `Add`, `Clear`, `ContainsKey`, `ContainsValue`, `GetValueOrDefault`, `Remove`, `TryAdd`, `TryGetValue`; `foreach (var (key, value) in dict)`, `KeyValuePair` |
 | `HashSet<T>` | `Count`, `Add`, `Clear`, `Contains`, `ExceptWith`, `IntersectWith`, `Remove`, `UnionWith` |
 | `Queue<T>` / `Stack<T>` | `Count`, `Enqueue`, `Dequeue`, `TryDequeue`, `Peek`, `Clear` / `Count`, `Push`, `Pop`, `Peek`, `Clear` |
-| LINQ, on arrays and collections | `Aggregate`, `All`, `Any`, `Average`, `Concat`, `Contains`, `Count`, `Distinct`, `ElementAt`, `First`, `FirstOrDefault`, `GroupBy`, `Last`, `LastOrDefault`, `Max`, `Min`, `OrderBy`, `OrderByDescending` (then `ThenBy`, `ThenByDescending`), `Reverse`, `Select`, `SelectMany`, `SequenceEqual`, `Single`, `Skip`, `SkipWhile`, `Sum`, `Take`, `TakeWhile`, `ToArray`, `ToDictionary`, `ToList`, `Where`, `Zip` (with a result selector); `Enumerable.Range`, `Enumerable.Repeat` |
+| LINQ, on arrays, collections and strings | `Aggregate`, `All`, `Any`, `Average`, `Chunk`, `Concat`, `Contains`, `Count`, `Distinct`, `DistinctBy`, `ElementAt`, `First`, `FirstOrDefault`, `GroupBy`, `Last`, `LastOrDefault`, `Max`, `MaxBy`, `Min`, `MinBy`, `OrderBy`, `OrderByDescending` (then `ThenBy`, `ThenByDescending`), `Reverse`, `Select`, `SelectMany`, `SequenceEqual`, `Single`, `Skip`, `SkipWhile`, `Sum`, `Take`, `TakeWhile`, `ToArray`, `ToDictionary`, `ToList`, `Where`, `Zip` (with a result selector); `Enumerable.Range`, `Enumerable.Repeat` |
 | `Task`, `Task<T>` | `Run`, `Delay`, `WhenAll`, `WhenAny`, `FromResult`, `FromException`, `CompletedTask`; `Result`, `Wait`, `IsCompleted`, `IsCompletedSuccessfully`, `IsFaulted`, `Exception`: see [Async and await](#async-and-await) |
 | `HttpClient` (needs `ext-curl`) | `GetStringAsync`, `GetAsync`, `PostAsync`, `PutAsync`, `DeleteAsync`, `AddDefaultHeader`, `BaseAddress`, `Timeout`, `Dispose`; `HttpResponseMessage` (`StatusCode`, `IsSuccessStatusCode`, `ReasonPhrase`, `Headers`, `Content.ReadAsStringAsync()`, `EnsureSuccessStatusCode()`), `StringContent` |
 | `WebUtility` (`System.Net`) | `HtmlEncode`, `HtmlDecode`, `UrlEncode`, `UrlDecode` |
+| `Regex` (`System.Text.RegularExpressions`) | static and instance (`new Regex(pattern[, options])`): `IsMatch`, `Match`, `Matches`, `Replace` (with `$1`, `${name}`, `$0`, `$$`, or a `m => ...` evaluator), `Split`; `Regex.Escape`; `Match` (`Success`, `Value`, `Index`, `Length`, `Groups[1]` / `Groups["name"]`, `NextMatch()`), `MatchCollection` (a list: `Count`, `[i]`, `foreach`, LINQ), `RegexOptions` (`IgnoreCase`, `Multiline`, `Singleline`, `IgnorePatternWhitespace`, `ExplicitCapture`; several: `(int)RegexOptions.IgnoreCase \| (int)RegexOptions.Multiline`). Patterns run on PHP's PCRE, which reads .NET's syntax |
+| `File`, `Path`, `Directory` (`System.IO`) | `File`: `ReadAllText`, `ReadAllLines`, `WriteAllText`, `WriteAllLines`, `AppendAllText`, `AppendAllLines`, `Exists`, `Delete`, `Copy`, `Move` (UTF-8); `Path`: `Combine`, `GetFileName`, `GetFileNameWithoutExtension`, `GetExtension`, `HasExtension`, `GetDirectoryName`, `ChangeExtension`, `GetFullPath`, `IsPathRooted`, `GetTempPath`, `GetRandomFileName`; `Directory`: `Exists`, `CreateDirectory`, `GetFiles(path[, "*.log"])`, `GetDirectories`, `Delete(path[, recursive])`, `GetCurrentDirectory`; `IOException`, `FileNotFoundException`, `DirectoryNotFoundException` |
+| `Stopwatch` (`System.Diagnostics`) | `StartNew`, `Start`, `Stop`, `Reset`, `Restart`, `IsRunning`, `Elapsed`, `ElapsedMilliseconds`, `ElapsedTicks`, `GetTimestamp`, `Frequency` |
 | `JsonSerializer` (`System.Text.Json`) | `Serialize(value, options)` with `JsonSerializerOptions` (`WriteIndented`, `PropertyNamingPolicy = JsonNamingPolicy.CamelCase`) |
 | `System.Web` | `WebApp`, `HttpRequest`, `HttpResponse`, `Results`, `IResult`: see [Web apps](#web-apps) |
 | Memory | `GC` (`Collect`, `CollectionCount`, `GetTotalMemory`, `KeepAlive`, `ReRegisterForFinalize`, `SuppressFinalize`, `WaitForPendingFinalizers`), `WeakReference<T>`, `WeakReference`, `ConditionalWeakTable<TKey, TValue>` (`System.Runtime.CompilerServices`), `new object()`: see [Memory](#memory) |
 | Interfaces | `IDisposable` (for `using`), `IComparable<T>` (for `OrderBy` and `Sort`), `IEquatable<T>`, `IEnumerable<T>` |
-| Exceptions | `Exception` (`Message`, `InnerException`, `StackTrace`), `SystemException`, `ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`, `ArithmeticException`, `DivideByZeroException`, `FormatException`, `IndexOutOfRangeException`, `InvalidCastException`, `InvalidOperationException`, `KeyNotFoundException`, `NotImplementedException`, `NotSupportedException`, `NullReferenceException`, `OverflowException`, `TimeoutException`, `HttpRequestException`; classes of your own can derive from them |
+| Exceptions | `Exception` (`Message`, `InnerException`, `StackTrace`), `SystemException`, `ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`, `ArithmeticException`, `DivideByZeroException`, `FormatException`, `IndexOutOfRangeException`, `InvalidCastException`, `InvalidOperationException`, `KeyNotFoundException`, `NotImplementedException`, `NotSupportedException`, `NullReferenceException`, `OverflowException`, `TimeoutException`, `HttpRequestException`, `IOException`, `FileNotFoundException`, `DirectoryNotFoundException`; classes of your own can derive from them |
 
 ## Async and await
 
@@ -708,6 +777,8 @@ Like the C# compiler, SharpPHP rejects at compile time (not at runtime):
   constant conditions such as `while (true)` are taken into account); `out` parameters not assigned before returning
 - `private`/`protected` members and constructors used from outside, assignments to get-only, init-only and `readonly` members, setters that are not accessible
 - classes that do not implement their interfaces (with matching parameter counts) or inherited abstract members
+- members that do not exist, also on the runtime library's types: `list.Lenght`, `text.Shout()` without an extension method
+- array initializers that do not match their size (`new int[2] { 1, 2, 3 }`), constant negative array sizes
 
 The checks never reject valid C#, so where SharpPHP cannot be sure it accepts the code:
 
@@ -748,17 +819,22 @@ SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 - Generics are checked by the compiler and erased at runtime (only the built-in collections check element types); `typeof(List<int>).Name` is `List`, and `new T()` is not supported
 - `object` stands for any value, also as a generic argument: `IEnumerable<object> xs = new List<int>()` compiles (C# rejects it, `int` being a value type)
 - Finalizers run when the object is freed, at a known point (see [Memory](#memory)), not when a garbage collection happens to run
-- Arrays (`int[]`) are PHP arrays and are copied on assignment and when passed to a method (value semantics); a lambda that writes an element of a captured array changes it, as in C#
+- Arrays (`int[]`) are PHP arrays and are copied on assignment and when passed to a method (value semantics): a method that changes an element of an array parameter does not change the caller's array (pass a `List<T>` for that); a lambda that writes an element of a captured array changes it, as in C#
+- A `struct` is compiled to a class, so it has reference semantics: after `var b = a; b.X = 5;` `a.X` is 5 too (C# copies the struct). Prefer structs whose values do not change (`readonly struct`, get-only properties) or records with `with` expressions (`record struct` is not supported)
 - Integer arithmetic is 64-bit and does not wrap: `int.MaxValue + 1` is `2147483648`, not `-2147483648`
-- `ulong` is limited to `long.MaxValue` (there is no `ulong.MaxValue`); `decimal`/`float`/`double` are PHP floats
+- `ulong` is limited to `long.MaxValue` (there is no `ulong.MaxValue`)
+- `decimal`, `float` and `double` are all PHP floats (64-bit IEEE): `decimal` has double's precision (`0.1m + 0.2m == 0.3m` is false; compare money in cents, or round), and `10m / 3` is `3.33333333333333`. `ToString()` prints up to 15 significant digits for all three (as .NET Framework did for `double`), so `0.1 + 0.2` prints `0.3`; .NET Core prints `0.30000000000000004`, which `ToString("R")` gives
+- `[Flags]` enums: an enum value is a PHP enum case, so combinations such as `A | B` do not exist (a compile error, SP1010). Combine the numbers instead: `(int)A | (int)B`; `RegexOptions` parameters take such a number
 - `char` is a one-character string at runtime (it converts to its code where C# would use it as a number)
 - Values only know their PHP type at runtime: `5L.GetType()` is `System.Int32`, while `typeof(long)` is `System.Int64`
-- The runtime library implements the common .NET APIs, not all of them (no `DateTimeOffset`, `TimeZoneInfo`, `DateOnly`, `TimeOnly`, `Zip` without a result selector, which returns tuples, ...)
+- The runtime library implements the common .NET APIs, not all of them (no `DateTimeOffset`, `TimeZoneInfo`, `DateOnly`, `TimeOnly`, `Zip` without a result selector, which returns tuples, ...); `MinBy` and `MaxBy` of an empty sequence give `null` (.NET throws for value types)
 - There are no cultures: `DateTime` and `TimeSpan` format and parse as .NET's invariant culture does (`1/15/2024 9:30:00 AM`, English names), and local time is PHP's default time zone (`date_default_timezone_get()`). `DateTime.Parse` reads what PHP's date parser reads (ISO 8601, `1/15/2024 4:30 PM`, `January 15, 2024`), except relative dates such as `tomorrow`
 - A field of a struct type without an initializer (`public DateTime Due;`) is null until it is set; C# starts it at `DateTime.MinValue`. `default`, new arrays and `GetValueOrDefault()` give C#'s defaults
 - A named argument for a `params` parameter (`string.Join(separator: ",", values: words)`) is not supported; pass it positionally
 - `async`/`await` runs on one thread (Fibers and an event loop): waiting overlaps, CPU work does not; there is no `CancellationToken`, `ConfigureAwait`, `ValueTask` or `IAsyncEnumerable`
-- Not supported: nested types, operator overloading in your own types (`DateTime` and `TimeSpan` have their operators), indexers, events/delegates declarations, LINQ query syntax, tuples, `goto`, `ref` locals and `ref` returns, local functions, positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters
+- Local functions are compiled to private methods of the class: they cannot use the local variables and parameters of the code around them (SP8421), and two local functions of one class cannot have the same name (SP0128)
+- Extension properties of extension blocks are read-only
+- Not supported: nested types, operator overloading in your own types (`DateTime`, `TimeSpan` and `Guid` have their operators), indexers, events/delegates declarations, default interface methods (SP8701), LINQ query syntax, tuples, `goto`, `ref` locals and `ref` returns, raw string literals (`"""..."""`), positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters, `JsonSerializer.Deserialize` (use PHP's `json_decode`)
 
 ## Development
 

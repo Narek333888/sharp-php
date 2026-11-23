@@ -93,6 +93,37 @@ final class Declarator
                 }
             }
         }
+        if ($unit->localFunctions !== [] && $unit->topLevelStatements !== []) {
+            $this->defineTopLevelFunctions($unit);
+        }
+    }
+
+    /** The local functions of top-level statements: private static methods of Program, next to Main. */
+    private function defineTopLevelFunctions(CompilationUnit $unit): void
+    {
+        $symbol = $this->symbolOf($unit);
+        $ctx = $this->contextFor($unit, null);
+        $names = ['main' => true];
+        foreach ($unit->localFunctions as $function) {
+            $key = strtolower($function->name);
+            if (isset($names[$key])) {
+                throw $this->error('SP0128', "A local function named '{$function->name}' is already declared in the top-level statements (local functions are compiled to methods of Program, whose names are case-insensitive)", $unit->file, $function);
+            }
+            $names[$key] = true;
+            $typeParams = $this->typeParamsOf($function, $ctx);
+            $method = new MemberSymbol(
+                'method',
+                $function->name,
+                true,
+                $this->resolver->resolve($function->returnType ?? throw new \LogicException('Local functions have a return type'), $ctx, $typeParams),
+                $symbol,
+                $this->parameterSymbols($function, $ctx, $typeParams),
+                $function->typeParams,
+                'private',
+            );
+            $method->isLocalFunction = true;
+            $this->add($symbol, $method, $unit->file, $function);
+        }
     }
 
     /**
@@ -367,10 +398,13 @@ final class Declarator
                     continue;
                 }
                 $key = strtolower($member->name);
-                if (isset($methodNames[$key])) {
+                if (isset($methodNames[$key]) || ($member->isLocalFunction && isset($symbol->members[$member->name]))) {
+                    if ($member->isLocalFunction || ($methodNames[$key] ?? null) === 'local') {
+                        throw $this->error('SP0128', "A local function is compiled to a private method of '{$decl->name}', which already has a member called '{$member->name}' (PHP method names are case-insensitive): rename one of them", $file, $member);
+                    }
                     throw $this->error('SP0111', "Method overloading is not supported: '{$decl->name}' already defines a member called '{$member->name}' (PHP method names are case-insensitive)", $file, $member);
                 }
-                $methodNames[$key] = true;
+                $methodNames[$key] = $member->isLocalFunction ? 'local' : true;
 
                 $methodTypeParams = $this->typeParamsOf($member, $ctx, $typeParams);
                 $params = $this->parameterSymbols($member, $ctx, $methodTypeParams);
@@ -386,7 +420,17 @@ final class Declarator
                     self::visibility($member->modifiers, $defaultVisibility),
                 );
                 $method->isAbstract = in_array('abstract', $member->modifiers, true);
+                $method->isLocalFunction = $member->isLocalFunction;
                 $this->declareExtension($decl, $member, $method, $file);
+                $method->extensionProperty = $member->extensionProperty;
+                if ($member->extensionOf !== null) {
+                    // A static member of an extension block (C# 14): called on the type it extends.
+                    if ($decl->kind !== 'class' || !in_array('static', $decl->modifiers, true) || $decl->typeParams !== []) {
+                        throw $this->error('SP1106', 'Extension members must be defined in a non-generic static class', $file, $member);
+                    }
+                    $method->staticExtensionOf = $this->resolver->resolve($member->extensionOf, $ctx, $methodTypeParams);
+                    $this->symbols->addStaticExtension($method);
+                }
                 $this->add($symbol, $method, $file, $member);
 
                 if ($member->name === 'Main' && $isStatic) {

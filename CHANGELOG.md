@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.8.0
+
+New in the language:
+
+- C# 14 extension blocks: `extension(string text) { public int WordCount => ...; public string Shout() => ...; }`,
+  static extension members (`extension(string) { public static string Line(int n) => ...; }`, called as
+  `string.Line(5)`) and generic blocks (`extension<T>(IEnumerable<T> items)`), with completion and hover
+- Local functions, in methods and in top-level statements (`static int Square(int x) => x * x;`): callable
+  before their declaration, recursive, generic, iterators or `async`. They are compiled to private methods,
+  so they cannot use the variables around them (SP8421 says so)
+- Nested object and collection initializers: `new Order { Items = { "a", "b" }, Address = { City = "Paris" } }`
+- Alignment in interpolations and composite formats: `$"{name,-10}|{total,8:N2}"`, `string.Format("{0,5}", x)`
+- A string is an `IEnumerable<char>`: `text.Reverse()`, `text.Count(char.IsDigit)`, `text.Distinct()`,
+  `new HashSet<char>(text)`, `new List<char>("abc")`
+- `ReferenceEquals(a, b)` and `Equals(a, b)` without `object.`
+
+New in the library:
+
+- `System.Enum`: `GetNames`, `GetValues<T>()`, `Parse<T>`, `TryParse<T>`, `IsDefined`, `GetName`
+- `System.Text.RegularExpressions`: `Regex` (static and instance `IsMatch`, `Match`, `Matches`, `Replace`
+  with `$1`/`${name}` or an evaluator, `Split`, `Escape`), `Match`, `Group`, `MatchCollection`, `RegexOptions`
+- `System.IO`: `File`, `Path`, `Directory`, `IOException`, `FileNotFoundException`, `DirectoryNotFoundException`
+- `Guid` (with `==` by value), `System.Diagnostics.Stopwatch`, `MidpointRounding` for `Math.Round`
+- LINQ: `MinBy`, `MaxBy`, `DistinctBy`, `Chunk`
+- `List<T>.Capacity`, `EnsureCapacity`, `TrimExcess` and `new List<T>(capacity)`, which grow as in .NET
+  (the capacity is never a limit, as in C#; a negative one throws `ArgumentOutOfRangeException`)
+- `new string('-', 5)`, `new string(chars)`, `new string(chars, start, length)`; `string.Concat(sequence)`;
+  `StringSplitOptions` (`RemoveEmptyEntries`, `TrimEntries`) for `Split`
+- `double.ToString("R")` (the shortest exact digits) and `"G5"`-style precision
+
+Fixed:
+
+- `Count(predicate)` on a `List`, `Dictionary`, `HashSet`, `Queue`, `Stack` or group ignored the predicate and
+  returned the whole count (PHP method names ignore case, so `Countable::count()` replaced LINQ's `Count`)
+- A lambda captured the value of a variable instead of the variable when only the code around it changed it:
+  `Func<int> get = () => count; count = 10; get()` gave the old value (C# gives 10)
+- `1.0 / 0` threw `DivideByZeroException`; it is `∞` (and `0.0 / 0` `NaN`), as in C#
+- Changing a `List<T>` in a `foreach` over it now throws `InvalidOperationException` ("Collection was
+  modified"), as in .NET, instead of going on with a copy
+- `list.Foo()` and `list.Lenght` on the runtime library's types compiled and failed when run; they are
+  compile errors now (SP1061)
+- `double` and `decimal` print up to 15 significant digits (they printed 14: `1.0 / 3` is `0.333333333333333`
+  now); `ToString("E3")` rounds a half away from zero, as .NET does
+- `A | B` of enum values failed at run time; it is a compile error with what to do instead (SP1010)
+- `new int[2] { 1, 2, 3 }` (SP0847) and `new int[-1]` (SP0248) are compile errors; a negative size computed
+  at run time throws `OverflowException`
+- A default interface method gave "does not implement interface member" on the class; the error is now on
+  the method: default interface methods are not supported (SP8701)
+- `static int F() => ...` in top-level statements gave "Invalid expression term 'static'"
+- `sharp vscode` on Windows found no `code` command (it is `code.cmd`)
+- README: exact PhpStorm (LSP4IJ 0.30) and VS Code steps, including PHP from Homebrew on macOS and
+  restarting the language server after an upgrade; the differences from C# for structs, arrays, `decimal`,
+  `[Flags]` enums and local functions
+
 ## 0.7.1
 
 - Laravel models and Artisan commands written in SharpPHP work:

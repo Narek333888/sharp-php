@@ -28,6 +28,9 @@ final class Type
         get => str_contains($this->FullName, '.') ? substr($this->FullName, 0, (int) strrpos($this->FullName, '.')) : null;
     }
 
+    /** The PHP class, when the type came from one (typeof(Color)). */
+    private ?string $class = null;
+
     private function __construct(public readonly string $FullName)
     {
     }
@@ -35,7 +38,20 @@ final class Type
     /** typeof(Person): the C# type of a PHP class. */
     public static function ofClass(string $class): self
     {
-        return self::named(TypeName::ofClass($class));
+        $type = self::named(TypeName::ofClass($class));
+        $type->class ??= ltrim($class, '\\');
+
+        return $type;
+    }
+
+    /**
+     * The PHP class of typeof(T) / x.GetType() for a class or enum, or null.
+     *
+     * @internal used by the runtime library (Enum.GetNames(typeof(Color)))
+     */
+    public function phpClass(): ?string
+    {
+        return $this->class;
     }
 
     /** typeof(long), typeof(int[]): a type without a PHP class, by its .NET name ("System.Int64"). */
@@ -51,7 +67,7 @@ final class Type
             throw new NullReferenceException();
         }
 
-        return self::named(TypeName::of($value));
+        return is_object($value) && !$value instanceof \Closure ? self::ofClass($value::class) : self::named(TypeName::of($value));
     }
 
     public function Equals(mixed $other): bool

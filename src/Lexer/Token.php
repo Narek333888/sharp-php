@@ -36,14 +36,14 @@ final class Token
     /**
      * The parts of an interpolated string token: literal text, or a hole with its expression's source.
      *
-     * @return list<string|array{expr: string, line: int, column: int, offset: int, format: ?string}>
+     * @return list<string|array{expr: string, line: int, column: int, offset: int, format: ?string, alignment: ?int}>
      */
     public function interpolationParts(): array
     {
         if ($this->type !== TokenType::InterpolatedString || !is_array($this->value)) {
             throw new \LogicException("A {$this->type->name} token has no interpolation parts");
         }
-        /** @var list<string|array{expr: string, line: int, column: int, offset: int, format: ?string}> $parts built by Lexer::interpolated() */
+        /** @var list<string|array{expr: string, line: int, column: int, offset: int, format: ?string, alignment: ?int}> $parts built by Lexer::interpolated() */
         $parts = $this->value;
 
         return $parts;

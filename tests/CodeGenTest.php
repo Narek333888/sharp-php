@@ -25,7 +25,7 @@ final class CodeGenTest extends TestCase
     public static function expressions(): iterable
     {
         yield 'int division' => ['int a = 7; var b = a / 2;', "\$a = 7;\n\$b = \\intdiv(\$a, 2);"];
-        yield 'float division' => ['double a = 7; var b = a / 2;', "\$a = 7.0;\n\$b = \$a / 2;"];
+        yield 'float division' => ['double a = 7; var b = a / 2;', "\$a = 7.0;\n\$b = \\fdiv(\$a, 2);"];
         yield 'string concat' => ['var s = "n=" + 1 + 2;', "\$s = 'n=' . 1 . 2;"];
         yield 'numeric then concat' => ['var s = 1 + 2 + "n";', "\$s = 1 + 2 . 'n';"];
         yield 'precedence kept' => ['var x = (1 + 2) * 3 - (4 - 5);', "\$x = (1 + 2) * 3 - (4 - 5);"];

@@ -19,6 +19,8 @@ final class CompilationUnit extends Node
         public readonly array $namespaces,
         /** @var list<Stmt> */
         public readonly array $topLevelStatements,
+        /** @var list<MethodDecl> local functions of the top-level statements: static methods of Program */
+        public readonly array $localFunctions = [],
     ) {
     }
 }

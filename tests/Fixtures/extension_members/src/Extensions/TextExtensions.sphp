@@ -1,0 +1,54 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace App.Extensions;
+
+public static class TextExtensions
+{
+    // C# 14 extension block: instance members use the receiver "text"
+    extension(string text)
+    {
+        public int WordCount => text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+
+        public string Shout() => text.ToUpper() + "!";
+
+        public string Repeat(int times) => string.Concat(Enumerable.Repeat(text, times));
+    }
+
+    // static members: called on the type itself
+    extension(string)
+    {
+        public static string Line(int width) => new string('-', width);
+
+        public static string Greeting => "Hello";
+    }
+
+    // a generic block: T comes from the receiver
+    extension<T>(IEnumerable<T> items)
+    {
+        public bool IsEmpty => !items.Any();
+
+        public T SecondOrDefault() => items.Skip(1).FirstOrDefault()!;
+    }
+
+    // a classic extension method next to the blocks
+    public static string Quote(this string text) => $"\"{text}\"";
+}
+
+public static class PointExtensions
+{
+    extension(Point p)
+    {
+        public double Length => Math.Sqrt(p.X * p.X + p.Y * p.Y);
+    }
+
+    extension(Point)
+    {
+        public static Point Origin => new Point(0, 0);
+
+        public static Point Of(int x, int y) => new Point(x, y);
+    }
+}
+
+public record Point(int X, int Y);

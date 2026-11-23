@@ -27,6 +27,27 @@ final class MemberSymbol
      */
     public bool $isExtension = false;
 
+    /** The getter of a property of an extension block (C# 14), lowered to get_Name(): the property's name. */
+    public ?string $extensionProperty = null;
+
+    /** A static member of an extension block: the type it extends (string.Repeat(...) for extension(string)). */
+    public ?Type $staticExtensionOf = null;
+
+    /** @var array<string, string> runtime methods: type parameter => PHP parameter that receives its class (@sharp-reified) */
+    public array $reified = [];
+
+    /** A local function, compiled to a private method of the type around it. */
+    public bool $isLocalFunction = false;
+
+    /**
+     * Runtime library: the instance method that "obj.Name(...)" calls when the static method Name
+     * has a twin for instances (Regex.IsMatch(input, pattern) and regex.IsMatch(input)), see
+     * "@sharp-instance Name". Its own name is the PHP one; $csharpName is "Name".
+     */
+    public ?MemberSymbol $instanceVariant = null;
+
+    public ?string $csharpName = null;
+
     /**
      * A static method of the runtime library that implements a C# operator, from its "@sharp-operator"
      * tag: "+" or "-" (date + span, end - start; a one-parameter "-" is the negation -span), or
@@ -70,7 +91,7 @@ final class MemberSymbol
     /** "Shop.Item.Price" or, for a method, "Shop.Item.Buy(int, string)", as C# names members in diagnostics. */
     public function displayName(): string
     {
-        $name = $this->owner->csharpName() . '.' . $this->name;
+        $name = $this->owner->csharpName() . '.' . ($this->csharpName ?? $this->name);
 
         return $this->kind === 'method' ? $name . '(' . ParameterSymbol::describeTypes($this->params) . ')' : $name;
     }

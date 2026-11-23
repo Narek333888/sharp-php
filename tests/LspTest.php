@@ -28,6 +28,17 @@ final class LspTest extends TestCase
         public static class TextExtensions
         {
             public static string Shout(this string text, int times = 1) => text;
+
+            extension(string text)
+            {
+                public int WordCount => text.Split(' ').Length;
+            }
+
+            extension(string)
+            {
+                public static string Line(int width) => new string('-', width);
+                public static string Greeting => "Hello";
+            }
         }
         CS;
 
@@ -226,6 +237,35 @@ final class LspTest extends TestCase
     }
 
     /** @return list<string> labels of the completion at the end of $line, put in place of line 14 */
+    public function testExtensionBlockMembers(): void
+    {
+        $this->assertContains('WordCount', $this->complete('        title.'), 'an extension property (C# 14 extension block)');
+        $this->assertNotContains('get_WordCount', $this->complete('        title.'), 'its getter is not shown');
+        $static = $this->complete('        string.');
+        $this->assertContains('Line', $static, 'a static extension method on the type');
+        $this->assertContains('Greeting', $static, 'a static extension property');
+        $this->assertContains('IsNullOrEmpty', $static, "string's own static members too");
+
+        $lines = explode("\n", self::PROGRAM);
+        $lines[13] = '        Console.WriteLine(title.WordCount + string.Greeting);';
+        $this->workspace->open($this->program, implode("\n", $lines));
+        $this->assertSame("```csharp\n(extension) int string.WordCount\n```", $this->service->hover($this->program, 13, 34)['contents']['value'] ?? null);
+        $this->assertSame("```csharp\n(extension) string string.Greeting\n```", $this->service->hover($this->program, 13, 52)['contents']['value'] ?? null);
+    }
+
+    public function testLocalFunctions(): void
+    {
+        $source = "using System;\nConsole.WriteLine(Square(4));\nvar n = Sq;\nstatic int Square(int x) => x * x;\n"
+            . "class K { int A() { return H(1); int H(int v) => v + 1; } }\n";
+        file_put_contents($this->program, $source);
+        $this->workspace->open($this->program, $source);
+
+        $this->assertContains('Square', array_column($this->service->completion($this->program, 2, 10), 'label'), 'a top-level local function');
+        $this->assertNotContains('Main', array_column($this->service->completion($this->program, 2, 10), 'label'));
+        $this->assertSame("```csharp\n(local function) int Square(int x)\n```", $this->service->hover($this->program, 1, 20)['contents']['value'] ?? null);
+        $this->assertSame("```csharp\n(local function) int H(int v)\n```", $this->service->hover($this->program, 4, 28)['contents']['value'] ?? null);
+    }
+
     private function complete(string $line): array
     {
         $lines = explode("\n", self::PROGRAM);

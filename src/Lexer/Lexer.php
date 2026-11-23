@@ -381,7 +381,7 @@ final class Lexer
     }
 
     /**
-     * @return list<string|array{expr: string, line: int, column: int, offset: int, format: ?string}>
+     * @return list<string|array{expr: string, line: int, column: int, offset: int, format: ?string, alignment: ?int}>
      */
     private function interpolated(bool $verbatim): array
     {
@@ -442,10 +442,10 @@ final class Lexer
     }
 
     /**
-     * One {expression[:format]} of an interpolated string. As in C#, the escape sequences of a regular
+     * One {expression[,alignment][:format]} of an interpolated string ($"{name,-10}|{price,8:F2}"). As in C#, the escape sequences of a regular
      * (not verbatim) string apply to the format too: $"{span:hh\\:mm}" formats with hh\:mm.
      *
-     * @return array{expr: string, line: int, column: int, offset: int, format: ?string}
+     * @return array{expr: string, line: int, column: int, offset: int, format: ?string, alignment: ?int}
      */
     private function interpolationHole(bool $verbatim): array
     {
@@ -457,6 +457,7 @@ final class Lexer
         $exprStart = $this->pos;
         $depth = 0;
         $format = null;
+        $alignment = null;
         $exprEnd = null;
 
         while (true) {
@@ -478,8 +479,15 @@ final class Lexer
                     break;
                 }
                 $depth--;
-            } elseif ($c === ':' && $depth === 0 && $this->peekChar(1) !== ':') {
+            } elseif ($c === ',' && $depth === 0 && $exprEnd === null
+                && preg_match('/\G,\s*([+-]?\s*\d+)\s*(?=[:}])/', $this->text, $m, 0, $this->pos) === 1) {
+                // The alignment: a number after a comma (a comma in "Dictionary<int, string>" is not one).
                 $exprEnd = $this->pos;
+                $alignment = (int) str_replace(' ', '', $m[1]);
+                $this->advance(strlen($m[0]));
+                continue;
+            } elseif ($c === ':' && $depth === 0 && $this->peekChar(1) !== ':') {
+                $exprEnd ??= $this->pos;
                 $this->advance(1);
                 $format = '';
                 while ($this->pos < $this->length && $this->text[$this->pos] !== '}') {
@@ -508,6 +516,7 @@ final class Lexer
             'column' => $exprColumn,
             'offset' => $this->baseOffset + $exprStart,
             'format' => $format,
+            'alignment' => $alignment,
         ];
     }
 

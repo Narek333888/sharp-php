@@ -1,0 +1,63 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+// A lambda captures the variable, not its value
+int count = 0;
+Action inc = () => count++;
+inc();
+inc();
+Func<int> get = () => count;
+count = 10;
+Console.WriteLine($"{get()}");
+string message = "before";
+Action show = () => Console.WriteLine(message);
+message = "after";
+show();
+Console.WriteLine(Counter.Make()());
+
+// for shares one variable; a variable declared in the loop body is new in every iteration
+var shared = new List<Func<int>>();
+for (int i = 0; i < 3; i++) shared.Add(() => i);
+var copies = new List<Func<int>>();
+for (int i = 0; i < 3; i++) { int j = i; copies.Add(() => j); }
+var changed = new List<Func<string>>();
+foreach (var word in new[] { "a", "b" }) { var s = word; s += "!"; changed.Add(() => s); }
+Console.WriteLine(string.Join(",", shared.Select(f => f())) + " " + string.Join(",", copies.Select(f => f())) + " " + string.Join(",", changed.Select(f => f())));
+
+// Count(predicate) on every collection
+var dict = new Dictionary<string, int> { ["a"] = 1, ["b"] = 5 };
+var set = new HashSet<int> { 1, 2, 3 };
+var queue = new Queue<int>(new[] { 1, 2, 3 });
+var list = new List<int> { 1, 2, 3 };
+Console.WriteLine($"{list.Count(x => x > 1)} {list.Count} {dict.Count(kv => kv.Value > 2)} {set.Count(x => x != 2)} {queue.Count(x => x > 2)}");
+var nested = new List<List<int>> { new() { 1, 2 }, new() { 3 } };
+Console.WriteLine(nested.SelectMany(l => l).Count(x => x > 1));
+
+// Changing a list during foreach throws, as in .NET
+try
+{
+    foreach (var x in list)
+    {
+        if (x == 2) list.Remove(x);
+    }
+}
+catch (InvalidOperationException e)
+{
+    Console.WriteLine(e.Message);
+}
+foreach (var x in list.ToList()) list.Remove(x);
+list.AddRange(new[] { 1, 2 });
+list.AddRange(list);
+Console.WriteLine(string.Join(",", list));
+
+static class Counter
+{
+    public static Func<int> Make()
+    {
+        int n = 1;
+        Func<int> f = () => n;
+        n = 5;
+        return f;
+    }
+}

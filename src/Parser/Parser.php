@@ -14,8 +14,8 @@ use SharpPhp\Syntax\AnonymousObjectExpr;
 use SharpPhp\Syntax\Argument;
 use SharpPhp\Syntax\ArrayCreationExpr;
 use SharpPhp\Syntax\AsExpr;
-use SharpPhp\Syntax\AwaitExpr;
 use SharpPhp\Syntax\AssignExpr;
+use SharpPhp\Syntax\AwaitExpr;
 use SharpPhp\Syntax\BaseExpr;
 use SharpPhp\Syntax\BinaryExpr;
 use SharpPhp\Syntax\Block;
@@ -34,6 +34,7 @@ use SharpPhp\Syntax\EmptyStmt;
 use SharpPhp\Syntax\EnumMember;
 use SharpPhp\Syntax\Expr;
 use SharpPhp\Syntax\ExprStmt;
+use SharpPhp\Syntax\ExtensionBlock;
 use SharpPhp\Syntax\FieldDecl;
 use SharpPhp\Syntax\ForeachStmt;
 use SharpPhp\Syntax\ForStmt;
@@ -54,6 +55,7 @@ use SharpPhp\Syntax\NameOfExpr;
 use SharpPhp\Syntax\NamespaceDecl;
 use SharpPhp\Syntax\NewExpr;
 use SharpPhp\Syntax\Node;
+use SharpPhp\Syntax\NodeFinder;
 use SharpPhp\Syntax\Parameter;
 use SharpPhp\Syntax\Pattern;
 use SharpPhp\Syntax\PredefinedTypeExpr;
@@ -73,8 +75,8 @@ use SharpPhp\Syntax\TypeDecl;
 use SharpPhp\Syntax\TypeOfExpr;
 use SharpPhp\Syntax\TypeRef;
 use SharpPhp\Syntax\UnaryExpr;
-use SharpPhp\Syntax\UsingStmt;
 use SharpPhp\Syntax\UsingDirective;
+use SharpPhp\Syntax\UsingStmt;
 use SharpPhp\Syntax\VarDeclarator;
 use SharpPhp\Syntax\WhileStmt;
 use SharpPhp\Syntax\WithExpr;
@@ -97,6 +99,15 @@ final class Parser
 
     /** Parsing the body of an async method or lambda (or top-level statements), where await is an operator. */
     private bool $inAsync = false;
+
+    /** @var list<MethodDecl> local functions parsed in the current member (they become methods of the type) */
+    private array $localFunctions = [];
+
+    /** The member being parsed is static (or top-level code): its local functions are static methods. */
+    private bool $inStaticMember = false;
+
+    /** @var list<string> the type parameters of the methods around the code being parsed (local functions get them too) */
+    private array $enclosingTypeParams = [];
 
     private const CONTEXTUAL_MODIFIERS = ['partial', 'async', 'required', 'file'];
 
@@ -132,6 +143,7 @@ final class Parser
         $namespaces = [];
         $globalTypes = [];
         $topLevel = [];
+        $topLevelFunctions = [];
 
         while (!$this->atEnd()) {
             if ($this->check('namespace')) {
@@ -172,14 +184,67 @@ final class Parser
             }
 
             // C# allows await in top-level statements: Main becomes async.
-            $topLevel[] = $this->inAsyncContext(true, fn (): Stmt => $this->parseStatement());
+            $this->inStaticMember = true;
+            $statement = $this->inAsyncContext(true, fn (): Stmt => $this->parseStatement());
+            $topLevel[] = $statement;
+            $topLevelFunctions = [...$topLevelFunctions, ...$this->takeLocalFunctions([$statement])];
         }
 
         if ($globalTypes !== []) {
             array_unshift($namespaces, (new NamespaceDecl('', [], $globalTypes))->at($start));
         }
 
-        return (new CompilationUnit($this->file, $usings, $namespaces, $this->withUsingDeclarations($topLevel)))->at($start);
+        $statements = $this->withUsingDeclarations($topLevel);
+        foreach ($topLevelFunctions as $function) {
+            $function->enclosingLocals = self::declaredNames($statements);
+        }
+
+        return (new CompilationUnit($this->file, $usings, $namespaces, $statements, $topLevelFunctions))->at($start);
+    }
+
+    /**
+     * The local functions parsed since the last call, which become methods of the type. $enclosing
+     * is the code around them: they cannot use its variables.
+     *
+     * @param list<Node> $enclosing
+     * @return list<MethodDecl>
+     */
+    private function takeLocalFunctions(array $enclosing): array
+    {
+        $functions = $this->localFunctions;
+        $this->localFunctions = [];
+        if ($functions !== []) {
+            $names = self::declaredNames($enclosing);
+            foreach ($functions as $function) {
+                $function->enclosingLocals = $names;
+            }
+        }
+
+        return $functions;
+    }
+
+    /**
+     * The names of the variables and parameters declared in $roots.
+     *
+     * @param list<Node> $roots
+     * @return list<string>
+     */
+    private static function declaredNames(array $roots): array
+    {
+        $names = [];
+        foreach (NodeFinder::all($roots, static fn (Node $n): bool => true) as $node) {
+            $name = match (true) {
+                $node instanceof VarDeclarator, $node instanceof Parameter, $node instanceof DeclarationExpr => $node->name,
+                $node instanceof ForeachStmt, $node instanceof CatchClause => $node->variable,
+                $node instanceof Pattern => $node->designation,
+                default => null,
+            };
+            if ($name !== null && $name !== '_') {
+                $names[$name] = true;
+            }
+        }
+
+        return array_keys($names);
     }
 
     /** @return list<UsingDirective> */
@@ -332,7 +397,13 @@ final class Parser
         } else {
             $this->expect('{');
             while (!$this->check('}') && !$this->atEnd()) {
-                $members[] = $this->parseMember($name, $kind);
+                $member = $this->parseMember($name, $kind);
+                if ($member instanceof ExtensionBlock) {
+                    array_push($members, ...$member->members);
+                } else {
+                    $members[] = $member;
+                }
+                array_push($members, ...$this->takeLocalFunctions([$member]));
             }
             $this->expect('}');
             $this->accept(';');
@@ -452,18 +523,107 @@ final class Parser
         return (new MethodDecl([], null, '~' . $typeName, [], [], $body, $exprBody, 'finalizer', null, [], []))->at($tilde);
     }
 
+    /**
+     * extension(string s) { ... } / extension<T>(IEnumerable<T> items) { ... } / extension(string) { ... }:
+     * C# 14 extension members, lowered to static methods of the enclosing class (see ExtensionBlock).
+     */
+    private function parseExtensionBlock(string $typeName): ExtensionBlock
+    {
+        $keyword = $this->advance();
+        $typeParams = $this->check('<') ? $this->parseTypeParameterList() : [];
+        $this->expect('(');
+        $receiverType = $this->parseType();
+        $receiverName = $this->current()->isIdentifier() ? $this->advance()->text() : null;
+        $this->expect(')');
+        $constraints = $this->parseConstraints();
+        $this->expect('{');
+        $members = [];
+        while (!$this->check('}') && !$this->atEnd()) {
+            $member = $this->parseMember($typeName, 'extension');
+            $members[] = $this->lowerExtensionMember($member, $receiverType, $receiverName, $typeParams, $constraints);
+        }
+        $this->expect('}');
+
+        return (new ExtensionBlock($members))->at($keyword);
+    }
+
+    /**
+     * @param list<string> $typeParams the extension block's type parameters
+     * @param array<string, list<TypeRef>> $constraints
+     */
+    private function lowerExtensionMember(Node $member, TypeRef $receiverType, ?string $receiverName, array $typeParams, array $constraints): MethodDecl
+    {
+        if ($member instanceof MethodDecl && $member->kind === 'method') {
+            $static = in_array('static', $member->modifiers, true);
+            $allTypeParams = [...$typeParams, ...$member->typeParams];
+            $allConstraints = [...$constraints, ...$member->constraints];
+            if ($static) {
+                return (new MethodDecl($member->modifiers, $member->returnType, $member->name, $allTypeParams, $member->params, $member->body, $member->exprBody, 'method', null, [], $allConstraints, $receiverType))->at($member);
+            }
+            $receiver = $this->extensionReceiver($receiverType, $receiverName, $member);
+
+            return (new MethodDecl([...$member->modifiers, 'static'], $member->returnType, $member->name, $allTypeParams, [$receiver, ...$member->params], $member->body, $member->exprBody, 'method', null, [], $allConstraints))->at($member);
+        }
+        if ($member instanceof PropertyDecl) {
+            if ($member->init !== null) {
+                throw $this->errorAt('An extension property cannot have an initializer: it has no storage', $member, 'SP9282');
+            }
+            [$body, $exprBody] = [null, $member->exprBody];
+            foreach ($member->accessors as $accessor) {
+                if ($accessor->kind !== 'get') {
+                    throw $this->errorAt("Extension properties with a '{$accessor->kind}' accessor are not supported; declare a method instead", $accessor, 'SP1010');
+                }
+                if ($accessor->body === null && $accessor->exprBody === null) {
+                    throw $this->errorAt('An extension property must have a get accessor with a body: it has no storage for an auto-property', $member, 'SP9282');
+                }
+                [$body, $exprBody] = [$accessor->body, $accessor->exprBody];
+            }
+            if ($body === null && $exprBody === null) {
+                throw $this->errorAt('An extension property must have a get accessor with a body', $member, 'SP9282');
+            }
+            $static = in_array('static', $member->modifiers, true);
+            $params = $static ? [] : [$this->extensionReceiver($receiverType, $receiverName, $member)];
+            $modifiers = $static ? $member->modifiers : [...$member->modifiers, 'static'];
+
+            return (new MethodDecl($modifiers, $member->type, 'get_' . $member->name, $typeParams, $params, $body, $exprBody, 'method', null, [], $constraints, $static ? $receiverType : null, $member->name))->at($member);
+        }
+
+        throw $this->errorAt('Only methods and properties can be declared in an extension block', $member, 'SP9282');
+    }
+
+    private function extensionReceiver(TypeRef $type, ?string $name, Node $member): Parameter
+    {
+        if ($name === null) {
+            throw $this->errorAt('An extension block without a receiver name can only declare static members: extension(Type name) { ... }', $member, 'SP9303');
+        }
+
+        return (new Parameter($name, $type, null, 'this'))->at($type);
+    }
+
     private function parseMember(string $typeName, string $typeKind): Node
     {
         $this->skipAttributes();
         $start = $this->current();
         $modifiers = $this->parseModifiers();
         $token = $this->current();
+        // Members of an extension block become static methods, and so do their local functions.
+        $this->inStaticMember = in_array('static', $modifiers, true) || $typeKind === 'extension';
 
         if ($token->is('class') || $token->is('struct') || $token->is('interface') || $token->is('enum') || $token->isIdentifier('record') && $this->peek(1)->isIdentifier()) {
             throw $this->error('Nested types are not supported; declare the type at namespace level', $token, 'SP1010');
         }
         if ($token->is('~')) {
             return $this->parseFinalizer($start, $modifiers, $typeName, $typeKind);
+        }
+        if ($token->isIdentifier('extension') && ($this->peek(1)->is('(') || $this->peek(1)->is('<'))) {
+            if ($typeKind === 'extension') {
+                throw $this->error('An extension block cannot be declared inside another one', $token, 'SP9282');
+            }
+            if ($modifiers !== []) {
+                throw $this->error("The modifier '{$modifiers[0]}' is not valid for this item", $start, 'SP0106');
+            }
+
+            return $this->parseExtensionBlock($typeName);
         }
         if ($token->is('event') || $token->is('delegate')) {
             throw $this->error("'{$token->text()}' declarations are not supported", $token, 'SP1010');
@@ -517,7 +677,15 @@ final class Parser
             $typeParams = $this->check('<') ? $this->parseTypeParameterList() : [];
             $params = $this->parseParameterList();
             $constraints = $this->parseConstraints();
-            [$body, $exprBody] = $this->inAsyncContext(in_array('async', $modifiers, true), fn (): array => $this->parseMethodBody());
+            $this->enclosingTypeParams = $typeParams;
+            try {
+                [$body, $exprBody] = $this->inAsyncContext(in_array('async', $modifiers, true), fn (): array => $this->parseMethodBody());
+            } finally {
+                $this->enclosingTypeParams = [];
+            }
+            if ($typeKind === 'interface' && ($body !== null || $exprBody !== null)) {
+                throw $this->error('Default interface methods are not supported; use an abstract base class', $nameToken, 'SP8701');
+            }
 
             return (new MethodDecl($modifiers, $type, $nameToken->text(), $typeParams, $params, $body, $exprBody, 'method', null, [], $constraints))->at($start);
         }
@@ -890,6 +1058,11 @@ final class Parser
             return (new YieldStmt($value))->at($token);
         }
 
+        $function = $this->tryParseLocalFunction();
+        if ($function !== null) {
+            return $function;
+        }
+
         $declaration = $this->tryParseLocalDeclaration();
         if ($declaration !== null) {
             $this->expect(';');
@@ -1124,13 +1297,71 @@ final class Parser
             if ($after->is('=') || $after->is(';') || $after->is(',')) {
                 return (new LocalDecl($type, $this->parseDeclarators(), false))->at($token);
             }
-            if ($after->is('(') || $after->is('<')) {
-                throw $this->error('Local functions are not supported; use a lambda instead', $this->current(), 'SP1010');
-            }
         }
         $this->pos = $start;
 
         return null;
+    }
+
+    /**
+     * A local function ("static int Square(int x) => x * x;", "async Task SaveAsync() { ... }"):
+     * compiled to a private method of the type (static in static code), so it can be generic,
+     * recursive, an iterator or async, and be called before its declaration. It cannot use the
+     * variables of the code around it. The statement itself is empty.
+     */
+    private function tryParseLocalFunction(): ?Stmt
+    {
+        $start = $this->pos;
+        $token = $this->current();
+        if ($this->inAsync && $token->isIdentifier('await') && $this->startsAwaitOperand($this->peek(1))) {
+            return null;
+        }
+        $modifiers = [];
+        while ($this->current()->is('static') || ($this->current()->isIdentifier('async') && !$this->peek(1)->is('(') && !$this->peek(1)->is('=>'))) {
+            $modifiers[] = $this->advance()->text();
+        }
+        $typeToken = $this->current();
+        if ($typeToken->is('void')) {
+            $this->advance();
+            $type = (new TypeRef('void', [], false))->at($typeToken);
+        } else {
+            $type = $this->tryParseType();
+        }
+        if ($type === null || !$this->current()->isIdentifier() || !($this->peek(1)->is('(') || $this->peek(1)->is('<'))) {
+            $this->pos = $start;
+
+            return null;
+        }
+        $nameToken = $this->advance();
+        $typeParams = $this->check('<') ? $this->parseTypeParameterList() : [];
+        if (!$this->check('(')) {
+            $this->pos = $start;
+
+            return null;
+        }
+        // A local function of a generic method may use the method's T: the method it becomes has it too
+        // (inferred from the arguments).
+        $typeParams = [...array_values(array_diff($this->enclosingTypeParams, $typeParams)), ...$typeParams];
+        $params = $this->parseParameterList();
+        $constraints = $this->parseConstraints();
+        $outerStatic = $this->inStaticMember;
+        $outerTypeParams = $this->enclosingTypeParams;
+        $static = in_array('static', $modifiers, true) || $outerStatic;
+        try {
+            $this->inStaticMember = $static;
+            $this->enclosingTypeParams = $typeParams;
+            [$body, $exprBody] = $this->inAsyncContext(in_array('async', $modifiers, true), fn (): array => $this->parseMethodBody());
+        } finally {
+            $this->inStaticMember = $outerStatic;
+            $this->enclosingTypeParams = $outerTypeParams;
+        }
+        if ($body === null && $exprBody === null) {
+            throw $this->error("'{$nameToken->text()}' must declare a body", $nameToken, 'SP0501');
+        }
+        $methodModifiers = ['private', ...($static ? ['static'] : []), ...(in_array('async', $modifiers, true) ? ['async'] : [])];
+        $this->localFunctions[] = (new MethodDecl($methodModifiers, $type, $nameToken->text(), $typeParams, $params, $body, $exprBody, 'method', null, [], $constraints, isLocalFunction: true))->at($nameToken);
+
+        return (new EmptyStmt())->at($token);
     }
 
     /** @return list<VarDeclarator> */
@@ -1871,9 +2102,10 @@ final class Parser
                 $this->advance();
                 $this->advance();
                 if ($this->check('{')) {
-                    throw $this->error('Nested object initializers are not supported', $this->current(), 'SP1010');
+                    $items[] = (new InitializerItem('member', $token->text(), null, [], $this->parseObjectOrCollectionInitializer()))->at($token);
+                } else {
+                    $items[] = (new InitializerItem('member', $token->text(), null, [$this->parseExpression()]))->at($token);
                 }
-                $items[] = (new InitializerItem('member', $token->text(), null, [$this->parseExpression()]))->at($token);
             } elseif ($token->is('[')) {
                 $this->advance();
                 $key = $this->parseExpression();
@@ -1909,7 +2141,7 @@ final class Parser
             if (!$parser->atEnd()) {
                 throw $parser->error("Unexpected {$parser->current()->describe()} in interpolation", $parser->current());
             }
-            $parts[] = (new InterpolationHole($expr, $part['format']))->at($expr);
+            $parts[] = (new InterpolationHole($expr, $part['format'], $part['alignment']))->at($expr);
         }
 
         return (new InterpolatedStringExpr($parts))->at($token);
@@ -2111,5 +2343,10 @@ final class Parser
     private function error(string $message, Token $token, string $code = 'SP1002'): CompileError
     {
         return CompileError::at($code, $message, $this->file, $token->line, $token->column);
+    }
+
+    private function errorAt(string $message, Node $node, string $code): CompileError
+    {
+        return CompileError::at($code, $message, $this->file, $node->line, $node->column);
     }
 }

@@ -72,8 +72,11 @@ trait EmitsMembers
             if ($mode !== 'assign' && $mode !== 'nameof') {
                 $this->requireAssigned($name, $e);
             }
-            foreach ($crossed as $lambda) {
-                $lambda->capture($name, $mode === 'assign');
+            if ($crossed !== []) {
+                $byReference = $mode === 'assign' || isset($this->fn?->root()->reassigned[$name]);
+                foreach ($crossed as $lambda) {
+                    $lambda->capture($name, $byReference);
+                }
             }
 
             return Emitted::value('$' . $name, $type, Prec::ATOM, $name);
@@ -109,6 +112,10 @@ trait EmitsMembers
         }
         if ($mode === 'target' || $mode === 'nameof') {
             return new Emitted('', Type::mixed(), Prec::ATOM, 'namespace', namespace: $name);
+        }
+        $function = $this->fn?->root()->localFunction;
+        if ($function !== null && in_array($name, $function->enclosingLocals, true)) {
+            throw $this->error('SP8421', "The local function '{$function->name}' cannot use the variable '$name' of the code around it: SharpPHP compiles local functions to methods. Pass '$name' as a parameter, or use a lambda", $e);
         }
 
         throw $this->error('SP0103', "The name '$name' does not exist in the current context", $e);
@@ -394,6 +401,48 @@ trait EmitsMembers
     }
 
     /**
+     * receiver.Name as a property of an extension block in scope (C# 14): StringExtensions::get_Name($receiver).
+     * Null when none applies, so that the caller reports the missing member as C# does.
+     */
+    private function extensionPropertyAccess(Emitted $target, MemberAccessExpr $e): ?Emitted
+    {
+        $found = $this->extensions->bestProperty($target->type, $this->ctx, $e->name);
+        if ($found === []) {
+            return null;
+        }
+        if (count($found) > 1) {
+            throw $this->error('SP0121', "The call is ambiguous between the following methods or properties: '{$found[0]->owner->csharpName()}.{$e->name}' and '{$found[1]->owner->csharpName()}.{$e->name}'", $e);
+        }
+        $getter = $found[0];
+        $this->requireAccessible($getter, $e);
+        $subst = [];
+        if ($getter->typeParams !== [] && isset($getter->params[0])) {
+            $this->inferTypeArguments($getter->params[0]->type, $target->type, $getter->typeParams, $subst);
+        }
+        $type = $getter->type->substitute($subst);
+        $class = $this->classRef($getter->owner->fqn);
+        $this->model?->reference($this->file, $e, $e->name, 'property', $type, $getter);
+        $value = $this->nullSafe($target, $e->nullConditional, static fn (string $c): string => "$class::{$getter->name}($c)", $type);
+
+        return new Emitted($value->code, $value->type, $value->prec, member: $getter);
+    }
+
+    /** Type.Name as a static member of an extension block in scope (C# 14), or null. */
+    private function staticExtension(Type $type, string $name, bool $property, Node $at): ?MemberSymbol
+    {
+        $found = $this->extensions->staticMembers($type, $this->ctx, $name, $property);
+        if ($found === []) {
+            return null;
+        }
+        if (count($found) > 1) {
+            throw $this->error('SP0121', "The call is ambiguous between the following methods or properties: '{$found[0]->owner->csharpName()}.$name' and '{$found[1]->owner->csharpName()}.$name'", $at);
+        }
+        $this->requireAccessible($found[0], $at);
+
+        return $found[0];
+    }
+
+    /**
      * Arguments of a call PHP answers through __call / __callStatic, whose parameters nobody declares:
      * a List, Dictionary or HashSet goes as a PHP array, what PHP code expects
      * (Post.create(new Dictionary<string, object> { ["title"] = t }) is Post::create(['title' => $t])).
@@ -433,6 +482,12 @@ trait EmitsMembers
         $name = $e->name;
         $member = $this->symbols->findMember($symbol, $name) ?? $this->symbols->findMember($symbol, $name . '()');
         if ($member === null) {
+            $getter = $this->staticExtension($type->type, $name, true, $e);
+            if ($getter !== null) {
+                $this->model?->reference($this->file, $e, $name, 'property', $getter->type, $getter);
+
+                return new Emitted($this->classRef($getter->owner->fqn) . "::{$getter->name}()", $getter->type, Prec::ATOM, member: $getter);
+            }
             throw $this->error('SP0117', "'{$symbol->csharpName()}' does not contain a definition for '$name'", $e);
         }
         if (!$member->isStatic) {
@@ -461,16 +516,21 @@ trait EmitsMembers
             if ($name === 'Length') {
                 return $this->nullSafe($target, $nc, static fn (string $c): string => "\\mb_strlen($c)", Type::int());
             }
-            throw $this->error('SP1061', "'string' does not contain a definition for '$name'", $e);
+
+            return $this->extensionPropertyAccess($target, $e)
+                ?? throw $this->error('SP1061', "'string' does not contain a definition for '$name'", $e);
         }
         if ($t->kind === 'array') {
             if ($name === 'Length' || $name === 'LongLength') {
                 return $this->nullSafe($target, $nc, static fn (string $c): string => "\\count($c)", Type::int());
             }
-            throw $this->error('SP1061', "'{$t->describe()}' does not contain a definition for '$name'", $e);
+
+            return $this->extensionPropertyAccess($target, $e)
+                ?? throw $this->error('SP1061', "'{$t->describe()}' does not contain a definition for '$name'", $e);
         }
         if ($t->isNumeric() || $t->isBool() || $t->isChar() || $t->kind === 'closure' || $t->isNull()) {
-            throw $this->error('SP1061', "'{$t->describe()}' does not contain a definition for '$name'", $e);
+            return $this->extensionPropertyAccess($target, $e)
+                ?? throw $this->error('SP1061', "'{$t->describe()}' does not contain a definition for '$name'", $e);
         }
 
         $symbol = $this->symbolForType($t);
@@ -501,9 +561,13 @@ trait EmitsMembers
             if ($member !== null) {
                 throw $this->error('SP0176', "Member '{$symbol->csharpName()}.$name' cannot be accessed with an instance reference; qualify it with a type name instead", $e);
             }
+            $extension = $this->extensionPropertyAccess($target, $e);
+            if ($extension !== null) {
+                return $extension;
+            }
             // A PHP class may answer any name (__get); so does a SharpPHP class derived from one that
             // does, such as a model's attributes: post.title.
-            if (!$symbol->external && !$this->answersAnyName($symbol, '__get') && !$this->answersAnyName($symbol, '__set')) {
+            if ((!$symbol->external || self::isRuntimeLibrary($symbol)) && !$this->answersAnyName($symbol, '__get') && !$this->answersAnyName($symbol, '__set')) {
                 throw $this->error('SP1061', "'{$symbol->csharpName()}' does not contain a definition for '$name'", $e);
             }
 
@@ -570,6 +634,16 @@ trait EmitsMembers
     {
         $callee = $e->callee;
 
+        // ReferenceEquals(a, b) and Equals(a, b): System.Object's static methods, which every class (also the
+        // one of top-level statements) inherits, so C# finds them without "object.".
+        if ($callee instanceof NameExpr && $callee->typeArgs === [] && $this->scope->lookup($callee->name) === null
+            && ($callee->name === 'ReferenceEquals' || ($callee->name === 'Equals' && count($e->args) === 2))
+            && ($this->class === null || $this->symbols->findMember($this->class, $callee->name) === null)) {
+            $object = (new PredefinedTypeExpr('object'))->at($callee);
+            $receiver = (new MemberAccessExpr($object, $callee->name, false, []))->at($callee);
+
+            return $this->invocation((new InvocationExpr($receiver, $e->args))->at($e));
+        }
         if ($callee instanceof NameExpr && in_array($callee->name, self::OBJECT_METHODS, true) && $this->class !== null
             && $this->scope->lookup($callee->name) === null && $this->symbols->findMember($this->class, $callee->name) === null) {
             $receiver = (new MemberAccessExpr((new ThisExpr())->at($callee), $callee->name, false, $callee->typeArgs))->at($callee);
@@ -605,6 +679,10 @@ trait EmitsMembers
                     $code = $this->untypedPhpArguments($e->args);
 
                     return Emitted::value("{$target->code}::{$callee->name}($code)", Type::mixed());
+                }
+                $extension = $member === null ? $this->staticExtension($target->type, $callee->name, false, $callee) : null;
+                if ($extension !== null) {
+                    return $this->callMember($this->classRef($extension->owner->fqn) . '::', $extension, $e, null, $callee->typeArgs, null, $callee);
                 }
                 if ($member === null) {
                     $other = $this->symbols->findMember($symbol, $callee->name);
@@ -662,6 +740,13 @@ trait EmitsMembers
         foreach ($member->params as $i => $param) {
             if (isset($values[$i])) {
                 $this->inferTypeArguments($param->type, $values[$i]->type, $member->typeParams, $subst);
+            }
+        }
+        // Generic arguments are erased in PHP; a runtime method that needs one gets its class.
+        foreach ($member->reified as $typeParam => $paramName) {
+            $argument = $subst[$typeParam] ?? null;
+            if ($argument !== null && $argument->kind === 'class') {
+                $code .= ($code !== '' ? ', ' : '') . "$paramName: " . $this->classRef((string) $argument->class) . '::class';
             }
         }
 
@@ -759,6 +844,11 @@ trait EmitsMembers
         }
 
         if ($t->isString()) {
+            $linq = $this->stringAsSequence($target, $callee, $call);
+            if ($linq !== null) {
+                return $linq;
+            }
+
             return $this->callHelper('System\\String_', $target, $callee, $call, 'string');
         }
         if ($t->kind === 'array' || $t->kind === 'iterable') {
@@ -802,6 +892,9 @@ trait EmitsMembers
                 return Emitted::value("$recv{$arrow}name", Type::string());
             }
             $member = $this->findMethod($symbol, $name);
+            if ($member !== null && $member->isStatic && $member->instanceVariant !== null) {
+                $member = $member->instanceVariant;
+            }
             if ($member !== null) {
                 if ($member->isStatic) {
                     throw $this->error('SP0176', "Member '{$symbol->csharpName()}.$name' cannot be accessed with an instance reference; qualify it with a type name instead", $callee);
@@ -818,7 +911,8 @@ trait EmitsMembers
             if ($fallback !== null) {
                 return $fallback;
             }
-            if (!$symbol->external && !$this->answersAnyName($symbol, '__call')) {
+            // SharpPHP's own library is known in full: list.Foo() is an error, as in C#, not a PHP call.
+            if ((!$symbol->external || self::isRuntimeLibrary($symbol)) && !$this->answersAnyName($symbol, '__call')) {
                 throw $this->error('SP1061', "'{$symbol->csharpName()}' does not contain a definition for '$name'", $callee);
             }
             // A PHP class answers any name through __call (a SharpPHP class too when it inherits __call).
@@ -856,6 +950,28 @@ trait EmitsMembers
             $name === 'GetHashCode' && $args === [] => Emitted::value("\\spl_object_id({$target->code})", Type::int()),
             default => null,
         };
+    }
+
+    /**
+     * A string is an IEnumerable<char>: "text".Reverse(), .Count(char.IsDigit), .Distinct(), .Select(...)
+     * are LINQ's, over the string's chars. As in C#, string's own methods (Contains, IndexOf, ...) and
+     * extension methods for string win; null when one of those is meant.
+     */
+    private function stringAsSequence(Emitted $target, MemberAccessExpr $callee, InvocationExpr $call): ?Emitted
+    {
+        $string = $this->symbols->find(Names::RUNTIME_NAMESPACE . '\\System\\String_');
+        $own = $string !== null ? $this->findMethod($string, $callee->name) : null;
+        if ($own !== null && $own->isStatic) {
+            return null;
+        }
+        $enumerable = $this->symbols->find(Names::RUNTIME_NAMESPACE . '\\System\\Linq\\Enumerable');
+        $linq = $enumerable !== null ? $this->findMethod($enumerable, $callee->name) : null;
+        if ($linq === null || !$linq->isStatic || $this->extensions->best($target->type, $this->ctx, $callee->name) !== []) {
+            return null;
+        }
+        $chars = Emitted::value($this->runtime('System\\String_') . '::chars(' . $target->code . ')', Type::array(Type::char())->withNullable($target->type->nullable));
+
+        return $this->callWithReceiver($this->runtime('System\\Linq\\Enumerable'), $linq, $chars, $callee, $call, 'string', runtime: true);
     }
 
     /**

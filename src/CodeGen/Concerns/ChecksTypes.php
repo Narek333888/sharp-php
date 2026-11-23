@@ -43,6 +43,10 @@ trait ChecksTypes
         if ($this->conversions->isPhpArrayBoundary($value->type, $target)) {
             return $this->convertedAtPhpBoundary($value, $target);
         }
+        // A string is an IEnumerable<char> ("abc".SequenceEqual("abc"), new HashSet<char>(word)).
+        if ($value->type->isString() && $target->kind === 'iterable') {
+            return Emitted::value($this->runtime('System\\String_') . '::chars(' . $value->code . ')', Type::array(Type::char())->withNullable($value->type->nullable));
+        }
 
         return $value;
     }

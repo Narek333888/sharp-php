@@ -105,8 +105,55 @@ final class Op
         if (is_infinite($value)) {
             return $value > 0 ? '∞' : '-∞';
         }
-        // PHP prints 1.0E+20 where C# prints 1E+20.
-        return preg_replace('/\.0E/', 'E', (string) $value) ?? (string) $value;
+        return self::general($value, 15);
+    }
+
+    /**
+     * The "G" format of a double: ToString() is G15, up to 15 significant digits, as .NET Framework
+     * printed doubles. It also suits decimal, which is a PHP float here too: 0.07m * 100 prints 7,
+     * not 7.000000000000001. "R" (null $precision) gives the shortest digits that read back as the
+     * same double, as .NET Core's ToString() does (0.1 + 0.2 is 0.30000000000000004).
+     * Scientific notation when the exponent reaches the precision (15 for R) or is below -4.
+     */
+    private static function general(float $value, ?int $precision): string
+    {
+        // var_export() writes the shortest round-trip digits (serialize_precision -1).
+        $repr = $precision === null ? var_export($value, true) : sprintf('%.' . (max($precision, 1) - 1) . 'E', $value);
+        if (preg_match('/^(-?)(\d+)(?:\.(\d+))?(?:E([+-]\d+))?$/', $repr, $m) !== 1) {
+            return $repr;
+        }
+        [$sign, $int, $frac, $exp] = [$m[1], $m[2], $m[3] ?? '', (int) ($m[4] ?? 0)];
+        $all = $int . $frac;
+        $significant = ltrim($all, '0');
+        $digits = rtrim($significant, '0');
+        if ($digits === '') {
+            return $sign . '0';
+        }
+        // Exponent of the first significant digit: 1234.5 has 3, 0.05 has -2.
+        $exponent = strlen($int) + $exp - (strlen($all) - strlen($significant)) - 1;
+        if ($exponent >= ($precision ?? 15) || $exponent < -4) {
+            $mantissa = $digits[0] . (strlen($digits) > 1 ? '.' . substr($digits, 1) : '');
+
+            return $sign . $mantissa . 'E' . ($exponent < 0 ? '-' : '+') . str_pad((string) abs($exponent), 2, '0', STR_PAD_LEFT);
+        }
+        if ($exponent < 0) {
+            return $sign . '0.' . str_repeat('0', -$exponent - 1) . $digits;
+        }
+        $padded = str_pad($digits, $exponent + 1, '0');
+        $fraction = substr($padded, $exponent + 1);
+
+        return $sign . substr($padded, 0, $exponent + 1) . ($fraction !== '' ? '.' . $fraction : '');
+    }
+
+    /**
+     * The alignment of an interpolation or composite format: {x,8} pads on the left to 8 characters,
+     * {x,-8} on the right; longer text is kept whole.
+     */
+    public static function align(mixed $text, int $width): string
+    {
+        $text = self::str($text);
+
+        return mb_str_pad($text, abs($width), ' ', $width < 0 ? STR_PAD_RIGHT : STR_PAD_LEFT);
     }
 
     /** Standard and custom C# format strings: F2, N0, D5, X, P1, E3, 0.00, yyyy-MM-dd ... */
@@ -143,7 +190,8 @@ final class Op
                 'P' => number_format((float) $value * 100, $digits ?? 2, '.', ',') . ' %',
                 'E' => self::exponential((float) $value, $digits ?? 6, $m[1] === 'e'),
                 'C' => ($value < 0 ? '-' : '') . '$' . number_format(abs((float) $value), $digits ?? 2, '.', ','),
-                'G' => self::str($value),
+                'G' => is_float($value) && $digits !== null && $digits > 0 ? self::general($value, $digits) : self::str($value),
+                'R' => is_float($value) ? self::general($value, null) : self::str($value),
                 default => throw new FormatException('Format specifier was invalid.'),
             };
         }
@@ -176,7 +224,17 @@ final class Op
 
     private static function exponential(float $value, int $digits, bool $lower): string
     {
-        $text = sprintf('%.' . $digits . 'E', $value);
+        // .NET rounds a half away from zero (1234.5 with E3 is 1.235E+003); sprintf() rounds it to even.
+        if ($value != 0 && is_finite($value)) {
+            $exponent = (int) floor(log10(abs($value)));
+            $mantissa = round($value / 10 ** $exponent, $digits, PHP_ROUND_HALF_UP);
+            if (abs($mantissa) >= 10) {
+                [$mantissa, $exponent] = [$mantissa / 10, $exponent + 1];
+            }
+            $text = number_format($mantissa, $digits, '.', '') . 'E' . ($exponent < 0 ? '-' : '+') . abs($exponent);
+        } else {
+            $text = sprintf('%.' . $digits . 'E', $value);
+        }
         $text = preg_replace_callback('/E([+-])(\d+)/', static fn (array $m): string => 'E' . $m[1] . str_pad($m[2], 3, '0', STR_PAD_LEFT), $text) ?? $text;
 
         return $lower ? strtolower($text) : $text;
@@ -332,14 +390,16 @@ final class Op
     }
 
     /**
-     * Object initializer: new Person { Name = "Ann" }
+     * Object initializer: new Person { Name = "Ann" }. A nested initializer (Items = { "a" },
+     * Address = { City = "X" }) is applied to the member's current value, which must not be null.
      *
      * @template T of object
      * @param T $object
      * @param array<string, mixed> $values
+     * @param array<string, \Closure(object): mixed> $nested
      * @return T
      */
-    public static function init(object $object, array $values): object
+    public static function init(object $object, array $values, array $nested = []): object
     {
         foreach ($values as $name => $value) {
             // The compiler checked that the setter is accessible where the initializer is written;
@@ -348,6 +408,13 @@ final class Op
             (\Closure::bind(static function () use ($object, $name, $value): void {
                 $object->$name = $value;
             }, null, $declaring))();
+        }
+        foreach ($nested as $name => $apply) {
+            $current = $object->$name;
+            if (!is_object($current)) {
+                throw new System\NullReferenceException();
+            }
+            $apply($current);
         }
 
         return $object;
@@ -389,6 +456,16 @@ final class Op
         }
 
         return $index;
+    }
+
+    /** The size of new T[n]: .NET throws OverflowException for a negative one. */
+    public static function arraySize(int $size): int
+    {
+        if ($size < 0) {
+            throw new System\OverflowException('Arithmetic operation resulted in an overflow.');
+        }
+
+        return $size;
     }
 
     /**

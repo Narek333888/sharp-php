@@ -6,6 +6,8 @@ namespace SharpPhp\Runtime\System\Collections\Generic;
 
 use SharpPhp\Runtime\Op;
 use SharpPhp\Runtime\System\ArgumentOutOfRangeException;
+use SharpPhp\Runtime\System\InvalidOperationException;
+use SharpPhp\Runtime\System\Linq\Enumerable;
 use SharpPhp\Runtime\TypeCheck;
 use SharpPhp\Runtime\TypeName;
 
@@ -28,34 +30,111 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
     /** @var list<T> */
     private array $items = [];
 
+    /** What .NET's list has room for before it grows (see grow()); the count never is limited by it. */
+    private int $capacity = 0;
+
+    /** Changes with every modification: a foreach over the list throws when the list changed under it. */
+    private int $version = 0;
+
     public int $Count {
         get => count($this->items);
     }
 
     /**
-     * @param iterable<T>|int $collection items to copy, or an initial capacity
+     * How many elements the list holds before it needs more room. Not a limit: adding more makes room,
+     * as in .NET (the capacity doubles, from 4). Setting it below Count throws ArgumentOutOfRangeException.
      */
-    public function __construct(iterable|int $collection = [], private readonly ?string $of = null)
-    {
-        if (is_iterable($collection)) {
-            foreach ($collection as $item) {
-                $this->items[] = $this->checked($item);
+    public int $Capacity {
+        get => $this->capacity;
+        set {
+            if ($value < count($this->items)) {
+                throw new ArgumentOutOfRangeException('value', 'capacity was less than the current size.');
             }
+            $this->capacity = $value;
         }
+    }
+
+    /**
+     * @param iterable<T>|int|string $collection items to copy (a string's chars), or an initial capacity
+     */
+    public function __construct(iterable|int|string $collection = [], private readonly ?string $of = null)
+    {
+        if (is_string($collection)) {
+            // new List<char>("abc"): a string is an IEnumerable<char> (T is char here)
+            $collection = self::chars($collection);
+        }
+        if (is_int($collection)) {
+            if ($collection < 0) {
+                throw new ArgumentOutOfRangeException('capacity', 'Non-negative number required.');
+            }
+            $this->capacity = $collection;
+
+            return;
+        }
+        $this->AddRange($collection);
     }
 
     /** @param T $item */
     public function Add(mixed $item): void
     {
         $this->items[] = $this->checked($item);
+        $this->grow(count($this->items));
+        $this->version++;
     }
 
     /** @param iterable<T> $collection */
     public function AddRange(iterable $collection): void
     {
-        foreach ($collection as $item) {
-            $this->items[] = $this->checked($item);
+        if ($collection instanceof self) {
+            $collection = $collection->items; // also list.AddRange(list), which .NET allows
         }
+        // A collection of known size makes room once (as .NET does for an ICollection<T>); a sequence
+        // is added one element at a time.
+        if (is_array($collection) || $collection instanceof \Countable) {
+            $this->grow(count($this->items) + count($collection));
+        }
+        foreach ($collection as $item) {
+            $this->Add($item);
+        }
+    }
+
+    /**
+     * Makes room for at least $capacity elements and returns the new capacity.
+     */
+    public function EnsureCapacity(int $capacity): int
+    {
+        if ($capacity < 0) {
+            throw new ArgumentOutOfRangeException('capacity', 'Non-negative number required.');
+        }
+        $this->grow($capacity);
+
+        return $this->capacity;
+    }
+
+    /** Lowers the capacity to the count when less than 90% of it is used, as .NET does. */
+    public function TrimExcess(): void
+    {
+        if (count($this->items) < (int) ($this->capacity * 0.9)) {
+            $this->capacity = count($this->items);
+        }
+    }
+
+    /** @return list<T> */
+    private static function chars(string $text): array
+    {
+        /** @var list<T> $chars the compiler passes a string only for a List<char> */
+        $chars = array_map(static fn (string $c): mixed => $c, mb_str_split($text));
+
+        return $chars;
+    }
+
+    /** .NET's List<T>.Grow: double the capacity (from 4), or more when that is not enough. */
+    private function grow(int $needed): void
+    {
+        if ($needed <= $this->capacity) {
+            return;
+        }
+        $this->capacity = max($this->capacity === 0 ? 4 : $this->capacity * 2, $needed);
     }
 
     /** @param T $item */
@@ -65,6 +144,8 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
             throw new ArgumentOutOfRangeException('index', 'Index must be within the bounds of the List.');
         }
         array_splice($this->items, $index, 0, [$this->checked($item)]);
+        $this->grow(count($this->items));
+        $this->version++;
     }
 
     /** @param T $item */
@@ -75,6 +156,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
             return false;
         }
         array_splice($this->items, $index, 1);
+        $this->version++;
 
         return true;
     }
@@ -83,19 +165,25 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
     {
         $this->assertIndex($index);
         array_splice($this->items, $index, 1);
+        $this->version++;
     }
 
     public function RemoveAll(\Closure $match): int
     {
         $before = count($this->items);
         $this->items = array_values(array_filter($this->items, static fn (mixed $item): bool => !$match($item)));
+        $removed = $before - count($this->items);
+        if ($removed > 0) {
+            $this->version++;
+        }
 
-        return $before - count($this->items);
+        return $removed;
     }
 
     public function Clear(): void
     {
         $this->items = [];
+        $this->version++;
     }
 
     /** @param T $item */
@@ -163,8 +251,10 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
 
     public function ForEach(\Closure $action): void
     {
+        $version = $this->version;
         foreach ($this->items as $item) {
             $action($item);
+            $this->assertUnchanged($version);
         }
     }
 
@@ -172,12 +262,14 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
     public function Sort(?\Closure $comparison = null): void
     {
         usort($this->items, $comparison ?? Op::compare(...));
+        $this->version++;
     }
 
     /** Reverses in place (C# List.Reverse()). */
     public function Reverse(): void
     {
         $this->items = array_reverse($this->items);
+        $this->version++;
     }
 
     /** @return List_<T> */
@@ -203,15 +295,35 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
 
     // ---- PHP interfaces ----------------------------------------------
 
-    /** @return \Iterator<int, T> */
+    /**
+     * As in .NET, changing the list during a foreach over it (Add, Remove, list[i] = ...) throws
+     * InvalidOperationException when the loop goes on.
+     *
+     * @return \Iterator<int, T>
+     */
     public function getIterator(): \Iterator
     {
-        return new \ArrayIterator($this->items);
+        $version = $this->version;
+        foreach ($this->items as $index => $item) {
+            yield $index => $item;
+            $this->assertUnchanged($version);
+        }
     }
 
-    public function count(): int
+    private function assertUnchanged(int $version): void
     {
-        return count($this->items);
+        if ($version !== $this->version) {
+            throw new InvalidOperationException('Collection was modified; enumeration operation may not execute.');
+        }
+    }
+
+    /**
+     * LINQ's Count() and Count(x => ...), and Countable's count() (PHP method names ignore case,
+     * so the two must be one method).
+     */
+    public function Count(?\Closure $predicate = null): int
+    {
+        return $predicate === null ? count($this->items) : Enumerable::Count($this, $predicate);
     }
 
     /** @param mixed $offset any value: only valid indexes exist */
@@ -239,6 +351,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
         // An existing index (checked above) is replaced, so $items stays a list; proving that would
         // need copying the array on every write.
         $this->items[$offset] = $this->checked($value); // @phpstan-ignore assign.propertyType
+        $this->version++;
     }
 
     public function offsetUnset(mixed $offset): void

@@ -114,7 +114,9 @@ TXT;
             }
         }
         $vsix = VsCodeExtension::package(sys_get_temp_dir() . '/sharpphp-' . Emitter::VERSION . '.vsix');
-        $process = @proc_open(['code', '--install-extension', $vsix, '--force'], [1 => STDOUT, 2 => STDERR], $pipes);
+        // On Windows "code" is code.cmd, which only cmd.exe finds (proc_open() with a list runs no shell).
+        $command = ['code', '--install-extension', $vsix, '--force'];
+        $process = @proc_open(PHP_OS_FAMILY === 'Windows' ? ['cmd.exe', '/c', ...$command] : $command, [1 => STDOUT, 2 => STDERR], $pipes);
         $exit = is_resource($process) ? proc_close($process) : 127;
         if ($exit !== 0) {
             return $this->fail("VS Code's 'code' command was not found or failed. Install it (VS Code: Command Palette → \"Shell Command: Install 'code' command in PATH\"), or install $vsix with Extensions → ... → Install from VSIX.");

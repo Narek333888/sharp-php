@@ -1,0 +1,19 @@
+True True True
+a#b# Smith, John 05/2024 $
+True x=42 0 4 x42 y=7 False
+héllo@0 wörld@6 
+3 1,22,333
+a|b|c 2 4 6
+True False 77 five 2
+a\.b\*c False []
+True
+bad pattern
+13 3 True 1 notes.txt
+.txt notes a/b.md /b /a
+FileNotFoundException
+not empty
+False
+36 32 True True 00000000-0000-0000-0000-000000000000 False True
+True
+3 -3 2 2.35 2
+ba a,b 1,2|3,4|5

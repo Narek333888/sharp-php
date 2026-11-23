@@ -63,10 +63,28 @@ final class Math
         return $value < 0 ? ceil($value) : floor($value);
     }
 
-    /** Banker's rounding, like C#. */
-    public static function Round(float $value, int $digits = 0): float
+    /**
+     * Banker's rounding by default, like C#: Round(2.5) is 2. Round(x, digits), Round(x, mode),
+     * Round(x, digits, mode) with a MidpointRounding (AwayFromZero: Round(2.5) is 3).
+     */
+    public static function Round(float $value, int|MidpointRounding $digitsOrMode = 0, ?MidpointRounding $mode = null): float
     {
-        return round($value, $digits, PHP_ROUND_HALF_EVEN);
+        if ($digitsOrMode instanceof MidpointRounding) {
+            [$digits, $mode] = [0, $digitsOrMode];
+        } else {
+            $digits = $digitsOrMode;
+        }
+        if ($digits < 0 || $digits > 15) {
+            throw new ArgumentOutOfRangeException('digits', 'Rounding digits must be between 0 and 15, inclusive.');
+        }
+
+        return match ($mode ?? MidpointRounding::ToEven) {
+            MidpointRounding::ToEven => round($value, $digits, PHP_ROUND_HALF_EVEN),
+            MidpointRounding::AwayFromZero => round($value, $digits, PHP_ROUND_HALF_UP),
+            MidpointRounding::ToZero => round($value, $digits, \RoundingMode::TowardsZero),
+            MidpointRounding::ToNegativeInfinity => round($value, $digits, \RoundingMode::NegativeInfinity),
+            MidpointRounding::ToPositiveInfinity => round($value, $digits, \RoundingMode::PositiveInfinity),
+        };
     }
 
     public static function Sign(int|float $value): int

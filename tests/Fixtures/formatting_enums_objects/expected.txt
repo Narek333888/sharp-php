@@ -1,0 +1,13 @@
+0.3 1 1E+21 1E+15 100000000000000 1E-05 0.0001 0.333333333333333 1.23456789012346E+17 7 435 
+0.30000000000000004 0.3333333333333333 1.23E+04 ∞ -∞ NaN
+[   42][42   ][   Ann][    3.50][3.5     ][toolong]
+[   7|x   ]
+1
+Red,Green,Blue
+Red Green Blue 
+Blue Red Green
+False Red
+True Green
+True False Red
+Requested value 'Nope' was not found.
+True False True

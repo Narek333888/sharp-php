@@ -1,0 +1,36 @@
+using System;
+using System.Collections.Generic;
+
+// double.ToString() is G15 (as .NET Framework; decimal is a PHP float too, so 0.07m * 100 prints 7);
+// "R" gives the shortest round-trip digits, as .NET Core's ToString()
+foreach (var d in new[] { 0.1 + 0.2, 1.0, 1e21, 1e15, 1e14, 1e-5, 0.0001, 1.0 / 3, 123456789012345678.0, 0.07 * 100, 4.35 * 100 })
+{
+    Console.Write(d + " ");
+}
+Console.WriteLine();
+Console.WriteLine($"{0.1 + 0.2:R} {(1.0 / 3).ToString("R")} {12345.678:G3} {1.0 / 0} {-1.0 / 0} {0.0 / 0}");
+
+// alignment in interpolations and composite formats
+var n = 42;
+double price = 3.5;
+Console.WriteLine($"[{n,5}][{n,-5}][{"Ann",6}][{price,8:F2}][{price,-8:F1}][{"toolong",3}]");
+Console.WriteLine(string.Format("[{0,4}|{1,-4}]", 7, "x"));
+Console.WriteLine($"{new Dictionary<int, string> { [1] = "a" }.Count}");
+
+// System.Enum
+Console.WriteLine(string.Join(",", Enum.GetNames(typeof(Color))));
+foreach (var v in Enum.GetValues<Color>()) Console.Write(v + " ");
+Console.WriteLine();
+Color parsed = Enum.Parse<Color>("Blue");
+Console.WriteLine(parsed + " " + Enum.Parse<Color>("red", true) + " " + (Color)Enum.Parse(typeof(Color), "Green"));
+Console.WriteLine(Enum.TryParse<Color>("Purple", out var missing) + " " + missing);
+Console.WriteLine(Enum.TryParse("Green", out Color found) + " " + found);
+Console.WriteLine(Enum.IsDefined(typeof(Color), 2) + " " + Enum.IsDefined(typeof(Color), 7) + " " + Enum.GetName(typeof(Color), Color.Red));
+try { Enum.Parse<Color>("Nope"); } catch (ArgumentException e) { Console.WriteLine(e.Message); }
+
+// object's static methods without "object."
+var a = new object();
+var b = a;
+Console.WriteLine(ReferenceEquals(a, b) + " " + ReferenceEquals(a, new object()) + " " + Equals("x", "x"));
+
+enum Color { Red, Green, Blue }

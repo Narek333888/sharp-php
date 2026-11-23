@@ -7,6 +7,7 @@ namespace SharpPhp\Runtime\System\Collections\Generic;
 use SharpPhp\Runtime\Op;
 use SharpPhp\Runtime\System\ArgumentException;
 use SharpPhp\Runtime\System\ArgumentNullException;
+use SharpPhp\Runtime\System\Linq\Enumerable;
 use SharpPhp\Runtime\TypeCheck;
 use SharpPhp\Runtime\TypeName;
 
@@ -166,9 +167,13 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
         }
     }
 
-    public function count(): int
+    /**
+     * LINQ's Count() and Count(x => ...), and Countable's count() (PHP method names ignore case,
+     * so the two must be one method).
+     */
+    public function Count(?\Closure $predicate = null): int
     {
-        return count($this->keys);
+        return $predicate === null ? count($this->keys) : Enumerable::Count($this, $predicate);
     }
 
     public function offsetExists(mixed $offset): bool

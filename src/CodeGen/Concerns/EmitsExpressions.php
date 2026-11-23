@@ -153,11 +153,14 @@ trait EmitsExpressions
     private function interpolationHole(InterpolationHole $hole): Emitted
     {
         $value = $this->expr($hole->expr);
-        if ($hole->format !== null) {
-            return Emitted::value($this->runtime('Op') . '::format(' . $value->code . ', ' . self::phpString($hole->format) . ')', Type::string());
+        $text = $hole->format !== null
+            ? Emitted::value($this->runtime('Op') . '::format(' . $value->code . ', ' . self::phpString($hole->format) . ')', Type::string())
+            : $this->asString($value);
+        if ($hole->alignment === null) {
+            return $text;
         }
 
-        return $this->asString($value);
+        return Emitted::value($this->runtime('Op') . '::align(' . $text->code . ', ' . $hole->alignment . ')', Type::string());
     }
 
     /** Converts a value to a string the way C# would (true => "True", objects => ToString()). */
@@ -268,6 +271,11 @@ trait EmitsExpressions
             return $negation;
         }
 
+        // -5 is a constant too (array sizes, CS0248).
+        if ($op === '-' && $operand->type->isInt() && $operand->intValue !== null && $operand->intValue !== PHP_INT_MIN) {
+            return new Emitted('-' . $this->unaryOperand($operand, '-'), Type::int(), Prec::UNARY, intValue: -$operand->intValue);
+        }
+
         return match ($op) {
             '-' => Emitted::value('-' . $this->unaryOperand($operand, '-'), $operand->type->isNumeric() ? $operand->type : Type::mixed(), Prec::UNARY),
             '+' => $operand,
@@ -343,7 +351,8 @@ trait EmitsExpressions
                     return Emitted::value("\\intdiv({$l->code}, {$r->code})", Type::int());
                 }
                 if ($bothNumeric) {
-                    return $this->infix('/', $l, $r, Prec::MUL, Type::float());
+                    // fdiv: 1.0 / 0 is Infinity (and 0.0 / 0 NaN) as in C#; PHP's "/" throws there.
+                    return Emitted::value("\\fdiv({$l->code}, {$r->code})", Type::float());
                 }
 
                 return Emitted::value("$op_::div({$l->code}, {$r->code})", Type::mixed());
@@ -363,6 +372,10 @@ trait EmitsExpressions
             case '|':
             case '^':
                 $prec = ['&' => Prec::BAND, '|' => Prec::BOR, '^' => Prec::BXOR][$op];
+                if ($this->conversions->isEnum($lt) || $this->conversions->isEnum($rt)) {
+                    // PHP failed at run time ("Unsupported operand types"): an enum value is an object.
+                    throw $this->error('SP1010', "Combining enum values with '$op' ([Flags] enums) is not supported: SharpPHP's enums are PHP enums, which have no combined values; combine their numbers instead: (int)A | (int)B", $at);
+                }
                 if ($lt->isBool() && $rt->isBool()) {
                     return Emitted::value('(bool) (' . $this->infix($op, $l, $r, $prec, Type::int())->code . ')', Type::bool(), Prec::UNARY);
                 }
@@ -590,7 +603,7 @@ trait EmitsExpressions
         // Use PHP's compound operator when it has the same meaning as the C# one.
         $compound = match ($binaryOp) {
             '+' => $type->isString() || $vt->isString() ? '.=' : ($bothNumeric ? '+=' : null),
-            '/' => $bothNumeric && !$bothInt ? '/=' : null,
+            '/' => null, // intdiv() or fdiv(), never PHP's "/"
             '%' => $bothInt ? '%=' : null,
             // Objects have no PHP operators: date -= span goes through binaryOperation() (operatorMethod()).
             '-', '*', '<<', '>>', '&', '|', '^' => $type->isClass() || $vt->isClass() ? null : $binaryOp . '=',
@@ -665,6 +678,9 @@ trait EmitsExpressions
             $e instanceof ElementAccessExpr => $this->elementAccess($e, true),
             default => null,
         };
+        if ($result?->member?->extensionProperty !== null) {
+            throw $this->error('SP0200', "Property or indexer '{$result->member->owner->csharpName()}.{$result->member->extensionProperty}' cannot be assigned to -- it is read only", $e);
+        }
         if ($result?->member?->isStaticAccessor) {
             $this->requireWritable($result->member, $e);
 
@@ -909,6 +925,17 @@ trait EmitsExpressions
 
     private function newExpr(NewExpr $e, ?Type $expected): Emitted
     {
+        // new string('-', 5), new string(chars): C#'s string constructors.
+        if ($e->type !== null && in_array($e->type->name, ['string', 'String', 'System.String'], true) && $e->initializer === null) {
+            $string = $this->runtime('System\\String_');
+            [$code, $values] = $this->arguments($e->args, [], runtime: true);
+            $shapes = array_map(static fn (Emitted $v): string => $v->type->isChar() || $v->type->isString() ? 'char' : ($v->type->kind === 'array' ? 'array' : ($v->type->isInt() ? 'int' : '?')), $values);
+            if (!in_array(implode(',', $shapes), ['char,int', 'array', 'array,int,int'], true)) {
+                throw $this->error('SP1729', "'string' does not contain a constructor that takes these arguments (use new string(char c, int count) or new string(char[] value))", $e);
+            }
+
+            return Emitted::value("$string::__new($code)", Type::string());
+        }
         // new object(): a plain object (a lock, a sentinel, a key of a ConditionalWeakTable).
         if ($e->type !== null && in_array($e->type->name, ['object', 'Object', 'System.Object'], true) && $e->type->args === []) {
             if ($e->args !== [] || $e->initializer !== null) {
@@ -965,19 +992,31 @@ trait EmitsExpressions
 
         $argList = implode(', ', array_filter([$args, $of !== null ? "of: $of" : '']));
         $code = "new $class($argList)";
-        if ($items === []) {
+        if ($items === [] || $e->initializer === null) {
             return Emitted::value($code, $type);
         }
 
+        return $this->initialized($code, $type, $symbol, $e->initializer);
+    }
+
+    /**
+     * $code (a new object, or a member's value for a nested initializer) with the initializer applied:
+     * Op::init(obj, [members]), Op::collect(list, [elements]), Op::addPairs / Op::setIndexes (dictionaries).
+     */
+    private function initialized(string $code, Type $type, \SharpPhp\Semantics\TypeSymbol $symbol, \SharpPhp\Syntax\Initializer $initializer): Emitted
+    {
+        $items = $initializer->items;
+        $elementType = $this->elementTypeOf($type);
         $kinds = array_unique(array_map(static fn (InitializerItem $i): string => $i->kind, $items));
         if (count($kinds) > 1) {
-            throw $this->error('SP0747', 'Invalid initializer member declarator: object and collection initializers cannot be mixed', $e->initializer ?? $e);
+            throw $this->error('SP0747', 'Invalid initializer member declarator: object and collection initializers cannot be mixed', $initializer);
         }
         $op = $this->runtime('Op');
         $kind = $kinds[0];
 
         if ($kind === 'member') {
             $pairs = [];
+            $nested = [];
             foreach ($items as $item) {
                 $member = $this->symbols->findMember($symbol, (string) $item->name);
                 if ($member === null && !$symbol->external) {
@@ -985,13 +1024,30 @@ trait EmitsExpressions
                 }
                 if ($member !== null) {
                     $this->requireAccessible($member, $item);
-                    $this->requireWritable($member, $item, initializer: true);
+                    if ($item->nested === null) {
+                        $this->requireWritable($member, $item, initializer: true);
+                    }
                 }
                 $memberType = $member !== null ? $member->type->substitute($member->owner->substitutionFor($type)) : Type::mixed();
+                if ($item->nested !== null) {
+                    // Items = { "a", "b" } adds to the list the member already holds; Address = { City = "X" }
+                    // sets members of the object it holds. The member is read, not assigned.
+                    $memberSymbol = $this->symbolForType($memberType);
+                    if ($memberSymbol === null) {
+                        throw $this->error('SP1918', "Members of '{$item->name}' cannot be initialized with an object or collection initializer: its type '{$memberType->describe()}' is not a class", $item);
+                    }
+                    if ($item->nested->items === []) {
+                        continue; // Items = { } does nothing
+                    }
+                    $value = $this->fn !== null ? $this->fn->temp('member') : '$__member';
+                    $applied = $this->initialized($value, $memberType, $memberSymbol, $item->nested);
+                    $nested[] = self::phpString((string) $item->name) . " => fn ($value) => {$applied->code}";
+                    continue;
+                }
                 $pairs[] = self::phpString((string) $item->name) . ' => ' . $this->convert($item->values[0], $memberType)->code;
             }
 
-            return Emitted::value("$op::init($code, [" . implode(', ', $pairs) . '])', $type);
+            return Emitted::value("$op::init($code, [" . implode(', ', $pairs) . ']' . ($nested !== [] ? ', [' . implode(', ', $nested) . ']' : '') . ')', $type);
         }
 
         $keyType = $type->args[0] ?? Type::mixed();
@@ -1032,11 +1088,21 @@ trait EmitsExpressions
             ? $this->resolveType($e->elementType)
             : ($expected !== null && $expected->kind === 'array' ? $expected->element() : null);
 
+        $size = $e->size !== null ? $this->convert($e->size, Type::int()) : null;
+        if ($size?->intValue !== null && $size->intValue < 0) {
+            throw $this->error('SP0248', 'Cannot create an array with a negative size', $e->size ?? $e);
+        }
         if ($e->elements === null) {
-            $size = $this->expr($e->size ?? throw new \LogicException('An array without elements has a size'), Type::int());
+            $size ?? throw new \LogicException('An array without elements has a size');
             $default = $this->defaultValue($elementType);
+            // .NET throws OverflowException for a negative size computed at run time.
+            $count = $size->intValue !== null ? $size->code : $this->runtime('Op') . "::arraySize({$size->code})";
 
-            return Emitted::value("\\array_fill(0, {$size->code}, {$default->code})", Type::array($elementType ?? Type::mixed()));
+            return Emitted::value("\\array_fill(0, $count, {$default->code})", Type::array($elementType ?? Type::mixed()));
+        }
+        // new string[2] { "a", "b", "c" }: C# requires as many elements as the size says.
+        if ($size?->intValue !== null && $size->intValue !== count($e->elements)) {
+            throw $this->error('SP0847', "An array initializer of length '{$size->intValue}' is expected", $e);
         }
 
         $elements = [];

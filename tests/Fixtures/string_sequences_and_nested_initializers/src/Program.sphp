@@ -1,0 +1,46 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+// A string is an IEnumerable<char>: LINQ works on it; string's own methods win
+var s = "Hello World 2024";
+Console.WriteLine(new string(s.Reverse().ToArray()));
+Console.WriteLine($"{s.Count(char.IsDigit)} {s.Count(c => c == 'o')} {s.Count()} {s.Any(char.IsWhiteSpace)} {s.All(char.IsLetter)} {s.First()}{s.Last()}");
+Console.WriteLine(string.Join(",", s.Where(char.IsUpper)) + " " + new string(s.Distinct().ToArray()));
+Console.WriteLine(string.Join("|", "banana".GroupBy(c => c).Select(g => $"{g.Key}{g.Count()}")));
+Console.WriteLine("abc".SequenceEqual("abc") + " " + new string("hello".OrderBy(c => c).ToArray()) + " " + s.Contains("World") + " " + s.IndexOf('o'));
+Console.WriteLine(new HashSet<char>("hello").Count + " " + new List<char>("abc").Count);
+var letters = new List<char>();
+letters.AddRange("xyz");
+Console.WriteLine(string.Join("-", letters));
+
+// Nested initializers: add to a collection a member already holds, set members of an object it holds
+var order = new Order { Id = 1, Items = { "a", "b" }, Ship = { City = "Yerevan" }, Tags = { ["x"] = 1 }, Notes = { } };
+Console.WriteLine($"{order.Id} {string.Join(",", order.Items)} {order.Ship.City} {order.Tags["x"]} {order.Notes.Count}");
+try
+{
+    var holder = new Holder { Inner = { City = "x" } };
+}
+catch (NullReferenceException)
+{
+    Console.WriteLine("null member");
+}
+
+class Order
+{
+    public int Id { get; set; }
+    public List<string> Items { get; } = new();
+    public List<string> Notes { get; } = new();
+    public Address Ship { get; } = new();
+    public Dictionary<string, int> Tags { get; } = new();
+}
+
+class Address
+{
+    public string City { get; set; } = "";
+}
+
+class Holder
+{
+    public Address? Inner { get; set; }
+}

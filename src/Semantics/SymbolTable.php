@@ -56,6 +56,9 @@ final class SymbolTable
     /** @var list<MemberSymbol> extension methods of the project, in declaration order */
     private array $extensions = [];
 
+    /** @var list<MemberSymbol> static members of extension blocks (C# 14) */
+    private array $staticExtensions = [];
+
     public function declare(TypeSymbol $symbol): ?TypeSymbol
     {
         $key = strtolower($symbol->fqn);
@@ -89,6 +92,21 @@ final class SymbolTable
     public function extensions(): array
     {
         return $this->extensions;
+    }
+
+    public function addStaticExtension(MemberSymbol $member): void
+    {
+        $this->staticExtensions[] = $member;
+    }
+
+    /**
+     * Static members of the project's extension blocks: string.Repeat(...), string.Empty-like properties.
+     *
+     * @return list<MemberSymbol>
+     */
+    public function staticExtensions(): array
+    {
+        return $this->staticExtensions;
     }
 
     public function isProjectType(string $fqn): bool
@@ -414,7 +432,7 @@ final class SymbolTable
 
         $this->docFile = $class->getFileName() ?: null;
         $doc = (string) $class->getDocComment();
-        if (preg_match_all('/@template\s+(\w+)/', $doc, $m)) {
+        if (preg_match_all('/@(?:sharp-)?template\s+(\w+)/', $doc, $m)) {
             $symbol->typeParams = $m[1];
             foreach ($m[1] as $name) {
                 $symbol->typeParamTypes[$name] = Type::typeParam($name);
@@ -442,6 +460,7 @@ final class SymbolTable
             $symbol->addMember(new MemberSymbol('property', $property->getName(), $property->isStatic(), $type, $symbol));
         }
 
+        $instanceVariants = [];
         foreach ($class->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
             if ($method->isConstructor()) {
                 continue;
@@ -449,13 +468,23 @@ final class SymbolTable
             $doc = (string) $method->getDocComment();
             $this->docFile = $method->getFileName() ?: null;
             // Generic methods (Enumerable::Where<TSource>): their type parameters are in scope in their docs.
-            $this->methodTemplates = preg_match_all('/@template\s+(\w+)/', $doc, $m) > 0 ? $m[1] : [];
+            $this->methodTemplates = preg_match_all('/@(?:sharp-)?template\s+(\w+)/', $doc, $m) > 0 ? $m[1] : [];
             // "@sharp-return char" states a C# type PHP has no name for; "@return" is the PHP view.
             $type = $this->docTag($doc, 'sharp-return', $symbol)
                 ?? $this->docTag($doc, 'return', $symbol)
                 ?? $this->reflectionType($method->getReturnType(), $symbol);
             $params = $this->reflectionParams($method, $symbol);
+            // "@sharp-reified TEnum $enumClass": the compiler passes the PHP class of TEnum there
+            // (Enum.Parse<Color>("Red")); C# code does not see the parameter.
+            $reified = [];
+            if (preg_match_all('/@sharp-reified\s+(\w+)\s+\$(\w+)/', $doc, $rm, PREG_SET_ORDER) > 0) {
+                foreach ($rm as [, $typeParam, $paramName]) {
+                    $reified[$typeParam] = $paramName;
+                }
+                $params = array_values(array_filter($params, static fn (ParameterSymbol $p): bool => !in_array($p->name, $reified, true)));
+            }
             $member = new MemberSymbol('method', $method->getName(), $method->isStatic(), $type, $symbol, $params, $this->methodTemplates);
+            $member->reified = $reified;
             if ($method->getFileName() !== false) {
                 $member->location = [$method->getFileName(), (int) $method->getStartLine(), 1];
             }
@@ -463,8 +492,20 @@ final class SymbolTable
                 $member->operator = $m[1];
             }
             $this->methodTemplates = [];
+            // "@sharp-instance IsMatch": what regex.IsMatch(input) calls, next to the static Regex.IsMatch(input, pattern).
+            if (!$method->isStatic() && preg_match('/@sharp-instance\s+(\w+)/', $doc, $m) === 1) {
+                $member->csharpName = $m[1];
+                $instanceVariants[$m[1]] = $member;
+                continue;
+            }
             // Properties and methods live in different PHP namespaces (List.Count vs. list.Count()).
             $symbol->members[isset($symbol->members[$method->getName()]) ? $method->getName() . '()' : $method->getName()] = $member;
+        }
+        foreach ($instanceVariants as $name => $variant) {
+            $static = $symbol->members[$name . '()'] ?? $symbol->members[$name] ?? null;
+            if ($static !== null && $static->kind === 'method') {
+                $static->instanceVariant = $variant;
+            }
         }
 
         // A static method get_Name() is the static property Name (Environment.TickCount), as for project
@@ -556,9 +597,14 @@ final class SymbolTable
         // parameter, "@param-out T $value" is the type of what the method stores (out var x).
         $docTypes = ['param' => [], 'param-out' => []];
         // "@param \Closure(HttpRequest): mixed $handler" types the parameters of a lambda passed to $handler.
-        if (preg_match_all('/@(param|param-out)\s+(?<spec>' . self::CLOSURE_DOC . '|' . self::TYPE_DOC . ')\s+&?(?:\.\.\.)?\$(?<name>\w+)/', (string) $method->getDocComment(), $m, PREG_SET_ORDER)) {
-            foreach ($m as $match) {
-                $docTypes[$match[1]][$match['name']] = $match['spec'];
+        // "@sharp-param T $x" / "@sharp-param-out T $x" state the C# type where PHPStan needs a PHP one.
+        if (preg_match_all('/@(?<sharp>sharp-)?(param|param-out)\s+(?<spec>' . self::CLOSURE_DOC . '|' . self::TYPE_DOC . ')\s+&?(?:\.\.\.)?\$(?<name>\w+)/', (string) $method->getDocComment(), $m, PREG_SET_ORDER)) {
+            foreach ([false, true] as $sharp) {
+                foreach ($m as $match) {
+                    if (($match['sharp'] !== '') === $sharp) {
+                        $docTypes[$match[2]][$match['name']] = $match['spec'];
+                    }
+                }
             }
         }
         $params = [];
