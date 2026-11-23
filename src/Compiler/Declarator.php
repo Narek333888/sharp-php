@@ -504,6 +504,7 @@ final class Declarator
                 $this->resolver->resolve($param->type ?? throw new \LogicException('Method parameters are typed'), $ctx, $typeParams),
                 $param->modifier,
                 $param->default !== null || $param->modifier === 'params',
+                callerInfo: $param->callerInfo,
             );
         }
 

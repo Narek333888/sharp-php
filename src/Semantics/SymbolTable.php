@@ -656,6 +656,8 @@ final class SymbolTable
                 $parameter->isPassedByReference() ? 'ref' : ($parameter->isVariadic() ? 'params' : null),
                 $parameter->isOptional(),
                 $this->isNumericUnion($parameter->getType()) || preg_match('/@sharp-char-as-int\s+\$' . $name . '\b/', (string) $method->getDocComment()) === 1,
+                // "@sharp-caller-argument-expression $paramName argument": the text of the argument passed for $argument.
+                preg_match('/@sharp-caller-argument-expression\s+\$' . $name . '\s+(\w+)/', (string) $method->getDocComment(), $cae) === 1 ? ['ArgumentExpression', $cae[1]] : null,
             );
         }
 

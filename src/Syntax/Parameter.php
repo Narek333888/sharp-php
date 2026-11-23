@@ -14,6 +14,13 @@ final class Parameter extends Node
         public readonly ?TypeRef $type,
         public readonly ?Expr $default,
         public readonly ?string $modifier,
+        /**
+         * [CallerMemberName], [CallerLineNumber], [CallerFilePath] or [CallerArgumentExpression("x")]:
+         * ['MemberName'|'LineNumber'|'FilePath'|'ArgumentExpression', the parameter it names or null]
+         *
+         * @var array{0: string, 1: ?string}|null
+         */
+        public readonly ?array $callerInfo = null,
     ) {
     }
 }

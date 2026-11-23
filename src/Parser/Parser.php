@@ -874,6 +874,7 @@ final class Parser
         $this->expect('(');
         $params = [];
         while (!$this->check(')')) {
+            $callerInfo = $this->callerInfoAttribute();
             $this->skipAttributes();
             $start = $this->current();
             $modifier = null;
@@ -884,7 +885,7 @@ final class Parser
             $type = $this->parseType();
             $name = $this->expectIdentifier('parameter name');
             $default = $this->accept('=') ? $this->parseExpression() : null;
-            $params[] = (new Parameter($name->text(), $type, $default, $modifier))->at($start);
+            $params[] = (new Parameter($name->text(), $type, $default, $modifier, $callerInfo))->at($start);
             if (!$this->accept(',')) {
                 break;
             }
@@ -892,6 +893,32 @@ final class Parser
         $this->expect(')');
 
         return $params;
+    }
+
+    /**
+     * [CallerMemberName] and the other caller-info attributes before a parameter (the attributes are
+     * skipped after): see Parameter::$callerInfo.
+     *
+     * @return array{0: string, 1: ?string}|null
+     */
+    private function callerInfoAttribute(): ?array
+    {
+        $found = null;
+        for ($i = 0; $this->peek($i)->is('['); ) {
+            $end = $this->skipBalancedFrom($i);
+            for ($j = $i + 1; $j < $end - 1; $j++) {
+                $token = $this->peek($j);
+                $name = preg_replace('/Attribute$/', '', $token->text()) ?? '';
+                if ($token->isIdentifier() && in_array($name, ['CallerMemberName', 'CallerLineNumber', 'CallerFilePath', 'CallerArgumentExpression'], true)) {
+                    $literal = $this->peek($j + 2)->value;
+                    $argument = $this->peek($j + 1)->is('(') && $this->peek($j + 2)->type === TokenType::String && is_string($literal) ? $literal : null;
+                    $found = [substr($name, 6), $argument];
+                }
+            }
+            $i = $end;
+        }
+
+        return $found;
     }
 
     private function parseVariableInitializer(): Expr
@@ -2105,8 +2132,10 @@ final class Parser
                 }
             }
             $value ??= $this->parseExpression();
+            $last = $this->tokens[$this->pos - 1];
+            $text = substr($this->file->text, $start->offset, $last->offset + $last->length - $start->offset);
 
-            $args[] = (new Argument($name, $modifier, $value))->at($start);
+            $args[] = (new Argument($name, $modifier, $value, $text))->at($start);
             if (!$this->accept(',')) {
                 break;
             }

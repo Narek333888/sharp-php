@@ -483,6 +483,7 @@ trait EmitsDeclarations
     {
         $isGet = $accessor->kind === 'get';
         $context = new FunctionContext($static, $isGet ? $type : Type::void(), $this->class->typeParamTypes ?? []);
+        $context->memberName = $property;
         self::analyzeCaptures($context, [$accessor]);
         $this->inFunction($context, function () use ($accessor, $isGet, $type, $property, $static): void {
             $this->inScope(function () use ($accessor, $isGet, $type, $property, $static): void {
@@ -552,6 +553,7 @@ trait EmitsDeclarations
     {
         $this->w->sourceLine = $constructor->line ?? $decl->line;
         $context = new FunctionContext(false, Type::void(), $symbol->typeParamTypes, isConstructor: true);
+        $context->memberName = '.ctor';
         self::analyzeCaptures($context, [$constructor]);
 
         $this->inFunction($context, function () use ($constructor, $decl, $symbol, $instanceInits): void {
@@ -655,7 +657,9 @@ trait EmitsDeclarations
         $this->w->line('public static function __sharpStatic(): void');
         $this->w->line('{');
         $this->w->indent();
-        $this->inFunction(new FunctionContext(true, Type::void(), isConstructor: true), function () use ($staticInits, $staticConstructor): void {
+        $staticContext = new FunctionContext(true, Type::void(), isConstructor: true);
+        $staticContext->memberName = '.cctor';
+        $this->inFunction($staticContext, function () use ($staticInits, $staticConstructor): void {
             $this->inScope(function () use ($staticInits, $staticConstructor): void {
                 foreach ($staticInits as [$target, $init, $type, $line]) {
                     $this->w->sourceLine = $line;
@@ -728,6 +732,7 @@ trait EmitsDeclarations
 
         $context = new FunctionContext($static, $bodyType, $typeParams);
         $context->isAsync = $async;
+        $context->memberName = $method->name;
         $context->toPhpArray = $member->phpArrayOf !== null;
         $context->localFunction = $method->isLocalFunction ? $method : null;
         self::analyzeCaptures($context, [$method]);
@@ -1184,6 +1189,7 @@ trait EmitsDeclarations
         $this->w->indent();
         $context = new FunctionContext(true, $returnType);
         $context->isAsync = $async;
+        $context->memberName = '<Main>$';
         self::analyzeCaptures($context, $unit->topLevelStatements);
         $this->inFunction($context, function () use ($unit, $async, $mainType): void {
             $this->inScope(function () use ($unit, $async, $mainType): void {

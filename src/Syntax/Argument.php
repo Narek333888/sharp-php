@@ -13,6 +13,8 @@ final class Argument extends Node
         public readonly ?string $name,
         public readonly ?string $modifier,
         public readonly Expr $value,
+        /** The argument as written, for [CallerArgumentExpression]. */
+        public readonly ?string $text = null,
     ) {
     }
 }

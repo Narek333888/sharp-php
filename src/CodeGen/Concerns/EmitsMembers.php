@@ -758,6 +758,7 @@ trait EmitsMembers
             }
         }
 
+        $this->callerLine = $call->line;
         [$code, $values] = $this->arguments($args, $member->params, $subst, $elementHint, $runtime, phpCode: self::isPhpCode($member->owner));
         // Console.Write(chars) writes the chars (C#'s char[] overload); another array, its type's name.
         if (count($values) === 1 && in_array($member->name, ['Write', 'WriteLine'], true) && isset($values[0])
@@ -1381,10 +1382,40 @@ trait EmitsMembers
             $values[$i] = $value;
             $codes[] = ($arg->name !== null ? $arg->name . ': ' : '') . $value->code;
         }
+        // [CallerMemberName], [CallerLineNumber], [CallerFilePath], [CallerArgumentExpression("x")] of
+        // the parameters the call leaves out: what C# passes there.
+        $positional = count(array_filter($args, static fn ($a): bool => $a->name === null));
+        $named = array_values(array_filter(array_map(static fn ($a): ?string => $a->name, $args)));
+        foreach ($params as $j => $param) {
+            if ($param->callerInfo === null || $j < $positional || in_array($param->name, $named, true)) {
+                continue; // no caller info, or the call passes the parameter
+            }
+            [$kind, $of] = $param->callerInfo;
+            $value = match ($kind) {
+                'MemberName' => self::phpString($this->fn?->root()->memberName ?? ''),
+                'LineNumber' => (string) $this->callerLine,
+                'FilePath' => self::phpString($this->file->path),
+                default => null,
+            };
+            if ($kind === 'ArgumentExpression' && $of !== null) {
+                foreach ($params as $k => $candidate) {
+                    if ($candidate->name === $of) {
+                        $given = array_values(array_filter($args, static fn ($a): bool => $a->name === $of))[0] ?? ($args[$k] ?? null);
+                        $value = $given?->text !== null ? self::phpString($given->text) : null;
+                    }
+                }
+            }
+            if ($value !== null) {
+                $codes[] = $param->name . ': ' . $value;
+            }
+        }
         $this->lastOutDefaults = $outDefaults;
 
         return [implode(', ', $codes), $values];
     }
+
+    /** The line of the call whose arguments are being compiled, for [CallerLineNumber]. */
+    private int $callerLine = 0;
 
     /** @var list<array{0: string, 1: string}> the out variables of the last arguments() and their defaults */
     private array $lastOutDefaults = [];

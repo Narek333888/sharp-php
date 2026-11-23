@@ -16,6 +16,8 @@ final class ParameterSymbol
         public readonly bool $optional = false,
         /** Takes a number: a char argument is passed as its code (int|float in PHP, or "@sharp-char-as-int $name"). */
         public readonly bool $numeric = false,
+        /** @var array{0: string, 1: ?string}|null see Parameter::$callerInfo */
+        public readonly ?array $callerInfo = null,
     ) {
     }
 

@@ -16,10 +16,11 @@ class ArgumentNullException extends ArgumentException
         parent::__construct($message, $paramName);
     }
 
+    /** @sharp-caller-argument-expression $paramName argument */
     public static function ThrowIfNull(mixed $argument, ?string $paramName = null): void
     {
         if ($argument === null) {
-            throw new self(null, $paramName);
+            throw new self($paramName); // (paramName, message), as in C#
         }
     }
 }

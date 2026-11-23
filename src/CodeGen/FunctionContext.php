@@ -25,6 +25,9 @@ final class FunctionContext
     /** An async method or lambda: await may be used, returnType is the T of Task<T> (void for Task). */
     public bool $isAsync = false;
 
+    /** The member being compiled ([CallerMemberName]): "Save", ".ctor", "<Main>$"; lambdas take their method's. */
+    public ?string $memberName = null;
+
     /**
      * The variables and parameters this method (not a lambda) assigns after their declaration,
      * lambdas included: a lambda captures them by reference, so it sees later changes as in C#.
