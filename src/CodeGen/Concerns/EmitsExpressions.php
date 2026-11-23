@@ -1601,7 +1601,7 @@ trait EmitsExpressions
             $paramTypes = [];
             foreach ($e->params as $i => $param) {
                 $type = $param->type !== null ? $this->resolveType($param->type) : ($expectedParams[$i] ?? Type::mixed());
-                $decl = $param->type !== null ? $this->typeDecl($type) . ' ' : '';
+                $decl = $param->type !== null ? $this->signatureTypeDecl($type) . ' ' : '';
                 $ref = in_array($param->modifier, ['ref', 'out'], true) ? '&' : '';
                 $params[] = $decl . $ref . '$' . $param->name;
                 $paramTypes[] = $type;

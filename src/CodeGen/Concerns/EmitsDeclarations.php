@@ -564,7 +564,7 @@ trait EmitsDeclarations
                     foreach ($decl->recordParams as $param) {
                         $type = $symbol->members[$param->name]->type;
                         $default = $param->default !== null ? ' = ' . $this->constantValue($param->default, $type) : '';
-                        $params[] = 'public readonly ' . $this->typeDecl($type) . ' $' . $param->name . $default;
+                        $params[] = 'public readonly ' . $this->signatureTypeDecl($type) . ' $' . $param->name . $default;
                         $this->scope->declare($param->name, $type);
                     }
                     $this->w->line("$visibility function __construct(");
@@ -737,8 +737,12 @@ trait EmitsDeclarations
                 $prefix = ($abstract && !$inInterface ? 'abstract ' : '')
                     . (in_array('sealed', $modifiers, true) ? 'final ' : '')
                     . $visibility . ($static ? ' static' : '');
-                $params = $this->parameters($method->params, $inInterface ? null : $this->inheritedMethod($method->name));
-                $return = $isGenerator ? 'iterable' : ($member->phpArrayOf !== null ? ($member->type->nullable ? '?array' : 'array') : $this->typeDecl($member->type));
+                $inherited = $inInterface ? null : $this->inheritedMethod($method->name);
+                $params = $this->parameters($method->params, $inherited);
+                // A result may be null, as in C#; not where PHP code declared the method (a PHP parent's
+                // "string" result cannot become "?string"), nor ToString (PHP's __toString returns it).
+                $returnNullable = ($inherited === null || !$inherited->owner->external) && $method->name !== 'ToString';
+                $return = $isGenerator ? 'iterable' : ($member->phpArrayOf !== null ? ($member->type->nullable ? '?array' : 'array') : ($returnNullable ? $this->signatureTypeDecl($member->type) : $this->typeDecl($member->type)));
                 $signature = "$prefix function " . ($member->phpName ?? $method->name) . "($params)" . ($return !== null ? ": $return" : '');
 
                 if ($method->body === null && $method->exprBody === null) {
@@ -964,10 +968,10 @@ trait EmitsDeclarations
                 $default = ' = ' . $this->constantValue($param->default, $type);
             }
 
-            $decl = $this->typeDecl($type);
+            $decl = $this->signatureTypeDecl($type);
             // PHP code may pass a plain array where a List, Dictionary or HashSet is expected.
             if ($prefix === '' && $this->conversions->collectionName($type, exact: true) !== null) {
-                $decl = $this->typeDecl($type->withNullable(false)) . '|array' . ($type->nullable ? '|null' : '');
+                $decl = $this->typeDecl($type->withNullable(false)) . '|array|null';
                 $conversion = $this->convertedAtPhpBoundary(Emitted::value('$' . $param->name, Type::phpArray()), $type->withNullable(false));
                 $this->paramConversions[] = "if (\\is_array(\${$param->name})) {\n    \${$param->name} = {$conversion->code};\n}";
             }

@@ -256,6 +256,29 @@ final class Emitter
         return $type->phpDeclaration(fn (string $fqn): string => $this->classRef($fqn));
     }
 
+    /**
+     * The PHP type of a parameter or a result: a reference type (string, a class, an array, a delegate)
+     * allows null, as in C#, where "string" without "?" is only an annotation (null is a warning).
+     */
+    private function signatureTypeDecl(Type $type): ?string
+    {
+        return $this->typeDecl($this->allowsNull($type) ? $type->withNullable() : $type);
+    }
+
+    /** Whether C# lets null into the type at run time: every reference type. */
+    private function allowsNull(Type $type): bool
+    {
+        if ($type->nullable || in_array($type->kind, ['string', 'array', 'iterable', 'closure'], true)) {
+            return true;
+        }
+        if ($type->kind !== 'class') {
+            return false;
+        }
+        $symbol = $this->symbolForType($type);
+
+        return $symbol !== null && !$symbol->isEnum() && !$symbol->isStruct;
+    }
+
     private function resolveType(TypeRef $ref): Type
     {
         $type = $this->resolver->resolve($ref, $this->ctx, $this->typeParamsInScope());
