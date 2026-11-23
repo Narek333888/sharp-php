@@ -1,5 +1,92 @@
 # Changelog
 
+## 0.9.0
+
+**Integral types are checked as in C#** (they were all one type, so `byte b = 10000;` compiled and printed 10000):
+
+- `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong` are distinct types: a constant must fit
+  (`byte x = 10000;` is CS0031), narrowing needs a cast (`byte z = x + y;` is CS0266: `byte + byte` is an `int`),
+  `(short)70000` is CS0221; arithmetic promotes as in C# (`int + long` is a `long`, `uint + int` a `long`, `-uint`
+  a `long`); literals have C#'s types (`10L`, `10u`, `10UL`, `3000000000` is a `uint`); `char` converts to `ushort`
+  and wider
+- Casts cut the value as C# does without overflow checks (`(byte)x` of 300 is 44, `(int)` of a long keeps 32 bits),
+  and `+=`, `++`, `--` on `byte`, `sbyte`, `short`, `ushort` and `uint` wrap (`byte` 255 + 1 is 0), also on list
+  elements and properties
+- `Convert.ToByte`, `ToSByte`, `ToInt16`, `ToUInt16`, `ToUInt32`, `ToInt64`, `ToUInt64`, `ToChar`, with
+  `OverflowException` out of range (also `ToInt32`, which returned any number)
+- Integers of PHP code and of the runtime library have no size the compiler knows, so they convert to every
+  integral type (`byte b = byte.Parse(s)` compiles, as in C#)
+
+**Delegates, events and threads:**
+
+- Delegate types: `delegate int Transform(int x);` (generic, or declared in a class), `new Transform(Square)`,
+  `Invoke`; multicast delegates: `a += b`, `a -= b`, `a + b`, `GetInvocationList()` (`a += b` threw at run time)
+- Events: `public event Action? Changed;`, raised with `Changed?.Invoke()`; outside the class only `+=` and `-=`
+  (CS0070); an event must have a delegate type (CS0066)
+- `lock (gate) { ... }` (was a compile error), with C#'s rules (CS0185, CS1996)
+- `CancellationTokenSource`, `CancellationToken`, `OperationCanceledException`, `TaskCanceledException`,
+  `Task.Delay(ms, token)`, `Task.Run(func, token)`, `Task.IsCanceled`, `Timeout.Infinite` (`Task.Delay(-1)` ended at
+  once)
+- `Thread` (on fibers: threads take turns while the program waits), `Thread.Sleep`, `Interlocked`, `Parallel.For`,
+  `ForEach`, `Invoke`, `ForEachAsync`
+
+**System.IO, filled in:**
+
+- `StreamReader`, `StreamWriter`, `StringReader`, `StringWriter` (`using var writer = new StreamWriter(path)`),
+  `FileInfo`, `DirectoryInfo`, `SearchOption.AllDirectories`
+- `File.ReadLines`, `ReadAllBytes`, `WriteAllBytes`, `OpenText`, `CreateText`, `AppendText`, `GetLastWriteTime`, and
+  `ReadAllTextAsync`, `WriteAllTextAsync`, ... ; an `Encoding` for the text methods
+- `Directory.GetFileSystemEntries`, `EnumerateFiles`, `EnumerateDirectories`, `Move`, `GetParent`,
+  `SetCurrentDirectory`; `CreateDirectory` returns a `DirectoryInfo`
+- `Path.Join`, `GetRelativePath`, `GetPathRoot`, `EndsInDirectorySeparator`, `TrimEndingDirectorySeparator`,
+  `GetTempFileName`, `GetInvalidFileNameChars`
+- `System.Text.Encoding` (`UTF8`, `ASCII`, `Unicode`, `UTF32`, `Latin1`: `GetBytes`, `GetString`)
+
+**LINQ and iterators behave as in C#:**
+
+- An iterator method (`yield return`) can be enumerated more than once (the second `foreach` threw "Cannot
+  traverse an already closed generator"); its body runs on each enumeration, and nothing runs before the first
+- LINQ is deferred: `Where`, `Select`, `SelectMany`, `Take`, `Skip`, `TakeWhile`, `SkipWhile`, `Distinct`,
+  `DistinctBy`, `Concat`, `Zip`, `Chunk`, `Reverse`, `GroupBy`, `OrderBy`/`ThenBy`, `Enumerable.Range` and `Repeat`
+  return an `IEnumerable<T>` that runs when it is enumerated. Endless sequences work (`Naturals().Take(5)` ran out
+  of memory), `First`/`Any`/`Take` stop early, and chains build no lists in between (faster and smaller)
+- **Breaking, for code that was not valid C#:** a query is an `IEnumerable<T>`, not a `List<T>`: `query.Count`
+  (use `Count()`), `query[0]` (use `First()` or `ElementAt(0)`), `List<int> l = query;` (use `ToList()`) and
+  `query.Add(...)` are compile errors now, as in C#
+- `Distinct`, `DistinctBy` and `GroupBy` take linear time (they compared every pair: 300 000 elements took 45 s);
+  `OrderBy` sorts 300 000 elements by two keys in about a quarter of the memory
+- `Single` stops at a second match and has .NET's messages ("Sequence contains more than one matching element")
+- `Sum`, `Min`, `Max` and `Aggregate` have the type of the elements (or of what the selector returns): `bool b =
+  list.Sum();` was accepted
+- LINQ on arrays infers the element type (`new[] { 1 }.Where(...)` was an `IEnumerable<TSource>`), and the runtime's
+  `IEnumerable<T>` parameters are checked: `new HashSet<int>(new[] { "a" })` is CS1503
+
+**Equality as in C#:**
+
+- `HashSet` items and `Dictionary` keys use `Equals` and `GetHashCode`: records, structs, `DateTime`, `TimeSpan`,
+  `Guid` and classes that override them are found by value (`dict[new Point(0, 0)]` threw `KeyNotFoundException`,
+  a `HashSet<DateTime>` kept duplicates); `0.1 + 0.2` and `0.3` are different `double` keys
+- Records compare every field exactly (`new R(null)` equaled `new R("")` and `new R(0)`, and `"1"` equaled `"01"`,
+  by PHP's loose comparison) and have a matching `GetHashCode()`; structs are equal by their fields (as
+  `ValueType.Equals`); `GetHashCode()` of numbers and strings is stable
+
+**Collection interfaces:**
+
+- `IList<T>`, `ICollection<T>`, `IReadOnlyList<T>`, `IReadOnlyCollection<T>` have their members: `Count`, an indexer,
+  `Add`, `Remove`, `Clear`, `Insert`, `RemoveAt`, `IndexOf` (`ICollection<Order> Orders = new List<Order>();
+  Orders.Add(o)` did not compile); `IEnumerable<T>` has no `Count` or indexer, as in C#
+- Conversions follow .NET: a `List` is every one of them, `HashSet`/`Dictionary` an `ICollection`, `Queue`/`Stack` an
+  `IReadOnlyCollection`, an array an `IList` (of a fixed size); `IList<T>` and `ICollection<T>` are invariant; an
+  `IEnumerable<T>` becomes a class or an array only with a cast (checked: `InvalidCastException`)
+- `x is IList<int>` (and other generic or array types without a variable) was parsed as a constant
+
+Fixed:
+
+- `new Num(0)` passed no argument when the constructor has one parameter (an `int?`): the argument `0` was dropped
+- `"n = " + query.Count`, with `Count` a method, printed `System.Delegate`; it is CS0019, as in C#
+- `using var x = ...;` in top-level statements after other statements was taken for a using directive
+- A delegate declaration gave "Anonymous methods are not supported"
+
 ## 0.8.2
 
 Laravel, checked in a Laravel 13 app (controllers, models, relationships, form requests, validation,

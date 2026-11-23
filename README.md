@@ -30,9 +30,9 @@ public record Person(string Name, int Age);
 ## Features
 
 - **The C# you know:** classes, records, structs, interfaces, enums, properties, generics with constraints and
-  variance, extension methods and C# 14 extension blocks, local functions, lambdas and closures, LINQ, pattern
-  matching, `switch` expressions, exceptions with filters, `using` and `IDisposable`, `yield return`,
-  `async`/`await`: see the [Language guide](#language-guide)
+  variance, extension methods and C# 14 extension blocks, local functions, lambdas and closures, delegates and
+  events, LINQ, pattern matching, `switch` expressions, exceptions with filters, `using` and `IDisposable`,
+  `yield return`, `async`/`await`, `lock`: see the [Language guide](#language-guide)
 - **C#'s semantics, not PHP's:** integer division, value equality of records, banker's rounding, checked casts,
   `IndexOutOfRangeException` and `NullReferenceException`: see [Semantics that match C#](#semantics-that-match-c)
 - **The C# compiler's errors at compile time:** types, arguments, definite assignment, access rules, missing
@@ -76,12 +76,12 @@ composer require armdevstack/sharp-php
 ### Upgrading
 
 ```bash
-composer require armdevstack/sharp-php:^0.8  # a newer minor version: 0.7.x → 0.8.x
-composer update armdevstack/sharp-php        # bug-fix releases: 0.8.0 → 0.8.x
+composer require armdevstack/sharp-php:^0.9  # a newer minor version: 0.8.x → 0.9.x
+composer update armdevstack/sharp-php        # bug-fix releases: 0.9.0 → 0.9.x
 ```
 
 While SharpPHP is 0.x, a plain `composer update` stays within the minor version you installed: the
-constraint Composer writes for you, e.g. `^0.7.1`, means `>=0.7.1 <0.8.0`, because `^` does not cross a 0.x
+constraint Composer writes for you, e.g. `^0.8.2`, means `>=0.8.2 <0.9.0`, because `^` does not cross a 0.x
 minor version. Require the newer version once, as above, and `composer update` follows it from then on.
 `composer show armdevstack/sharp-php` prints the installed version; [CHANGELOG.md](CHANGELOG.md) lists
 what changed. The build in `var/sharp` is redone automatically after an upgrade.
@@ -398,12 +398,24 @@ The output directory contains the generated PHP (`classes/`) and `manifest.php` 
 - Single inheritance plus interfaces: `class Book : Product, IComparable<Book>`
 - Constructors with `: base(...)`, expression-bodied constructors, static constructors
 - Fields, `const`, `readonly`, `static`
+- Integral types as in C#: `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong` (and `char`) are
+  checked by the compiler: a constant must fit (`byte b = 300;` is CS0031), narrowing needs a cast
+  (`byte z = x + y;` is CS0266, as `byte + byte` is an `int`), arithmetic promotes (`int + long` is a `long`,
+  `uint + int` a `long`), and literals have C#'s types (`10L`, `10u`, `3000000000` is a `uint`). A cast cuts the
+  value as C# does without overflow checks (`(byte)300` of a variable is 44, `(int)` of a long keeps 32 bits), and
+  so do `+=`, `++` and `--` on `byte`, `sbyte`, `short`, `ushort` and `uint` (`byte` 255 + 1 is 0)
+- Delegate types: `delegate int Transform(int x);` (also generic, and declared inside a class), used like `Func<...>`:
+  lambdas, method groups, `new Transform(Square)`, `t(5)`, `t.Invoke(5)`. Delegates are multicast:
+  `handler += OnSave; handler -= OnSave;` (`Delegate.Combine`/`Remove`; a combined delegate calls each in turn and
+  returns the last result), `GetInvocationList()`
+- Events: `public event Action<string>? Changed;` and `event EventHandler<T>`; code outside the class can only
+  `+=` and `-=` them (CS0070), the class raises them with `Changed?.Invoke("x")`
 - Properties: auto (`{ get; set; }`, `{ get; private set; }`, `{ get; init; }`, get-only), with initializers, expression-bodied (`=> ...`), full `get { } set { }` with `value`, abstract and interface properties, static properties (with accessor bodies they become `get_Name()`/`set_Name()` methods)
 - Methods: `virtual` / `override` / `abstract` (an override may return a more derived type), expression bodies, default and named arguments, `params`, `ref`, `out` (incl. `out var x` and the discard `out _`), `in`
 - Extension methods and C# 14 extension blocks (`extension(string s) { ... }`, with extension properties and static extension members such as `string.Repeat(...)`), see [Extension methods](#extension-methods)
 - Local functions: `static int Square(int x) => x * x;` inside a method or in top-level statements, callable before their declaration, recursive, generic, iterators or `async`. They are compiled to private methods of the class, so they cannot use the local variables of the code around them (SP8421: pass them as parameters, or use a lambda); in an instance method they may use `this` and the class's members
 - Finalizers `~Name() { ... }`, which run when the object is freed (see [Memory](#memory))
-- Records: `record Point(int X, int Y);` with value equality (`==`), C#-style `ToString()` (every public property) and `with` expressions (`p with { X = 5 }`)
+- Records: `record Point(int X, int Y);` with value equality (`==`, `Equals` and `GetHashCode` by every field, so records work as `Dictionary` keys and `HashSet` items), C#-style `ToString()` (every public property) and `with` expressions (`p with { X = 5 }`); structs are equal by their fields too
 - Enums: `enum Color { Red, Green = 5 }`, `(int)color`, `(Color)1`, `color.ToString()`, and `System.Enum`: `Enum.GetNames(typeof(Color))`, `Enum.GetValues<Color>()`, `Enum.Parse<Color>("Green")` (also `ignoreCase: true`), `Enum.TryParse<Color>(text, out var c)`, `Enum.IsDefined(typeof(Color), 2)`, `Enum.GetName(...)`. `[Flags]` combinations (`A | B`) do not exist: see [Differences from C#](#differences-from-c)
 - Nullable value types: `int?`, `Color?`, `DateTime?` with `HasValue`, `Value` (`InvalidOperationException` when there is none) and `GetValueOrDefault()`; `default(T)`, new arrays and `FirstOrDefault()` give C#'s defaults (`0`, `false`, an enum's member of value 0, `DateTime.MinValue`, `null` for `int?`)
 
@@ -489,7 +501,10 @@ only methods and properties can be declared in a block.
 - `switch` statements (with patterns and `when`), `switch` expressions
 - `try`/`catch`/`finally`, exception filters (`catch (E e) when (...)`), `throw;`, throw expressions (`x ?? throw ...`)
 - `using (var file = Open()) { ... }`, `using (expression) ...` and `using var file = Open();` (disposed at the end of the block): `Dispose()` runs however the block is left, in reverse order for several resources
-- `yield return` / `yield break` with `IEnumerable<T>`
+- `yield return` / `yield break` with `IEnumerable<T>`: as in C#, the method's body runs when the result is enumerated, again
+  on every `foreach`, and only as far as it is read, so a sequence can be endless (`Naturals().Take(5)`)
+- `lock (gate) { ... }`: SharpPHP code runs on one thread, so a lock is always free; C#'s rules hold (the gate is an
+  object, not `null`; no `await` inside, CS1996)
 - Lambdas `x => x * 2`, `(a, b) => { ... }`, method groups (`list.ForEach(Print)`), closures with C#'s capture semantics: a lambda sees the variable, not a copy (`Func<int> get = () => count; count = 10; get()` is 10), a `for` loop's variable is one variable for all iterations, and a variable declared in a loop body is a new one in every iteration
 - A string is an `IEnumerable<char>`: `foreach (char c in text)`, `text.Reverse()`, `text.Count(char.IsDigit)`, `text.Distinct()`, `new HashSet<char>(text)`; `string`'s own methods (`Contains`, `IndexOf`, ...) win over LINQ's
 - Pattern matching: `is T x`, `is null`, `is not null`, `is > 0 and < 10`, `or`, `not`, `var`, `_`, property patterns (`Circle { R: > 10 } c`, `{ Name: var n, Age: >= 18 }`, `{ Home.City: "Paris" }`)
@@ -539,7 +554,7 @@ below need a `using`.
 | `bool` | `Parse`, `TryParse`; `ToString()` gives `True` / `False` |
 | `DateTime` | `Now`, `UtcNow`, `Today`, `MinValue`, `MaxValue`, `UnixEpoch`; `new DateTime(2024, 12, 31[, 18, 30, 0[, 500]][, DateTimeKind.Utc])`, `new DateTime(ticks)`; `Year`, `Month`, `Day`, `Hour`, `Minute`, `Second`, `Millisecond`, `Microsecond`, `DayOfWeek`, `DayOfYear`, `Date`, `TimeOfDay`, `Ticks`, `Kind`; `Add`, `AddYears`, `AddMonths` (Jan 31 + 1 month is the end of February), `AddDays`, `AddHours`, `AddMinutes`, `AddSeconds`, `AddMilliseconds`, `AddTicks`, `Subtract`, `ToUniversalTime`, `ToLocalTime`, `SpecifyKind`, `Compare`, `CompareTo`, `Equals`, `DaysInMonth`, `IsLeapYear`; `ToString()` with the standard formats (`d`, `D`, `f`, `F`, `g`, `G`, `M`, `o`, `R`, `s`, `t`, `T`, `u`, `U`, `Y`) and custom ones (`yyyy-MM-dd HH:mm:ss.fff`, `ddd`, `dddd`, `MMM`, `MMMM`, `h`, `tt`, `zzz`, `K`, `'literal'`), also `$"{date:yyyy-MM-dd}"`; `ToShortDateString`, `ToLongDateString`, `ToShortTimeString`, `ToLongTimeString`; `Parse`, `TryParse`, `ParseExact`; `date - date` (a `TimeSpan`), `date + span`, `date - span`, `+=`, `-=`, `<`, `>`, `<=`, `>=`, `==`, `!=`; JSON as ISO 8601 (`"2024-01-15T09:30:00"`); `DateTimeKind`, `DayOfWeek` |
 | `TimeSpan` | `new TimeSpan(h, m, s)`, `(d, h, m, s[, ms])`, `(ticks)`; `FromDays`, `FromHours`, `FromMinutes`, `FromSeconds`, `FromMilliseconds`, `FromTicks`, `Zero`, `MaxValue`, `MinValue`; `Days`, `Hours`, `Minutes`, `Seconds`, `Milliseconds`, `Microseconds`, `Ticks`, `TotalDays`, `TotalHours`, `TotalMinutes`, `TotalSeconds`, `TotalMilliseconds`; `Add`, `Subtract`, `Negate`, `Duration`, `Multiply`, `Divide`, `Compare`, `CompareTo`, `Equals`; `ToString()` (`c`, `g`, `G`, custom `hh\:mm\:ss`, `d\.hh\:mm`), `Parse`, `TryParse`; `+`, `-`, `-span`, comparisons; `OverflowException` beyond its range |
-| `Convert` | `ToBoolean`, `ToDouble`, `ToInt32`, `ToString` |
+| `Convert` | `ToBoolean`, `ToDouble`, `ToString`, `ToChar`, `ToInt32`, `ToInt64`, `ToInt16`, `ToByte`, `ToSByte`, `ToUInt16`, `ToUInt32`, `ToUInt64` (doubles rounded to even, `OverflowException` out of range, `Convert.ToInt32('A')` is 65) |
 | `Environment` | `NewLine`, `Exit`, `GetEnvironmentVariable` |
 | `Random` | `Next`, `NextDouble` |
 | `Array` | `Empty`, `Exists`, `Fill`, `Find`, `IndexOf`, `Resize`, `Reverse`, `Sort`; arrays have `Length` and the LINQ methods |
@@ -548,20 +563,26 @@ below need a `using`.
 | `Guid` | `NewGuid`, `Parse`, `TryParse`, `Empty`, `ToString()` / `ToString("N")` (`"B"`, `"P"`), `==` and `!=` by value, `Equals`, `CompareTo`; JSON as its text |
 | `List<T>` | `Count`, `list[i]`, `Capacity` (grows as in .NET; it is never a limit), `Add`, `AddRange`, `Clear`, `Contains`, `EnsureCapacity`, `Exists`, `Find`, `FindAll`, `FindIndex`, `ForEach`, `GetRange`, `IndexOf`, `Insert`, `Remove`, `RemoveAll`, `RemoveAt`, `Reverse`, `Sort`, `ToArray`, `TrimExcess`, `TrueForAll`; `new List<T>(capacity)`, `new List<T>(collection)` |
 | `Dictionary<TKey, TValue>` | `Count`, `Keys`, `Values`, `dict[key]` (`KeyNotFoundException` when missing), `Add`, `Clear`, `ContainsKey`, `ContainsValue`, `GetValueOrDefault`, `Remove`, `TryAdd`, `TryGetValue`; `foreach (var (key, value) in dict)`, `KeyValuePair` |
-| `HashSet<T>` | `Count`, `Add`, `Clear`, `Contains`, `ExceptWith`, `IntersectWith`, `Remove`, `UnionWith` |
+| `HashSet<T>` | `Count`, `Add`, `Clear`, `Contains`, `ExceptWith`, `IntersectWith`, `Remove`, `UnionWith`; like `Dictionary` keys, items are equal as .NET's default comparer sees them: numbers and strings by value, records, structs, `DateTime`, `TimeSpan`, `Guid` and classes overriding `Equals`/`GetHashCode` by those, other objects by reference |
+| `IEnumerable<T>`, `ICollection<T>`, `IList<T>`, `IReadOnlyCollection<T>`, `IReadOnlyList<T>` | what each has in .NET: `IEnumerable<T>` only LINQ (`Count()`), the collections `Count`, the lists `list[i]` (read-only for `IReadOnlyList`), `ICollection<T>` `Add`, `Remove`, `Clear`, `Contains`, `IList<T>` also `IndexOf`, `Insert`, `RemoveAt`; a `List` is all of them, `HashSet` and `Dictionary` an `ICollection`, `Queue` and `Stack` an `IReadOnlyCollection`, an array an `IList` of a fixed size (`Add` throws `NotSupportedException`) |
 | `Queue<T>` / `Stack<T>` | `Count`, `Enqueue`, `Dequeue`, `TryDequeue`, `Peek`, `Clear` / `Count`, `Push`, `Pop`, `Peek`, `Clear` |
-| LINQ, on arrays, collections and strings | `Aggregate`, `All`, `Any`, `Average`, `Chunk`, `Concat`, `Contains`, `Count`, `Distinct`, `DistinctBy`, `ElementAt`, `First`, `FirstOrDefault`, `GroupBy`, `Last`, `LastOrDefault`, `Max`, `MaxBy`, `Min`, `MinBy`, `OrderBy`, `OrderByDescending` (then `ThenBy`, `ThenByDescending`), `Reverse`, `Select`, `SelectMany`, `SequenceEqual`, `Single`, `Skip`, `SkipWhile`, `Sum`, `Take`, `TakeWhile`, `ToArray`, `ToDictionary`, `ToList`, `Where`, `Zip` (with a result selector); `Enumerable.Range`, `Enumerable.Repeat` |
-| `Task`, `Task<T>` | `Run`, `Delay`, `WhenAll`, `WhenAny`, `FromResult`, `FromException`, `CompletedTask`; `Result`, `Wait`, `IsCompleted`, `IsCompletedSuccessfully`, `IsFaulted`, `Exception`: see [Async and await](#async-and-await) |
+| LINQ, on arrays, collections and strings | `Aggregate`, `All`, `Any`, `Average`, `Chunk`, `Concat`, `Contains`, `Count`, `Distinct`, `DistinctBy`, `ElementAt`, `First`, `FirstOrDefault`, `GroupBy`, `Last`, `LastOrDefault`, `Max`, `MaxBy`, `Min`, `MinBy`, `OrderBy`, `OrderByDescending` (then `ThenBy`, `ThenByDescending`), `Reverse`, `Select`, `SelectMany`, `SequenceEqual`, `Single`, `Skip`, `SkipWhile`, `Sum`, `Take`, `TakeWhile`, `ToArray`, `ToDictionary`, `ToList`, `Where`, `Zip` (with a result selector); `Enumerable.Range`, `Enumerable.Repeat`; deferred, as in .NET: `Where`, `Select`, `Take`, `OrderBy`, `GroupBy`, ... return an `IEnumerable<T>` that reads its source when it is enumerated (and again each time, seeing the source's changes), and `ToList()`, `ToArray()`, `Count()`, `Sum()`, `First()`, ... run it |
+| `Task`, `Task<T>` | `Run(func[, token])`, `Delay(ms[, token])`, `WhenAll`, `WhenAny`, `FromResult`, `FromException`, `CompletedTask`; `Result`, `Wait`, `IsCompleted`, `IsCompletedSuccessfully`, `IsFaulted`, `IsCanceled`, `Exception`: see [Async and await](#async-and-await) |
+| Cancellation (`System.Threading`) | `CancellationTokenSource` (`Token`, `Cancel`, `CancelAfter`, `IsCancellationRequested`, `CreateLinkedTokenSource`, `Dispose`, `new CancellationTokenSource(ms)`), `CancellationToken` (`IsCancellationRequested`, `ThrowIfCancellationRequested`, `Register`, `CanBeCanceled`, `None`, `default`), `Timeout.Infinite`; a canceled `Task.Delay` throws `TaskCanceledException` |
+| Threads (`System.Threading`) | `Thread` (`new Thread(() => ...)`, `Start`, `Join`, `IsAlive`, `Name`, `ManagedThreadId`, `Thread.Sleep`, `Thread.CurrentThread`), `Interlocked` (`Increment`, `Decrement`, `Add`, `Exchange`, `CompareExchange`), `Parallel` (`For`, `ForEach`, `Invoke`, `ForEachAsync`): see [Differences from C#](#differences-from-c) for what one thread means |
 | `HttpClient` (needs `ext-curl`) | `GetStringAsync`, `GetAsync`, `PostAsync`, `PutAsync`, `DeleteAsync`, `AddDefaultHeader`, `BaseAddress`, `Timeout`, `Dispose`; `HttpResponseMessage` (`StatusCode`, `IsSuccessStatusCode`, `ReasonPhrase`, `Headers`, `Content.ReadAsStringAsync()`, `EnsureSuccessStatusCode()`), `StringContent` |
 | `WebUtility` (`System.Net`) | `HtmlEncode`, `HtmlDecode`, `UrlEncode`, `UrlDecode` |
 | `Regex` (`System.Text.RegularExpressions`) | static and instance (`new Regex(pattern[, options])`): `IsMatch`, `Match`, `Matches`, `Replace` (with `$1`, `${name}`, `$0`, `$$`, or a `m => ...` evaluator), `Split`; `Regex.Escape`; `Match` (`Success`, `Value`, `Index`, `Length`, `Groups[1]` / `Groups["name"]`, `NextMatch()`), `MatchCollection` (a list: `Count`, `[i]`, `foreach`, LINQ), `RegexOptions` (`IgnoreCase`, `Multiline`, `Singleline`, `IgnorePatternWhitespace`, `ExplicitCapture`; several: `(int)RegexOptions.IgnoreCase \| (int)RegexOptions.Multiline`). Patterns run on PHP's PCRE, which reads .NET's syntax |
-| `File`, `Path`, `Directory` (`System.IO`) | `File`: `ReadAllText`, `ReadAllLines`, `WriteAllText`, `WriteAllLines`, `AppendAllText`, `AppendAllLines`, `Exists`, `Delete`, `Copy`, `Move` (UTF-8); `Path`: `Combine`, `GetFileName`, `GetFileNameWithoutExtension`, `GetExtension`, `HasExtension`, `GetDirectoryName`, `ChangeExtension`, `GetFullPath`, `IsPathRooted`, `GetTempPath`, `GetRandomFileName`; `Directory`: `Exists`, `CreateDirectory`, `GetFiles(path[, "*.log"])`, `GetDirectories`, `Delete(path[, recursive])`, `GetCurrentDirectory`; `IOException`, `FileNotFoundException`, `DirectoryNotFoundException` |
+| `File` (`System.IO`) | `ReadAllText`, `ReadAllLines`, `ReadLines` (one line at a time), `ReadAllBytes`, `WriteAllText`, `WriteAllLines`, `WriteAllBytes`, `AppendAllText`, `AppendAllLines` (UTF-8, or an `Encoding`), the `...Async` forms of these, `OpenText`, `CreateText`, `AppendText`, `Exists`, `Delete`, `Copy`, `Move`, `GetLastWriteTime` |
+| `Directory`, `Path` (`System.IO`) | `Directory`: `Exists`, `CreateDirectory` (returns a `DirectoryInfo`), `GetFiles` / `GetDirectories` / `GetFileSystemEntries` / `EnumerateFiles` / `EnumerateDirectories` (`(path[, "*.log"[, SearchOption.AllDirectories]])`), `Delete(path[, recursive])`, `Move`, `GetParent`, `GetCurrentDirectory`, `SetCurrentDirectory`, `GetLastWriteTime`; `Path`: `Combine`, `Join`, `GetFileName`, `GetFileNameWithoutExtension`, `GetExtension`, `HasExtension`, `GetDirectoryName`, `ChangeExtension`, `GetFullPath`, `GetRelativePath`, `GetPathRoot`, `IsPathRooted`, `EndsInDirectorySeparator`, `TrimEndingDirectorySeparator`, `GetTempPath`, `GetTempFileName`, `GetRandomFileName`, `GetInvalidFileNameChars` |
+| Readers, writers, infos (`System.IO`) | `StreamReader(path)` and `StringReader` (`ReadLine`, `ReadToEnd`, `Read`, `Peek`, `EndOfStream`, `ReadLineAsync`, `ReadToEndAsync`), `StreamWriter(path[, append])` and `StringWriter` (`Write`, `WriteLine` (also with a format), `Flush`, `AutoFlush`, `NewLine`, `WriteAsync`, `WriteLineAsync`; a `StreamWriter` writes on `Flush` and `Dispose`), all `IDisposable` for `using`; `FileInfo` (`Name`, `FullName`, `Extension`, `Length`, `Exists`, `DirectoryName`, `Directory`, `LastWriteTime`, `IsReadOnly`, `Delete`, `CopyTo`, `MoveTo`, `OpenText`, `CreateText`, `AppendText`), `DirectoryInfo` (`Name`, `FullName`, `Parent`, `Exists`, `Create`, `CreateSubdirectory`, `Delete`, `GetFiles`, `GetDirectories`, `MoveTo`); `IOException`, `FileNotFoundException`, `DirectoryNotFoundException` |
+| `Encoding` (`System.Text`) | `UTF8`, `ASCII`, `Unicode`, `BigEndianUnicode`, `UTF32`, `Latin1`: `GetBytes`, `GetString`, `GetByteCount` (`byte[]`) |
 | `Stopwatch` (`System.Diagnostics`) | `StartNew`, `Start`, `Stop`, `Reset`, `Restart`, `IsRunning`, `Elapsed`, `ElapsedMilliseconds`, `ElapsedTicks`, `GetTimestamp`, `Frequency` |
 | `JsonSerializer` (`System.Text.Json`) | `Serialize(value, options)` with `JsonSerializerOptions` (`WriteIndented`, `PropertyNamingPolicy = JsonNamingPolicy.CamelCase`) |
 | `System.Web` | `WebApp`, `HttpRequest`, `HttpResponse`, `Results`, `IResult`: see [Web apps](#web-apps) |
 | Memory | `GC` (`Collect`, `CollectionCount`, `GetTotalMemory`, `KeepAlive`, `ReRegisterForFinalize`, `SuppressFinalize`, `WaitForPendingFinalizers`), `WeakReference<T>`, `WeakReference`, `ConditionalWeakTable<TKey, TValue>` (`System.Runtime.CompilerServices`), `new object()`: see [Memory](#memory) |
-| Interfaces | `IDisposable` (for `using`), `IComparable<T>` (for `OrderBy` and `Sort`), `IEquatable<T>`, `IEnumerable<T>` |
-| Exceptions | `Exception` (`Message`, `InnerException`, `StackTrace`), `SystemException`, `ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`, `ArithmeticException`, `DivideByZeroException`, `FormatException`, `IndexOutOfRangeException`, `InvalidCastException`, `InvalidOperationException`, `KeyNotFoundException`, `NotImplementedException`, `NotSupportedException`, `NullReferenceException`, `OverflowException`, `TimeoutException`, `HttpRequestException`, `IOException`, `FileNotFoundException`, `DirectoryNotFoundException`; classes of your own can derive from them |
+| Interfaces | `IDisposable` (for `using`), `IComparable<T>` (for `OrderBy` and `Sort`), `IEquatable<T>`, and the collection interfaces above |
+| Exceptions | `Exception` (`Message`, `InnerException`, `StackTrace`), `SystemException`, `ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`, `ArithmeticException`, `DivideByZeroException`, `FormatException`, `IndexOutOfRangeException`, `InvalidCastException`, `InvalidOperationException`, `KeyNotFoundException`, `NotImplementedException`, `NotSupportedException`, `NullReferenceException`, `OverflowException`, `TimeoutException`, `HttpRequestException`, `IOException`, `FileNotFoundException`, `DirectoryNotFoundException`, `ObjectDisposedException`, `OperationCanceledException`, `TaskCanceledException`; classes of your own can derive from them |
 
 ## Async and await
 
@@ -605,8 +626,28 @@ public class Program
 - **Lambdas:** `async () => await LoadAsync()`, `async x => { ...; return x; }` for `Func<Task>`, `Func<int, Task<string>>`, ...
 - **Task:** `Task.Run(() => ...)`, `Task.Delay(ms)`, `Task.WhenAll(tasks)` (a `T[]` of the results, in order;
   also for a collection of tasks), `Task.WhenAny(tasks)`, `Task.FromResult(x)`, `Task.CompletedTask`; on a task:
-  `.Result` and `.Wait()` (blocking), `IsCompleted`, `IsFaulted`, `Exception`. An exception thrown in a task
-  comes out of the `await`.
+  `.Result` and `.Wait()` (blocking), `IsCompleted`, `IsFaulted`, `IsCanceled`, `Exception`. An exception thrown
+  in a task comes out of the `await`.
+- **Cancellation:** pass a `CancellationToken` and check it, as in .NET:
+
+  ```csharp
+  using var cts = new CancellationTokenSource();
+  cts.CancelAfter(500);
+  try
+  {
+      await Task.Delay(Timeout.Infinite, cts.Token);    // TaskCanceledException after 500 ms
+  }
+  catch (OperationCanceledException) { Console.WriteLine("canceled"); }
+
+  static async Task WorkAsync(CancellationToken token = default)
+  {
+      while (true)
+      {
+          token.ThrowIfCancellationRequested();
+          await Task.Delay(100, token);
+      }
+  }
+  ```
 - **HttpClient** (`System.Net.Http`, needs PHP's curl extension): `GetStringAsync`, `GetAsync`, `PostAsync`,
   `PutAsync`, `DeleteAsync` with `new StringContent(text, null, "application/json")`; `BaseAddress`, `Timeout`
   (seconds), `AddDefaultHeader(name, value)`. The response has `StatusCode`, `IsSuccessStatusCode`,
@@ -648,7 +689,7 @@ echo App\Pricing::Total([new App\Item('Book', 12.5, 2)], 'AM');
 
 | Where | What happens |
 |---|---|
-| A `List`, `Dictionary`, `HashSet` passed to PHP code that takes an `array` | it becomes a PHP array (a dictionary becomes `key => value`): `implode(", ", names)`, `Store.save(names)` |
+| A `List`, `Dictionary`, `HashSet` or a LINQ query passed to PHP code that takes an `array` | it becomes a PHP array (a dictionary becomes `key => value`): `implode(", ", names)`, `implode(", ", names.Where(n => n != ""))`, `Store.save(names)`; PHP's `count()` and `json_encode()` take a query as they take a list |
 | A PHP array assigned to (or passed as) a `List<T>`, `Dictionary<K, V>`, `HashSet<T>` | it becomes that collection, with C#'s element type checks: `Dictionary<string, int> stock = Store.stock();` |
 | PHP code passing an array to a SharpPHP method with a `List<T>` / `Dictionary<K, V>` / `HashSet<T>` parameter | the method converts it on entry: `Pricing::Total([$item1, $item2])` |
 | `json_encode()` (and Laravel's JSON responses) of a SharpPHP collection | a JSON array, or a JSON object for a dictionary |
@@ -833,7 +874,7 @@ Like the C# compiler, SharpPHP rejects at compile time (not at runtime):
 The checks never reject valid C#, so where SharpPHP cannot be sure it accepts the code:
 
 - a conversion is only rejected when both types are known: values of type `object`, `dynamic` or unconstrained type parameters, and untyped PHP code, are checked at runtime
-- all integer types are one type to the compiler, so narrowing (`int i = someLong;`) and nullable-to-value (`int i = maybeNull;`) assignments are not reported
+- integers of PHP code and of the runtime library have no size the compiler knows (PHP's `int`), so they convert to every integral type: `byte b = byte.Parse(s)` and `byte m = Math.Max(a, b)` compile, as in C#, and so does `byte b = someList.Count`, which C# rejects; nullable-to-value assignments (`int i = maybeNull;`) are not reported
 - assignments inside `&&`, `||` and `?:` count as definite assignments
 
 Uncaught exceptions are printed like .NET, with locations mapped back to the `.sphp` sources:
@@ -871,7 +912,6 @@ SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 - Finalizers run when the object is freed, at a known point (see [Memory](#memory)), not when a garbage collection happens to run
 - Arrays (`int[]`) are PHP arrays and are copied on assignment and when passed to a method (value semantics): a method that changes an element of an array parameter does not change the caller's array (pass a `List<T>` for that); a lambda that writes an element of a captured array changes it, as in C#
 - A `struct` is compiled to a class, so it has reference semantics: after `var b = a; b.X = 5;` `a.X` is 5 too (C# copies the struct). Prefer structs whose values do not change (`readonly struct`, get-only properties) or records with `with` expressions (`record struct` is not supported)
-- Integer arithmetic is 64-bit and does not wrap: `int.MaxValue + 1` is `2147483648`, not `-2147483648`
 - `ulong` is limited to `long.MaxValue` (there is no `ulong.MaxValue`)
 - `decimal`, `float` and `double` are all PHP floats (64-bit IEEE): `decimal` has double's precision (`0.1m + 0.2m == 0.3m` is false; compare money in cents, or round), and `10m / 3` is `3.33333333333333`. `ToString()` prints up to 15 significant digits for all three (as .NET Framework did for `double`), so `0.1 + 0.2` prints `0.3`; .NET Core prints `0.30000000000000004`, which `ToString("R")` gives
 - `[Flags]` enums: an enum value is a PHP enum case, so combinations such as `A | B` do not exist (a compile error, SP1010). Combine the numbers instead: `(int)A | (int)B`; `RegexOptions` parameters take such a number
@@ -881,10 +921,12 @@ SharpPHP is a C# *subset* on top of PHP's runtime. Notable differences:
 - There are no cultures: `DateTime` and `TimeSpan` format and parse as .NET's invariant culture does (`1/15/2024 9:30:00 AM`, English names), and local time is PHP's default time zone (`date_default_timezone_get()`). `DateTime.Parse` reads what PHP's date parser reads (ISO 8601, `1/15/2024 4:30 PM`, `January 15, 2024`), except relative dates such as `tomorrow`
 - A field of a struct type without an initializer (`public DateTime Due;`) is null until it is set; C# starts it at `DateTime.MinValue`. `default`, new arrays and `GetValueOrDefault()` give C#'s defaults
 - A named argument for a `params` parameter (`string.Join(separator: ",", values: words)`) is not supported; pass it positionally
-- `async`/`await` runs on one thread (Fibers and an event loop): waiting overlaps, CPU work does not; there is no `CancellationToken`, `ConfigureAwait`, `ValueTask` or `IAsyncEnumerable`
+- `async`/`await` runs on one thread (Fibers and an event loop): waiting overlaps, CPU work does not; there is no `ConfigureAwait`, `ValueTask` or `IAsyncEnumerable`
+- Threads take turns on that one thread: a `Thread` is a fiber that runs while the program waits (`Join`, `Thread.Sleep`, `await`), so code written for threads works, but CPU work is not spread over cores; `Parallel.For`/`ForEach` run the bodies one after another (`ForEachAsync` overlaps their waiting), `lock` and `Interlocked` never have to wait
+- `int` and `long` arithmetic is 64-bit and does not wrap (`int.MaxValue + 1` is `2147483648`, and `1 << 40` is not `256`); values stored in `byte`, `sbyte`, `short`, `ushort` and `uint` by `+=`, `++`, `--` and casts do wrap, as in C#
 - Local functions are compiled to private methods of the class: they cannot use the local variables and parameters of the code around them (SP8421), and two local functions of one class cannot have the same name (SP0128)
 - Extension properties of extension blocks are read-only
-- Not supported: nested types, operator overloading in your own types (`DateTime`, `TimeSpan` and `Guid` have their operators), indexers, events/delegates declarations, default interface methods (SP8701), LINQ query syntax, tuples, `goto`, `ref` locals and `ref` returns, raw string literals (`"""..."""`), positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters, `JsonSerializer.Deserialize` (use PHP's `json_decode`)
+- Not supported: nested types, operator overloading in your own types (`DateTime`, `TimeSpan` and `Guid` have their operators), indexers, events with `add`/`remove` accessors, anonymous methods (`delegate (int x) { ... }`: use a lambda), default interface methods (SP8701), LINQ query syntax, tuples, `goto`, `ref` locals and `ref` returns, raw string literals (`"""..."""`), positional patterns (`Point(0, 0)`), passing arguments to a base record, implementing `IEnumerable<T>` in a class (derive from `List<T>` instead), explicit interface implementations, `dynamic` arguments for `params` parameters, `JsonSerializer.Deserialize` (use PHP's `json_decode`)
 
 ## Development
 
