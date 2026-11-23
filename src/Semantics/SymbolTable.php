@@ -658,6 +658,8 @@ final class SymbolTable
                 $this->isNumericUnion($parameter->getType()) || preg_match('/@sharp-char-as-int\s+\$' . $name . '\b/', (string) $method->getDocComment()) === 1,
                 // "@sharp-caller-argument-expression $paramName argument": the text of the argument passed for $argument.
                 preg_match('/@sharp-caller-argument-expression\s+\$' . $name . '\s+(\w+)/', (string) $method->getDocComment(), $cae) === 1 ? ['ArgumentExpression', $cae[1]] : null,
+                // "@sharp-typed-numbers $name [elements]": see ParameterSymbol::$typedNumbers.
+                preg_match('/@sharp-typed-numbers\s+\$' . $name . '\b(\s+elements)?/', (string) $method->getDocComment(), $tn) === 1 ? (($tn[1] ?? '') !== '' ? 'elements' : 'value') : null,
             );
         }
 

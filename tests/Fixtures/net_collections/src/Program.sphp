@@ -34,3 +34,19 @@ Console.WriteLine(JsonSerializer.Serialize(new { Name = "q\" <a>&'+` é", Score 
 // Types and arrays as text.
 char[] letters = { 'h', 'i' }; Array.Reverse(letters);
 Console.WriteLine(letters); Console.WriteLine(new int[0]); Console.WriteLine(new List<int>().GetType().Name + " " + new Queue<string>());
+
+// Changing a Dictionary or HashSet during foreach, case by case.
+static void Try(string name, Action a) { try { a(); Console.WriteLine(name + ": ok"); } catch (InvalidOperationException) { Console.WriteLine(name + ": throws"); } }
+Try("dict remove current", () => { var d = new Dictionary<int, int> { { 1, 1 }, { 2, 2 }, { 3, 3 } }; var seen = ""; foreach (var kv in d) { seen += kv.Key; d.Remove(kv.Key); } Console.Write(seen + " " + d.Count + " "); });
+Try("dict remove later", () => { var d = new Dictionary<int, int> { { 1, 1 }, { 2, 2 }, { 3, 3 } }; var seen = ""; foreach (var kv in d) { seen += kv.Key; d.Remove(3); } Console.Write(seen + " "); });
+Try("dict remove middle first", () => { var d = new Dictionary<int, int> { { 1, 1 }, { 2, 2 }, { 3, 3 }, { 4, 4 } }; d.Remove(2); d[5] = 5; var seen = ""; foreach (var kv in d) { seen += kv.Key; if (kv.Key == 5) d.Remove(3); } Console.Write(seen + " "); });
+Try("dict clear", () => { var d = new Dictionary<int, int> { { 1, 1 }, { 2, 2 } }; var seen = ""; foreach (var kv in d) { seen += kv.Key; d.Clear(); } Console.Write(seen + " "); });
+Try("dict overwrite", () => { var d = new Dictionary<int, int> { { 1, 1 }, { 2, 2 } }; foreach (var kv in d) d[kv.Key] = 9; Console.Write(d[1] + " "); });
+Try("dict add at last", () => { var d = new Dictionary<int, int> { { 1, 1 }, { 2, 2 } }; foreach (var kv in d) if (kv.Key == 2) d[7] = 7; });
+Try("dict remove+add", () => { var d = new Dictionary<int, int> { { 1, 1 }, { 2, 2 } }; foreach (var kv in d) { d.Remove(2); d[2] = 2; } });
+Try("dict add existing fails", () => { var d = new Dictionary<int, int> { { 1, 1 } }; foreach (var kv in d) d.TryAdd(1, 5); });
+Try("set remove", () => { var s = new HashSet<int> { 1, 2, 3 }; var seen = ""; foreach (var x in s) { seen += x; s.Remove(2); } Console.Write(seen + " "); });
+Try("set add existing", () => { var s = new HashSet<int> { 1, 2 }; foreach (var x in s) s.Add(1); });
+Try("set add new", () => { var s = new HashSet<int> { 1, 2 }; foreach (var x in s) s.Add(3); });
+Try("set clear", () => { var s = new HashSet<int> { 1, 2 }; var seen = ""; foreach (var x in s) { seen += x; s.Clear(); } Console.Write(seen + " "); });
+Try("set except", () => { var s = new HashSet<int> { 1, 2, 3 }; var seen = ""; foreach (var x in s) { seen += x; s.ExceptWith(new[] { 3 }); } Console.Write(seen + " "); });

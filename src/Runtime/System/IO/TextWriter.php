@@ -21,12 +21,21 @@ abstract class TextWriter implements IDisposable
 
     abstract protected function append(string $text): void;
 
-    /** Writes a value as text (true is "True", a double 0.5 is "0.5"), or a composite format: Write("{0} items", n). */
+    /**
+     * Writes a value as text (true is "True", a double 0.5 is "0.5"), or a composite format: Write("{0} items", n).
+     *
+     * @sharp-typed-numbers $value
+     * @sharp-typed-numbers $args
+     */
     public function Write(mixed $value = '', mixed ...$args): void
     {
         $this->append($args !== [] && is_string($value) ? \SharpPhp\Runtime\System\String_::Format($value, ...$args) : Op::str($value));
     }
 
+    /**
+     * @sharp-typed-numbers $value
+     * @sharp-typed-numbers $args
+     */
     public function WriteLine(mixed $value = '', mixed ...$args): void
     {
         $this->Write($value, ...$args);

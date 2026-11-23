@@ -170,29 +170,31 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
     {
         $version = $this->version;
         $removals = $this->removals;
+        // Insertion order is the slot order while no slot is tracked. Entries removed while enumerating
+        // (which .NET allows) are skipped; an addition throws at the next step, also after the last entry.
         if ($this->slots === null) {
-            // Insertion order is the slot order. Entries removed while enumerating (which .NET
-            // allows) are skipped.
             foreach ($this->keys as $hash => $key) {
-                if ($removals !== $this->removals && !array_key_exists($hash, $this->keys)) {
-                    continue;
+                if ($version !== $this->version) {
+                    $this->assertNoAdditions($version, $removals);
+                    if (!array_key_exists($hash, $this->keys)) {
+                        continue;
+                    }
                 }
                 yield new KeyValuePair($key, $this->values[$hash]);
+            }
+        } else {
+            foreach ($this->orderedHashes($this->keys) as $hash) {
                 if ($version !== $this->version) {
-                    $this->assertVersion($version);
+                    $this->assertNoAdditions($version, $removals);
+                    if (!array_key_exists($hash, $this->keys)) {
+                        continue;
+                    }
                 }
+                yield new KeyValuePair($this->keys[$hash], $this->values[$hash]);
             }
-
-            return;
         }
-        foreach ($this->orderedHashes($this->keys) as $hash) {
-            if (!array_key_exists($hash, $this->keys)) {
-                continue;
-            }
-            yield new KeyValuePair($this->keys[$hash], $this->values[$hash]);
-            if ($version !== $this->version) {
-                $this->assertVersion($version);
-            }
+        if ($version !== $this->version) {
+            $this->assertNoAdditions($version, $removals);
         }
     }
 

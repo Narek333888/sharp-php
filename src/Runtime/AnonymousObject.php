@@ -14,19 +14,36 @@ namespace SharpPhp\Runtime;
 #[\AllowDynamicProperties]
 final class AnonymousObject implements \JsonSerializable
 {
-    /** @param array<string, mixed> $properties */
-    public function __construct(array $properties = [])
+    /**
+     * The C# types of the objects' double, float and decimal properties (which a PHP float does not
+     * know), beside the objects so that they are not properties.
+     *
+     * @var \WeakMap<self, array<string, 'double'|'float'|'decimal'>>|null
+     */
+    private static ?\WeakMap $numberTypes = null;
+
+    /**
+     * @param array<string, mixed> $properties
+     * @param array<string, 'double'|'float'|'decimal'> $numberTypes the compiler's types of the number properties
+     */
+    public function __construct(array $properties = [], array $numberTypes = [])
     {
         foreach ($properties as $name => $value) {
             $this->{$name} = $value;
+        }
+        if ($numberTypes !== []) {
+            self::$numberTypes ??= new \WeakMap();
+            self::$numberTypes[$this] = $numberTypes;
         }
     }
 
     public function ToString(): string
     {
+        $types = self::$numberTypes[$this] ?? [];
         $parts = [];
         foreach (get_object_vars($this) as $name => $value) {
-            $parts[] = $name . ' = ' . Op::str($value);
+            $type = $types[$name] ?? null;
+            $parts[] = $name . ' = ' . ($type !== null && (is_int($value) || is_float($value)) ? (new TypedNumber($value, $type))->text() : Op::str($value));
         }
 
         return $parts === [] ? '{ }' : '{ ' . implode(', ', $parts) . ' }';

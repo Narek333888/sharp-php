@@ -9,6 +9,12 @@ int? a = null; int? b = 5;
 Console.WriteLine(((a + b) == null) + " " + (a < b) + " " + (a <= b) + " " + (-a == null) + " " + (b * 3) + " " + (b > 2));
 bool? t = null; Console.WriteLine((t & false) + " " + (t | true) + " " + ((t & true) == null));
 int? counter = null; counter += 5; counter++; Console.WriteLine(counter == null);
+// Both operands are evaluated once, left to right, also when the first is null.
+int? none2 = null, two = 2, three = 3;
+Console.WriteLine((Trace(none2) + Trace(two)) == null); Console.WriteLine(Trace(two) + (Trace(three) + Trace(two))); Console.WriteLine((Trace(two) * Trace(three) - Trace(none2)) == null);
+Console.WriteLine(Trace(two) < Trace(three) + 1); Console.WriteLine(Trace(none2) >= Trace(two)); Console.WriteLine(-Trace(none2) == null); Console.WriteLine(-Trace(three));
+int zero = 0; try { var q = none2 + 5 / zero; Console.WriteLine("no exception"); } catch (DivideByZeroException) { Console.WriteLine("divide by zero"); }
+int? five = 5; five += Trace(five) * 2; Console.WriteLine(five);
 
 // Exception filters are tried in order.
 try { throw new InvalidOperationException("io"); } catch (ArgumentException) { Console.WriteLine("arg"); } catch (InvalidOperationException e) when (e.Message.Length > 5) { Console.WriteLine("long"); } catch (Exception e) when (e.Message == "io") { Console.WriteLine("filtered " + e.Message); }
@@ -44,6 +50,7 @@ try { object number = 5; var s = (string)number; } catch (InvalidCastException e
 Console.WriteLine(new Named(null).Equals(new Named("")) + " " + new Num(null).Equals(new Num(0)) + " " + (new Point(1, 2) == new Point(1, 2)) + " " + new Cell { X = 1 }.Equals(new Cell { X = 1 }));
 
 static int Count() { Holder.Calls++; return 1; }
+static int? Trace(int? value) { Console.Write("[" + value + "] "); return value; }
 static int Length(string s) => s == null ? -1 : s.Length;
 static void Where([CallerMemberName] string member = "", [CallerLineNumber] int line = 0) => Console.WriteLine(member + " " + line);
 

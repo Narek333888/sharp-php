@@ -56,7 +56,11 @@ final class StringBuilder implements \ArrayAccess
         $this->Capacity = is_int($value) ? $value : $capacity;
     }
 
-    /** Appends a value as text: a number, a bool ("True"), a char, an object's ToString(). */
+    /**
+     * Appends a value as text: a number, a bool ("True"), a char, an object's ToString().
+     *
+     * @sharp-typed-numbers $value
+     */
     public function Append(mixed $value): self
     {
         $this->text .= Op::str($value);
@@ -64,7 +68,11 @@ final class StringBuilder implements \ArrayAccess
         return $this;
     }
 
-    /** Appends the value, if any, and a line break (Environment.NewLine). */
+    /**
+     * Appends the value, if any, and a line break (Environment.NewLine).
+     *
+     * @sharp-typed-numbers $value
+     */
     public function AppendLine(mixed $value = ''): self
     {
         $this->text .= Op::str($value) . PHP_EOL;
@@ -72,7 +80,11 @@ final class StringBuilder implements \ArrayAccess
         return $this;
     }
 
-    /** sb.AppendFormat("{0} costs {1:F2}", name, price), as string.Format. */
+    /**
+     * sb.AppendFormat("{0} costs {1:F2}", name, price), as string.Format.
+     *
+     * @sharp-typed-numbers $args
+     */
     public function AppendFormat(string $format, mixed ...$args): self
     {
         $this->text .= String_::Format($format, ...$args);
@@ -80,7 +92,11 @@ final class StringBuilder implements \ArrayAccess
         return $this;
     }
 
-    /** sb.AppendJoin(", ", names), as string.Join. */
+    /**
+     * sb.AppendJoin(", ", names), as string.Join.
+     *
+     * @sharp-typed-numbers $values elements
+     */
     public function AppendJoin(string $separator, mixed ...$values): self
     {
         $this->text .= String_::Join($separator, ...$values);
@@ -88,6 +104,7 @@ final class StringBuilder implements \ArrayAccess
         return $this;
     }
 
+    /** @sharp-typed-numbers $value */
     public function Insert(int $index, mixed $value): self
     {
         $this->checkRange($index, 0, 'index');

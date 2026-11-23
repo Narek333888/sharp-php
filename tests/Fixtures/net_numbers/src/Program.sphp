@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
+using System.Text;
 
 // Expected output: what .NET 10 prints for this program (en-US).
 
@@ -36,3 +38,21 @@ Console.WriteLine(string.Join(" ", random.Next(), random.Next(), random.Next(100
 Console.WriteLine(string.Join(" ", "ß".ToUpper(), "ﬁ".ToUpper(), "ΣΑΣ".ToLower(), "ǅ".ToUpper(), char.ToUpper('ß')));
 Console.WriteLine(string.Join("|", "a,b,c,d".Split(',', 2)) + " " + string.Join("|", "a,,b,c".Split(',', 2, StringSplitOptions.RemoveEmptyEntries)) + " " + string.Join("|", " a , ,b ".Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) + " " + string.Join("|", "a b\tc".Split()));
 Console.WriteLine(string.Compare("a", "B", StringComparison.Ordinal) + " " + string.Compare("", "a", StringComparison.Ordinal) + " " + string.Compare("Z", "a", StringComparison.OrdinalIgnoreCase));
+
+// Numbers written as text by string.Format, Join, Concat, StringBuilder, TextWriter, Convert and
+// anonymous types: each as its C# type writes it.
+double tx = 0.1 + 0.2; float tf = 1f / 3; decimal tm = 0.0000000001m;
+Console.WriteLine("{0} {1} {2}", tx, tf, tm);
+Console.WriteLine(string.Format("{0} {1:F1} {2:F2} {3,6:0.0}|{4,-4}|", tx, 2.25m, 2.345m, tf, "é"));
+Console.WriteLine(string.Join(",", new[] { tx, 1e16 }));
+var tl = new List<double> { tx }; Console.WriteLine(string.Join(",", tl) + " " + string.Join(",", tl.Select(v => v * 2)) + " " + string.Concat(tl) + " " + string.Join(",", new List<decimal> { 0.1m + 0.2m }));
+Console.WriteLine(tl[0] + " " + tl.Sum() + " " + new[] { tf }.Max() + " " + tl.First().ToString());
+Console.WriteLine(new { X = tx, M = tm, F = tf, N = 5, S = "s" });
+Console.WriteLine(new Point(tx, tm));
+var tsb = new StringBuilder(); tsb.Append(tx).Append(" ").Append(tm).Append(" ").AppendFormat("{0:F1}", 2.25m).Append(" ").AppendJoin(";", tl).Insert(0, tf); Console.WriteLine(tsb.ToString());
+Console.WriteLine(Convert.ToString(tx) + " " + Convert.ToString(tm));
+var tw = new StringWriter(); tw.Write(tx); tw.Write(" {0}", tm); tw.WriteLine(tf); Console.Write(tw.ToString());
+Console.Write(tx); Console.Write(" "); Console.Write("{0}", tm); Console.WriteLine();
+Console.WriteLine($"{tf:G} {tf:R} {tf:0.0000000000} {tf} {tf:F10} {16777217f:0.0000000000} {tx:0.00000000000000000}");
+Console.WriteLine(string.Join(",", 1, 2.5, "a") + " " + string.Concat("a", 0.1 + 0.2, tm));
+record Point(double X, decimal M);

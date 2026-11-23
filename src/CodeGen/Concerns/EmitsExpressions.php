@@ -156,7 +156,11 @@ trait EmitsExpressions
     {
         $value = $this->expr($hole->expr);
         $text = $hole->format !== null
-            ? Emitted::value($this->runtime('Op') . '::' . ($value->type->kind === 'float' && $value->type->floatingName() === 'decimal' ? 'formatDecimal' : 'format') . '(' . $value->code . ', ' . self::phpString($hole->format) . ')', Type::string())
+            ? Emitted::value($this->runtime('Op') . '::' . ($value->type->kind !== 'float' ? 'format' : match ($value->type->floatingName()) {
+                'decimal' => 'formatDecimal',
+                'float' => 'formatSingle',
+                default => 'format',
+            }) . '(' . $value->code . ', ' . self::phpString($hole->format) . ')', Type::string())
             : $this->asString($value);
         if ($hole->alignment === null) {
             return $text;
@@ -217,6 +221,27 @@ trait EmitsExpressions
 
             return Emitted::value('(' . implode(' || ', array_map(static fn (string $c): string => "$c === null", $tests)) . ' ? null : ' . $this->wrap($inner, Prec::TERNARY + 1) . ')', $inner->type->withNullable());
         }
+        if ($this->fn !== null) {
+            // Inline, with temporaries: each operand is evaluated once, left to right, and both are
+            // evaluated, as in C# (& and | do not short-circuit): (($t1 = a) === null | ($t2 = b) === null
+            // ? null : $t1 + $t2).
+            $tests = [];
+            $plain = [];
+            foreach ([$l, $r] as $operand) {
+                if (preg_match('/^-?\d[\d.eE+-]*$/', $operand->code) === 1) {
+                    $plain[] = new Emitted($operand->code, $operand->type->withNullable(false), Prec::ATOM, intValue: $operand->intValue);
+                    continue;
+                }
+                $temp = $this->currentFunction()->temp();
+                $tests[] = "($temp = {$operand->code}) " . ($comparison ? '!==' : '===') . ' null';
+                $plain[] = new Emitted($temp, $operand->type->withNullable(false), Prec::ATOM, intValue: $operand->intValue);
+            }
+            $inner = $this->binaryOperation($op, $plain[0], $plain[1], $at);
+
+            return $comparison
+                ? Emitted::value('(' . implode(' & ', $tests) . ' && ' . $this->wrap($inner, Prec::AND) . ')', Type::bool())
+                : Emitted::value('(' . implode(' | ', $tests) . ' ? null : ' . $this->wrap($inner, Prec::TERNARY + 1) . ')', $inner->type->withNullable());
+        }
         $inner = $this->binaryOperation($op, Emitted::value('$__l', $l->type->withNullable(false)), Emitted::value('$__r', $r->type->withNullable(false)), $at);
         $closure = "static fn (\$__l, \$__r) => {$inner->code}";
 
@@ -247,17 +272,16 @@ trait EmitsExpressions
         if ($value->type->isInt() && !$value->type->nullable) {
             return $value;
         }
-        // A double as .NET Core writes it (0.30000000000000004), a float with its single-precision digits.
-        // A decimal (a PHP float too) keeps 15 significant digits: 0.1m + 0.2m is 0.3.
+        // A double as .NET Core writes it (0.30000000000000004), a float with its single-precision digits,
+        // a decimal (a PHP float too) with 15 significant digits and no exponent: 0.1m + 0.2m is 0.3.
         if ($value->type->kind === 'float') {
             $helper = match ($value->type->floatingName()) {
-                'double', Type::UNSIZED => 'doubleText',
                 'float' => 'singleText',
-                default => null,
+                'decimal' => 'decimalText',
+                default => 'doubleText',
             };
-            if ($helper !== null) {
-                return Emitted::value($this->runtime('Op') . "::$helper({$value->code})", Type::string());
-            }
+
+            return Emitted::value($this->runtime('Op') . "::$helper({$value->code})", Type::string());
         }
         // An array as text is its type's name, as in .NET ("System.Int32[]"); PHP knows no element type.
         if ($value->type->kind === 'array' && !$value->type->isPhpArray()) {
@@ -457,15 +481,16 @@ trait EmitsExpressions
 
         // -x, +x, ~x of an int? (and !b of a bool?) are null when x is null, as in C#.
         if (in_array($op, ['-', '~', '!'], true) && $operand->type->nullable && ($operand->type->isNumeric() || $operand->type->isBool())) {
-            $plain = new Emitted('$__x', $operand->type->withNullable(false), Prec::ATOM);
+            $x = $this->fn !== null ? $this->currentFunction()->temp() : '$__x';
             $inner = match ($op) {
-                '-' => Emitted::value('-$__x', $negated->withNullable(false), Prec::UNARY),
-                '~' => Emitted::value('~$__x', $negated->withNullable(false), Prec::UNARY),
-                default => Emitted::value('!$__x', Type::bool(), Prec::NOT),
+                '-' => Emitted::value("-$x", $negated->withNullable(false), Prec::UNARY),
+                '~' => Emitted::value("~$x", $negated->withNullable(false), Prec::UNARY),
+                default => Emitted::value("!$x", Type::bool(), Prec::NOT),
             };
-            unset($plain);
 
-            return Emitted::value($this->runtime('Op') . "::lifted(static fn (\$__x) => {$inner->code}, {$operand->code})", $inner->type->withNullable());
+            return $this->fn !== null
+                ? Emitted::value("(($x = {$operand->code}) === null ? null : {$inner->code})", $inner->type->withNullable())
+                : Emitted::value($this->runtime('Op') . "::lifted(static fn (\$__x) => {$inner->code}, {$operand->code})", $inner->type->withNullable());
         }
 
         return match ($op) {
@@ -1547,6 +1572,7 @@ trait EmitsExpressions
     {
         $properties = [];
         $items = [];
+        $numbers = [];
         foreach ($e->names as $i => $name) {
             $node = $e->values[$i];
             if ($node instanceof LambdaExpr) {
@@ -1559,10 +1585,18 @@ trait EmitsExpressions
             }
             $properties[$name] = $value->type;
             $items[] = self::phpString($name) . ' => ' . $value->code;
+            if ($value->type->kind === 'float') {
+                // ToString() writes a double, float or decimal as its type does: the runtime is told which.
+                $numbers[] = self::phpString($name) . ' => ' . self::phpString(match ($value->type->floatingName()) {
+                    'float' => 'float',
+                    'decimal' => 'decimal',
+                    default => 'double',
+                });
+            }
         }
 
         return Emitted::value(
-            'new ' . $this->runtime('AnonymousObject') . '([' . implode(', ', $items) . '])',
+            'new ' . $this->runtime('AnonymousObject') . '([' . implode(', ', $items) . ']' . ($numbers === [] ? '' : ', [' . implode(', ', $numbers) . ']') . ')',
             $this->symbols->anonymousType($properties),
         );
     }

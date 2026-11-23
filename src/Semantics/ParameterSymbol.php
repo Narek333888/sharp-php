@@ -18,6 +18,15 @@ final class ParameterSymbol
         public readonly bool $numeric = false,
         /** @var array{0: string, 1: ?string}|null see Parameter::$callerInfo */
         public readonly ?array $callerInfo = null,
+        /**
+         * "@sharp-typed-numbers $name": the method writes the argument as text, which for a double, float
+         * or decimal depends on its C# type: it gets the number's text, or, for a params parameter
+         * (composite format arguments, which "{0:F2}" formats), the number with its type (a TypedNumber).
+         * 'elements': also the elements of a sequence, as text (string.Join, string.Concat).
+         *
+         * @var 'value'|'elements'|null
+         */
+        public readonly ?string $typedNumbers = null,
     ) {
     }
 

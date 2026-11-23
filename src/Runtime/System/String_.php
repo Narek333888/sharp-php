@@ -16,6 +16,7 @@ final class String_
 
     // ---- static members ----------------------------------------------
 
+    /** @sharp-typed-numbers $values elements */
     public static function Join(string $separator, mixed ...$values): string
     {
         if (count($values) === 1 && is_iterable($values[0])) {
@@ -58,6 +59,8 @@ final class String_
     /**
      * string.Concat(a, b, ...), and string.Concat(sequence) of a List, an array or a LINQ result, whose
      * elements are concatenated (C#'s Concat(IEnumerable<string>) and Concat<T>(IEnumerable<T>)).
+     *
+     * @sharp-typed-numbers $values elements
      */
     public static function Concat(mixed ...$values): string
     {
@@ -78,7 +81,11 @@ final class String_
         return $value === null || trim($value) === '';
     }
 
-    /** Composite formatting: string.Format("{0} is {1:F2}", name, value) */
+    /**
+     * Composite formatting: string.Format("{0} is {1:F2}", name, value)
+     *
+     * @sharp-typed-numbers $args
+     */
     public static function Format(string $format, mixed ...$args): string
     {
         $result = preg_replace_callback('/\{\{|\}\}|\{(\d+)(?:,(-?\d+))?(?::([^}]*))?\}/', static function (array $m) use ($args): string {
@@ -94,8 +101,7 @@ final class String_
             }
             $text = isset($m[3]) && $m[3] !== '' ? Op::format($args[$index], $m[3]) : Op::str($args[$index]);
             if (isset($m[2]) && $m[2] !== '') {
-                $width = (int) $m[2];
-                $text = $width < 0 ? str_pad($text, -$width) : str_pad($text, $width, ' ', STR_PAD_LEFT);
+                $text = Op::align($text, (int) $m[2]); // counts characters, not bytes
             }
 
             return $text;

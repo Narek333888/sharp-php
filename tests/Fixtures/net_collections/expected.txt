@@ -12,3 +12,16 @@ awaited
 ih
 System.Int32[]
 List`1 System.Collections.Generic.Queue`1[System.String]
+123 0 dict remove current: ok
+12 dict remove later: ok
+154 dict remove middle first: ok
+1 dict clear: ok
+9 dict overwrite: ok
+dict add at last: throws
+dict remove+add: throws
+dict add existing fails: ok
+13 set remove: ok
+set add existing: ok
+set add new: throws
+1 set clear: ok
+12 set except: ok

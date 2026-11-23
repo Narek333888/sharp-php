@@ -139,6 +139,7 @@ final class Convert
         return is_string($value) ? Boolean::Parse($value) : (bool) $value;
     }
 
+    /** @sharp-typed-numbers $value */
     public static function ToString(mixed $value): string
     {
         return Op::str($value);

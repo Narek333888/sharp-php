@@ -960,7 +960,11 @@ trait EmitsMembers
                 [$code] = $this->arguments($args, []);
 
                 if ($code !== '') {
-                    $helper = $t->kind === 'float' && $t->floatingName() === 'decimal' ? 'formatDecimal' : 'format';
+                    $helper = $t->kind !== 'float' ? 'format' : match ($t->floatingName()) {
+                        'decimal' => 'formatDecimal',
+                        'float' => 'formatSingle',
+                        default => 'format',
+                    };
 
                     return Emitted::value("$op::$helper({$target->code}, $code)", Type::string());
                 }
@@ -1246,7 +1250,7 @@ trait EmitsMembers
             return;
         }
         $params = array_map(
-            static fn (ParameterSymbol $p): ParameterSymbol => new ParameterSymbol($p->name, $p->type->substitute($subst), $p->modifier, $p->optional, $p->numeric),
+            static fn (ParameterSymbol $p): ParameterSymbol => new ParameterSymbol($p->name, $p->type->substitute($subst), $p->modifier, $p->optional, $p->numeric, $p->callerInfo, $p->typedNumbers),
             $params,
         );
         $arguments = array_map(static fn (Argument $a): array => ['line' => $a->line, 'column' => $a->column, 'name' => $a->name], $args);
@@ -1361,6 +1365,11 @@ trait EmitsMembers
                     && $this->conversions->collectionName($value->type) !== null) {
                     $value = Emitted::value($this->runtime('Interop') . '::toArray(' . $value->code . ')', Type::phpArray($this->elementTypeOf($value->type)));
                 }
+                // string.Format("{0}", 0.1 + 0.2), sb.Append(price): a number the method writes as text keeps
+                // its C# type, which a PHP float does not know.
+                if ($runtime && $param?->typedNumbers !== null) {
+                    $value = $this->typedNumbers($value, $param->typedNumbers === 'elements', $param->modifier === 'params');
+                }
                 // Sum(numbers) for Sum(params int[] xs): an array passed alone is the params array itself.
                 $isParamsArray = $param?->modifier === 'params' && $arg->name === null && $value->type->kind === 'array'
                     && count($args) === count($params) && $i === count($params) - 1;
@@ -1418,6 +1427,35 @@ trait EmitsMembers
 
     /** The line of the call whose arguments are being compiled, for [CallerLineNumber]. */
     private int $callerLine = 0;
+
+    /**
+     * A double, float or decimal argument of a parameter that writes it as text (see
+     * ParameterSymbol::$typedNumbers): its text, or for composite format arguments ($formatArguments)
+     * a TypedNumber; with $elements, a sequence of them as a list of their texts.
+     */
+    private function typedNumbers(Emitted $value, bool $elements, bool $formatArguments): Emitted
+    {
+        $type = static fn (Type $t): ?string => $t->kind !== 'float' ? null : match ($t->floatingName()) {
+            'float' => 'float',
+            'decimal' => 'decimal',
+            default => 'double',
+        };
+        $class = $this->runtime('TypedNumber');
+        $own = $type($value->type);
+        if ($own !== null) {
+            return $formatArguments && !$elements
+                ? Emitted::value("new $class({$value->code}, '$own')", Type::mixed())
+                : $this->asString($value);
+        }
+        if ($elements && $value->type->kind !== 'string' && ($value->type->kind === 'array' || $value->type->kind === 'iterable' || $this->conversions->collectionName($value->type) !== null)) {
+            $of = $type($this->elementTypeOf($value->type));
+            if ($of !== null) {
+                return Emitted::value("$class::texts({$value->code}, '$of')", Type::array(Type::string()));
+            }
+        }
+
+        return $value;
+    }
 
     /** @var list<array{0: string, 1: string}> the out variables of the last arguments() and their defaults */
     private array $lastOutDefaults = [];

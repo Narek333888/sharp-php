@@ -14,7 +14,8 @@ use SharpPhp\Runtime\System\InvalidOperationException;
  * tracking them.
  *
  * Also the version that makes adding a new entry during foreach throw, as in .NET (removing entries,
- * clearing and changing a value do not).
+ * clearing and changing a value do not, and an enumeration skips the entries removed meanwhile). Each
+ * step of an enumeration compares the version once; only when it changed does it look at what changed.
  *
  * @internal
  */
@@ -29,9 +30,10 @@ trait SlotOrder
     /** @var list<int> free slots, the one freed last at the end */
     private array $freeSlots = [];
 
+    /** Counts additions and removals (an addition counts it in the class, inlined). */
     private int $version = 0;
 
-    /** Counts removals, so that an enumeration knows when it must skip removed entries. */
+    /** Counts removals: a change of the version that is not a removal is an addition. */
     private int $removals = 0;
 
     /** After a new entry was stored under $hash, while slots are tracked (the caller counts the version). */
@@ -52,6 +54,7 @@ trait SlotOrder
     private function slotRemoved(string $hash, array $storage): void
     {
         $this->removals++;
+        $this->version++;
         if ($this->slots === null) {
             if (array_key_last($storage) === $hash) {
                 return; // the last slot: the next entry takes it, at the end anyway
@@ -71,6 +74,7 @@ trait SlotOrder
     private function slotsCleared(): void
     {
         $this->removals++;
+        $this->version++;
         $this->slots = null;
         $this->slotOf = [];
         $this->freeSlots = [];
@@ -94,9 +98,12 @@ trait SlotOrder
         return array_values(array_filter($this->slots, static fn (?string $h): bool => $h !== null));
     }
 
-    private function assertVersion(int $version): void
+    /**
+     * After the version changed while enumerating: throws when entries were added (removals are allowed).
+     */
+    private function assertNoAdditions(int $version, int $removals): void
     {
-        if ($version !== $this->version) {
+        if ($this->version - $version !== $this->removals - $removals) {
             throw new InvalidOperationException('Collection was modified; enumeration operation may not execute.');
         }
     }

@@ -7,447 +7,558 @@ namespace SharpPhp\Runtime;
 use SharpPhp\Runtime\System\FormatException;
 
 /**
- * .NET's numeric format strings (en-US), for ToString(format), string.Format and interpolation:
+ * .NET's numeric format strings (en-US), for ToString(format), string.Format and interpolation.
  *
- * - standard: C, D, E, F, G, N, P, R, X with a precision (F2, N0, P1, X8, ...). A double is rounded
- *   from its exact value, half to even (2.5.ToString("F0") is "2"), as .NET Core does;
- * - custom: 0 # . , % ‰ E0 E+0 e-0, 'literal', "literal", \x, and sections "pos;neg;zero". A double
- *   is first taken to 15 significant digits, then rounded half away from zero (7.5 with "0" is "8");
- * - a decimal (a PHP float, see the README) is taken to 15 significant digits and rounded half away
- *   from zero in every format (2.345m.ToString("F2") is "2.35"), as .NET rounds decimals.
+ * - Standard formats: B, C, D, E, F, G, N, P, R, X with a precision (F2, N0, P1, X8, ...). A double is
+ *   rounded from its exact binary value, half to even (2.5.ToString("F0") is "2"), as .NET Core does.
+ * - Custom formats: 0 # . , % ‰ E0 E+0 e-0, 'literal', "literal", \x, and sections "pos;neg;zero".
+ *   A double first takes 15 significant digits, which are rounded half away from zero (7.5 with "0"
+ *   is "8").
+ * - A decimal (a PHP float to the runtime, see the README) takes 15 significant digits and rounds half
+ *   away from zero in every format (2.345m with "F2" is "2.35"); an integer is exact and rounds half
+ *   away from zero too (12250 with "G3" is "1.23E+04").
+ * - A negative double keeps its sign when it rounds to zero (-0.001 with "F2" is "-0.00"); a decimal
+ *   or an integer does not, as in .NET.
+ *
+ * The digits of a number are kept as a string and the position of its decimal point, as .NET's
+ * number buffer: 1234.5 is ("12345", 4), 0.00123 is ("123", -2), zero is ("", 0).
  *
  * @internal
  */
 final class NumberFormat
 {
-    public static function format(int|float $value, string $format, bool $decimal = false): string
+    /** @var array<string, array{0: string, 1: ?int}|false> parsed standard formats, false for custom ones */
+    private static array $standard = [];
+
+    /** @var array<string, list<string>> custom formats split into their sections */
+    private static array $sections = [];
+
+    /**
+     * @var array<string, array{tokens: list<array{0: string, 1: string}>, ints: int, minInts: int,
+     *     fracs: int, minFracs: int, grouping: bool, scale: int, exponent: ?array{0: string, 1: string, 2: int},
+     *     simple: bool}>
+     */
+    private static array $parsed = [];
+
+    /** @param 'double'|'float'|'decimal' $type the C# type of a PHP float */
+    public static function format(int|float $value, string $format, string $type = 'double'): string
     {
-        if (preg_match('/^([A-Za-z])(\d{0,2})$/', $format, $m) === 1) {
-            return self::standard($value, $m[1], $m[2] === '' ? null : (int) $m[2], $decimal);
+        if (is_float($value) && !is_finite($value)) {
+            return is_nan($value) ? 'NaN' : ($value > 0 ? '∞' : '-∞');
+        }
+        if (count(self::$standard) > 500) {
+            self::$standard = self::$sections = self::$parsed = [];
+        }
+        $standard = self::$standard[$format] ??= preg_match('/^([A-Za-z])(\d{0,9})$/', $format, $m) === 1
+            ? [$m[1], $m[2] === '' ? null : (int) $m[2]]
+            : ($format === '' ? ['G', null] : false);
+
+        return $standard !== false
+            ? self::standard($value, $standard[0], $standard[1], $type)
+            : self::custom($value, $format, $type);
+    }
+
+    /** A decimal's ToString(): its digits without an exponent (0.0000000001, 100000000000000000000). */
+    public static function decimalText(float $value): string
+    {
+        if (!is_finite($value)) {
+            return self::format($value, 'G');
+        }
+        [$digits, $scale] = self::digits($value);
+
+        return ($digits !== '' && $value < 0 ? '-' : '') . self::plain($digits, $scale);
+    }
+
+    // ---- standard formats --------------------------------------------------
+
+    /** @param 'double'|'float'|'decimal' $type */
+    private static function standard(int|float $value, string $letter, ?int $precision, string $type): string
+    {
+        $decimal = $type === 'decimal';
+        $upper = strtoupper($letter);
+        switch ($upper) {
+            case 'F':
+            case 'N':
+            case 'C':
+                if (!$decimal && ($precision ?? 2) <= 53) {
+                    // sprintf's text is .NET's for an integer and for a double (rounded from its exact
+                    // value, half to even, -0.001 is -0.00), except -0.0, whose sign PHP does not write.
+                    $text = is_int($value) ? $value . (($precision ?? 2) > 0 ? '.' . str_repeat('0', $precision ?? 2) : '') : sprintf('%.' . ($precision ?? 2) . 'F', $value);
+                    $negative = $text[0] === '-' || ($value === 0.0 && fdiv(1.0, $value) < 0);
+                    if ($upper === 'F') {
+                        return $negative && $text[0] !== '-' ? '-' . $text : $text;
+                    }
+                    $text = ltrim($text, '-');
+                    $point = strpos($text, '.');
+                    $text = $point === false ? self::group($text) : self::group(substr($text, 0, $point)) . substr($text, $point);
+
+                    return ($negative ? '-' : '') . ($upper === 'C' ? '$' : '') . $text;
+                }
+                [$digits, $scale] = self::fixedDigits($value, $precision ?? 2, $decimal);
+                [$int, $frac] = self::split($digits, $scale, $precision ?? 2);
+                $int = $upper === 'F' ? $int : self::group($int);
+                $text = $frac === '' ? $int : $int . '.' . $frac;
+
+                return self::sign($value, $digits, $decimal) . ($upper === 'C' ? '$' . $text : $text);
+            case 'P':
+                // As .NET: the digits with two more decimals, the decimal point moved by two.
+                [$digits, $scale] = self::fixedDigits($value, ($precision ?? 2) + 2, $decimal);
+                [$int, $frac] = self::split($digits, $scale + 2, $precision ?? 2);
+
+                return self::sign($value, $digits, $decimal) . self::group($int) . ($frac === '' ? '' : '.' . $frac) . '%';
+            case 'E':
+                return self::exponential($value, $precision ?? 6, $letter === 'e', $decimal);
+            case 'G':
+            case 'R':
+                // A float writes its shortest single-precision digits (1f / 3 is 0.33333334).
+                if ($type === 'float' && is_float($value) && ($upper === 'R' || in_array($precision, [null, 0], true))) {
+                    return Op::singleText($value);
+                }
+                if ($upper === 'R') {
+                    return is_int($value) ? (string) $value : ($decimal ? self::decimalText($value) : Op::shortest($value));
+                }
+
+                return self::general($value, $precision === 0 ? null : $precision, $letter === 'g', $decimal);
+            case 'D':
+                if (is_int($value)) {
+                    return ($value < 0 ? '-' : '') . str_pad(ltrim((string) $value, '-'), $precision ?? 0, '0', STR_PAD_LEFT);
+                }
+                break;
+            case 'X':
+            case 'B':
+                if (is_int($value)) {
+                    // A negative int is two's complement of 32 bits when it fits an int (-1 is FFFFFFFF).
+                    $bits = $value < 0 && $value >= -2147483648 ? $value & 0xFFFFFFFF : $value;
+                    $text = $upper === 'B' ? decbin($bits) : ($letter === 'x' ? dechex($bits) : strtoupper(dechex($bits)));
+
+                    return str_pad($text, $precision ?? 0, '0', STR_PAD_LEFT);
+                }
+                break;
         }
 
-        return self::custom($value, $format, $decimal);
-    }
-
-    // ---- standard formats ------------------------------------------------
-
-    private static function standard(int|float $value, string $letter, ?int $precision, bool $decimal): string
-    {
-        $kind = strtoupper($letter);
-        if (is_float($value) && (is_nan($value) || is_infinite($value)) && !in_array($kind, ['D', 'X'], true)) {
-            return Op::shortest($value);
-        }
-
-        return match ($kind) {
-            'F' => self::signed($value, self::fixed($value, $precision ?? 2, $decimal, false), standard: true),
-            'N' => self::signed($value, self::fixed($value, $precision ?? 2, $decimal, true), standard: true),
-            'P' => self::signed($value, self::fixed(is_int($value) ? $value * 100 : $value * 100.0, $precision ?? 2, $decimal, true), standard: true) . '%',
-            'C' => (self::isNegative($value, true) ? '-' : '') . '$' . self::fixed($value, $precision ?? 2, $decimal, true),
-            'E' => self::exponential($value, $precision ?? 6, $letter === 'e', $decimal),
-            'D' => is_int($value)
-                ? ($value < 0 ? '-' : '') . str_pad(ltrim((string) $value, '-'), $precision ?? 0, '0', STR_PAD_LEFT)
-                : throw new FormatException('Format specifier was invalid.'),
-            'X' => is_int($value)
-                ? str_pad(self::hex($value, $letter === 'x'), $precision ?? 0, '0', STR_PAD_LEFT)
-                : throw new FormatException('Format specifier was invalid.'),
-            'G' => self::general($value, $precision, $letter === 'g', $decimal),
-            'R' => is_float($value) ? Op::shortest($value) : (string) $value,
-            default => throw new FormatException('Format specifier was invalid.'),
-        };
-    }
-
-    /** "-" before a negative number (also one that rounds to zero: -0.001 with F2 is "-0.00"). */
-    private static function signed(int|float $value, string $digits, bool $standard): string
-    {
-        return (self::isNegative($value, $standard) ? '-' : '') . $digits;
-    }
-
-    /** Negative; for the standard formats -0.0 too, as .NET Core writes it. */
-    private static function isNegative(int|float $value, bool $standard): bool
-    {
-        return $value < 0 || ($standard && is_float($value) && $value === 0.0 && fdiv(1.0, $value) < 0);
-    }
-
-    /** The absolute value with $decimals decimals, grouped by thousands when $group. */
-    private static function fixed(int|float $value, int $decimals, bool $decimal, bool $group): string
-    {
-        [$int, $frac] = self::digits($value, $decimals, $decimal ? 'decimal' : 'exact');
-        $int = $group ? self::group($int) : $int;
-
-        return $frac === '' ? $int : $int . '.' . $frac;
+        throw new FormatException('Format specifier was invalid.');
     }
 
     /**
-     * The absolute value's integer and fraction digits, rounded to $decimals:
-     * 'exact' rounds the double's exact value half to even (sprintf is correctly rounded),
-     * 'significant' and 'decimal' take 15 significant digits first and round half away from zero.
+     * The digits of |value| rounded to $decimals decimals: a double from its exact value, half to even
+     * (sprintf is correctly rounded); a decimal from 15 significant digits, half away from zero.
      *
-     * @param 'exact'|'significant'|'decimal' $mode
-     * @return array{0: string, 1: string}
+     * @return array{0: string, 1: int}
      */
-    private static function digits(int|float $value, int $decimals, string $mode): array
+    private static function fixedDigits(int|float $value, int $decimals, bool $decimal): array
     {
         if (is_int($value)) {
-            return [ltrim((string) $value, '-'), str_repeat('0', $decimals)];
+            return self::digits($value);
         }
-        $abs = abs($value);
-        if ($mode === 'exact') {
-            $text = sprintf('%.' . min($decimals, 53) . 'F', $abs);
-            [$int, $frac] = array_pad(explode('.', $text, 2), 2, '');
+        if ($decimal) {
+            [$digits, $scale] = self::digits($value);
 
-            return [$int, str_pad($frac, $decimals, '0')];
+            return self::round($digits, $scale, $scale + $decimals);
         }
+        $text = sprintf('%.' . min($decimals, 53) . 'F', abs($value));
+        $point = strpos($text, '.');
+        $all = ltrim(str_replace('.', '', $text), '0');
+        $scale = ($point === false ? strlen($text) : $point) - (strlen(str_replace('.', '', $text)) - strlen($all));
 
-        return self::roundHalfUp(self::significant($abs), $decimals);
+        return [rtrim($all, '0'), $all === '' ? 0 : $scale];
     }
 
-    /** The plain decimal text of 15 significant digits of $abs ("1.45", "0.000123"). */
-    private static function significant(float $abs): string
+    /** "-" for a negative number: a double keeps it at zero (-0.001 with F2 is -0.00), others do not. */
+    private static function sign(int|float $value, string $digits, bool $decimal): string
     {
-        if ($abs === 0.0) {
-            return '0';
-        }
-        $e = sprintf('%.14e', $abs); // 1.45000000000000e+0
-        [$mantissa, $exponent] = explode('e', $e);
-        $digits = rtrim(str_replace('.', '', $mantissa), '0');
-        $exp = (int) $exponent;
-        if ($digits === '') {
-            return '0';
-        }
-        if ($exp >= 0) {
-            $intLen = $exp + 1;
-            $padded = str_pad($digits, $intLen, '0');
-
-            return substr($padded, 0, $intLen) . (strlen($padded) > $intLen ? '.' . substr($padded, $intLen) : '');
+        if (is_float($value) && !$decimal) {
+            return $value < 0 || ($value === 0.0 && fdiv(1.0, $value) < 0) ? '-' : '';
         }
 
-        return '0.' . str_repeat('0', -$exp - 1) . $digits;
+        return $value < 0 && $digits !== '' ? '-' : '';
     }
 
-    /**
-     * A decimal text rounded to $decimals, half away from zero.
-     *
-     * @return array{0: string, 1: string}
-     */
-    private static function roundHalfUp(string $text, int $decimals): array
-    {
-        [$int, $frac] = array_pad(explode('.', $text, 2), 2, '');
-        if (strlen($frac) <= $decimals) {
-            return [$int, str_pad($frac, $decimals, '0')];
-        }
-        $keep = $int . substr($frac, 0, $decimals);
-        if ((int) $frac[$decimals] >= 5) {
-            $keep = self::increment($keep);
-        }
-        $intLen = strlen($keep) - $decimals;
-
-        return [ltrim(substr($keep, 0, $intLen), '0') ?: '0', (string) substr($keep, $intLen)];
-    }
-
-    /** "1299" + 1 = "1300", "99" + 1 = "100" (a string of digits). */
-    private static function increment(string $digits): string
-    {
-        for ($i = strlen($digits) - 1; $i >= 0; $i--) {
-            if ($digits[$i] !== '9') {
-                return substr($digits, 0, $i) . (string) ((int) $digits[$i] + 1) . str_repeat('0', strlen($digits) - $i - 1);
-            }
-        }
-
-        return '1' . str_repeat('0', strlen($digits));
-    }
-
-    private static function group(string $int): string
-    {
-        return strrev(implode(',', str_split(strrev($int), 3)));
-    }
-
-    /** E: d.ddddddE+ddd (at least 3 exponent digits). */
+    /** E: d.ddddddE+ddd (at least three exponent digits). */
     private static function exponential(int|float $value, int $precision, bool $lower, bool $decimal): string
     {
-        $abs = abs((float) $value);
-        if ($abs === 0.0) {
-            [$mantissa, $exp] = ['0' . ($precision > 0 ? '.' . str_repeat('0', $precision) : ''), 0];
-        } elseif ($decimal) {
-            $exp = (int) floor(log10($abs));
-            [$int, $frac] = self::roundHalfUp(self::significant($abs / 10 ** $exp), $precision);
-            if (strlen($int) > 1) { // 9.99 rounded up to 10.0
-                $exp++;
-                [$int, $frac] = self::roundHalfUp(self::significant($abs / 10 ** $exp), $precision);
-            }
-            $mantissa = $int . ($precision > 0 ? '.' . $frac : '');
+        if (is_float($value) && !$decimal) {
+            [$mantissa, $exponent] = explode('e', sprintf('%.' . min($precision, 53) . 'e', abs($value)));
+            $mantissa = str_pad($mantissa, $precision + ($precision > 0 ? 2 : 1), '0');
+            $exponent = (int) $exponent;
         } else {
-            [$mantissa, $e] = explode('e', sprintf('%.' . min($precision, 53) . 'e', $abs));
-            $exp = (int) $e;
+            [$digits, $scale] = self::digits($value);
+            [$digits, $scale] = self::round($digits, $scale, $precision + 1);
+            $digits = str_pad($digits, $precision + 1, '0');
+            $mantissa = $digits[0] . ($precision > 0 ? '.' . substr($digits, 1) : '');
+            $exponent = $digits === str_repeat('0', $precision + 1) ? 0 : $scale - 1;
+            $value = $digits[0] === '0' ? 0 : $value; // zero has no sign
         }
-        $sign = self::isNegative($value, true) ? '-' : '';
+        $sign = self::sign($value, $value == 0 ? '' : '1', $decimal);
 
-        return $sign . $mantissa . ($lower ? 'e' : 'E') . ($exp < 0 ? '-' : '+') . str_pad((string) abs($exp), 3, '0', STR_PAD_LEFT);
+        return $sign . $mantissa . ($lower ? 'e' : 'E') . ($exponent < 0 ? '-' : '+') . str_pad((string) abs($exponent), 3, '0', STR_PAD_LEFT);
     }
 
+    /** G: the shortest of fixed and scientific notation with $precision significant digits. */
     private static function general(int|float $value, ?int $precision, bool $lower, bool $decimal): string
     {
-        if (is_int($value) && ($precision === null || $precision >= strlen(ltrim((string) $value, '-')))) {
-            return (string) $value;
+        if ($precision === null) {
+            return match (true) {
+                is_int($value) => (string) $value,
+                $decimal => self::decimalText($value),
+                default => Op::shortest($value),
+            };
         }
-        $text = $precision === null && !$decimal ? Op::shortest((float) $value) : self::generalDigits((float) $value, $precision ?? 15);
-
-        return $lower ? strtolower($text) : $text;
-    }
-
-    private static function generalDigits(float $value, int $precision): string
-    {
-        return Op::formatGeneral($value, max($precision, 1));
-    }
-
-    /** Negative ints as two's complement: of 32 bits when the value fits an int (-1 is FFFFFFFF). */
-    private static function hex(int $value, bool $lower): string
-    {
-        if ($value < 0 && $value >= -2147483648) {
-            $value &= 0xFFFFFFFF;
+        if (is_float($value) && !$decimal) {
+            // sprintf rounds the exact value correctly.
+            [$mantissa, $exponent] = explode('e', sprintf('%.' . ($precision - 1) . 'e', abs($value)));
+            $digits = rtrim(str_replace('.', '', $mantissa), '0');
+            $scale = (int) $exponent + 1;
+        } else {
+            [$digits, $scale] = self::digits($value);
+            [$digits, $scale] = self::round($digits, $scale, $precision);
         }
-        $hex = dechex($value);
-
-        return $lower ? $hex : strtoupper($hex);
-    }
-
-    /**
-     * The integer and fraction digits of $abs * 10^$power, rounded to $decimals half away from zero
-     * (from 15 significant digits for a double).
-     *
-     * @return array{0: string, 1: string}
-     */
-    private static function scaledDigits(int|float $abs, int $power, int $decimals): array
-    {
-        if (is_int($abs) && $power >= 0 && $power < 10) {
-            return [(string) ($abs * 10 ** $power), str_repeat('0', $decimals)];
+        $sign = self::sign($value, $digits, $decimal);
+        if ($digits === '') {
+            return $sign . '0';
         }
-        if (is_int($abs) && $power < 0 && $abs < 1e15) {
-            // Integer arithmetic on the digits: exact (1234567890 with "#,##0,," is 1,235).
-            $digits = str_pad((string) $abs, -$power + 1, '0', STR_PAD_LEFT);
-            $text = substr($digits, 0, strlen($digits) + $power) . '.' . substr($digits, $power);
-
-            return self::roundHalfUp($text, $decimals);
+        // As .NET: fixed-point notation when -5 < exponent < precision.
+        $exponent = $scale - 1;
+        if ($exponent >= $precision || $exponent < -4) {
+            $text = $digits[0] . (strlen($digits) > 1 ? '.' . substr($digits, 1) : '')
+                . 'E' . ($exponent < 0 ? '-' : '+') . str_pad((string) abs($exponent), 2, '0', STR_PAD_LEFT);
+        } else {
+            $text = self::plain($digits, $scale);
         }
 
-        return self::roundHalfUp(self::significant((float) $abs * 10.0 ** $power), $decimals);
+        return $sign . ($lower ? strtolower($text) : $text);
     }
 
     // ---- custom formats ----------------------------------------------------
 
-    private static function custom(int|float $value, string $format, bool $decimal): string
+    /** @param 'double'|'float'|'decimal' $type */
+    private static function custom(int|float $value, string $format, string $type): string
     {
-        $sections = self::sections($format);
-        $negative = $value < 0;
-        $section = $sections[0];
-        $explicitNegative = false;
-        if ($negative && isset($sections[1]) && $sections[1] !== '') {
-            $section = $sections[1];
-            $explicitNegative = true;
+        $sections = self::$sections[$format] ??= self::sections($format);
+        $floating = is_float($value) && $type !== 'decimal';
+        // As .NET: a float's custom format starts from 7 significant digits, a double's from 15.
+        [$digits, $scale] = self::digits($value, $type === 'float' ? 7 : 15);
+        $negative = $floating ? $value < 0 || ($value === 0.0 && fdiv(1.0, $value) < 0) : $value < 0;
+        // As .NET: zero takes the third section, a negative number the second; one that is missing or
+        // empty is the first. A number that rounds to zero takes the zero section, if there is one.
+        $section = self::section($sections, $digits === '' ? 2 : ($negative ? 1 : 0));
+        $text = self::apply($digits, $scale, self::parse($sections[$section]));
+        if ($text === null) {
+            $zero = self::section($sections, 2);
+            if ($zero !== $section) {
+                $section = $zero;
+                $text = self::apply('', 0, self::parse($sections[$section]));
+            }
+            $negative = $negative && $floating; // a decimal or an integer that rounds to zero has no sign
         }
-        $result = self::section($value, $section, $decimal);
-        // A value that rounds to zero takes the zero section.
-        if (isset($sections[2]) && $result['zero']) {
-            return self::section(0, $sections[2], $decimal)['text'];
-        }
-        if ($explicitNegative) {
-            return $result['text'];
-        }
+        $text ??= self::apply('', 0, self::parse($sections[$section])) ?? '';
 
-        // A negative value keeps its sign when it rounds to zero (-0.004 with 0.00 is -0.00), as in .NET.
-        return ($negative && $result['text'] !== '' ? '-' : '') . $result['text'];
+        return ($negative && $section === 0 && $text !== '' ? '-' : '') . $text;
     }
 
     /**
-     * The sections of a custom format (split at ; outside quotes and escapes).
+     * The index of the section that formats a value: the requested one, or the first when it is
+     * missing or empty.
+     *
+     * @param list<string> $sections
+     */
+    private static function section(array $sections, int $index): int
+    {
+        return ($sections[$index] ?? '') === '' ? 0 : $index;
+    }
+
+    /**
+     * The sections of a custom format: split at the ; that are not quoted or escaped.
      *
      * @return list<string>
      */
     private static function sections(string $format): array
     {
-        $sections = [''];
+        $sections = [];
+        $current = '';
         $quote = null;
-        $chars = mb_str_split($format);
-        for ($i = 0, $n = count($chars); $i < $n; $i++) {
-            $c = $chars[$i];
+        $length = strlen($format);
+        for ($i = 0; $i < $length; $i++) {
+            $c = $format[$i];
             if ($quote !== null) {
                 $quote = $c === $quote ? null : $quote;
-            } elseif ($c === '\\' && $i + 1 < $n) {
-                $sections[count($sections) - 1] .= $c . $chars[++$i];
+            } elseif ($c === '\\' && $i + 1 < $length) {
+                $current .= $c . $format[++$i];
                 continue;
             } elseif ($c === "'" || $c === '"') {
                 $quote = $c;
             } elseif ($c === ';') {
-                $sections[] = '';
+                $sections[] = $current;
+                $current = '';
                 continue;
             }
-            $sections[count($sections) - 1] .= $c;
+            $current .= $c;
         }
+        $sections[] = $current;
 
         return $sections;
     }
 
     /**
-     * One section of a custom format applied to the absolute value.
+     * One section of a custom format, read once: its tokens ('lit' text, 'int' and 'frac' placeholders,
+     * 'point', 'exp'), how many integer and fraction placeholders it has, how many of them must show a
+     * digit (from the first 0 before the point, up to the last 0 after it), and its scaling
+     * (% is +2, ‰ +3, each comma just before the point or at the end of the integer part -3).
      *
-     * @return array{text: string, zero: bool}
+     * @return array{tokens: list<array{0: string, 1: string}>, ints: int, minInts: int, fracs: int,
+     *     minFracs: int, grouping: bool, scale: int, exponent: ?array{0: string, 1: string, 2: int},
+     *     simple: bool}
      */
-    private static function section(int|float $value, string $format, bool $decimal): array
+    private static function parse(string $format): array
     {
-        // Pass 1: the placeholders.
+        if (isset(self::$parsed[$format])) {
+            return self::$parsed[$format];
+        }
         $tokens = [];
         $chars = mb_str_split($format);
         $n = count($chars);
-        $intPlaceholders = 0;
+        $ints = $fracs = $minFracs = $scale = $commas = 0;
         $firstZero = null;
-        $fracZeros = 0;
-        $fracPlaceholders = 0;
-        $seenPoint = false;
-        $grouping = false;
-        $scale = 0;
-        $percent = 0;
+        $point = $grouping = false;
         $exponent = null;
-        $pendingCommas = 0;
         for ($i = 0; $i < $n; $i++) {
             $c = $chars[$i];
             if ($c === '\\' && $i + 1 < $n) {
                 $tokens[] = ['lit', $chars[++$i]];
-                continue;
-            }
-            if ($c === "'" || $c === '"') {
+            } elseif ($c === "'" || $c === '"') {
                 $text = '';
                 for ($i++; $i < $n && $chars[$i] !== $c; $i++) {
                     $text .= $chars[$i];
                 }
                 $tokens[] = ['lit', $text];
-                continue;
-            }
-            if (($c === 'E' || $c === 'e') && $exponent === null && $i + 1 < $n
-                && ($chars[$i + 1] === '0' || (in_array($chars[$i + 1], ['+', '-'], true) && $i + 2 < $n && $chars[$i + 2] === '0'))) {
-                $sign = in_array($chars[$i + 1], ['+', '-'], true) ? $chars[++$i] : '';
-                $digits = 0;
-                while ($i + 1 < $n && $chars[$i + 1] === '0') {
-                    $digits++;
+            } elseif (($c === 'E' || $c === 'e') && $exponent === null && $i + 1 < $n
+                && ($chars[$i + 1] === '0' || (($chars[$i + 1] === '+' || $chars[$i + 1] === '-') && ($chars[$i + 2] ?? '') === '0'))) {
+                $sign = $chars[$i + 1] === '0' ? '' : $chars[++$i];
+                $zeros = 0;
+                while (($chars[$i + 1] ?? '') === '0') {
+                    $zeros++;
                     $i++;
                 }
-                $exponent = ['letter' => $c, 'sign' => $sign, 'digits' => $digits];
-                $tokens[] = ['exp', null];
-                continue;
-            }
-            if ($c === '0' || $c === '#') {
-                if ($pendingCommas > 0) {
-                    $grouping = $grouping || !$seenPoint; // a comma between digits groups
-                    $pendingCommas = 0;
-                }
-                if ($seenPoint) {
-                    $fracPlaceholders++;
-                    if ($c === '0') {
-                        $fracZeros = $fracPlaceholders;
-                    }
+                $exponent = [$c, $sign, $zeros];
+                $tokens[] = ['exp', ''];
+            } elseif ($c === '0' || $c === '#') {
+                if ($point) {
+                    $fracs++;
+                    $minFracs = $c === '0' ? $fracs : $minFracs;
                     $tokens[] = ['frac', $c];
                 } else {
-                    if ($c === '0' && $firstZero === null) {
-                        $firstZero = $intPlaceholders;
-                    }
-                    $intPlaceholders++;
+                    // A comma between integer placeholders groups the digits by thousands.
+                    $grouping = $grouping || $commas > 0;
+                    $commas = 0;
+                    $firstZero ??= $c === '0' ? $ints : null;
+                    $ints++;
                     $tokens[] = ['int', $c];
                 }
-                continue;
-            }
-            if ($c === ',') {
-                if (!$seenPoint && $intPlaceholders > 0) {
-                    $pendingCommas++;
+            } elseif ($c === ',') {
+                $commas += !$point && $ints > 0 ? 1 : 0;
+            } elseif ($c === '.') {
+                if (!$point) {
+                    $point = true;
+                    $tokens[] = ['point', ''];
                 }
-                continue;
+            } else {
+                $scale += $c === '%' ? 2 : ($c === '‰' ? 3 : 0);
+                $tokens[] = ['lit', $c];
             }
-            if ($c === '.') {
-                if (!$seenPoint) {
-                    $scale += $pendingCommas; // commas just before the point divide by 1000
-                    $pendingCommas = 0;
-                    $seenPoint = true;
-                    $tokens[] = ['point', null];
-                }
-                continue;
+            if ($point && $commas > 0) { // commas just before the point divide by 1000 each
+                $scale -= 3 * $commas;
+                $commas = 0;
             }
-            if ($c === '%') {
-                $percent += 2;
-            } elseif ($c === '‰') {
-                $percent += 3;
-            }
-            $tokens[] = ['lit', $c];
         }
-        $scale += $pendingCommas; // commas at the end of the integer part divide by 1000
+        $scale -= 3 * $commas; // and so do commas at the end of the integer part
 
-        // The number: scaled (%, ‰, commas before the point, the exponent) and rounded.
-        $abs = abs($value);
-        $exp = 0;
-        if ($exponent !== null && $abs != 0) {
-            // The mantissa has as many integer digits as the format has placeholders before the point.
-            $exp = (int) floor(log10((float) $abs)) - (max($intPlaceholders, 1) - 1);
+        $simple = $tokens !== []; // only placeholders and a point: the digits need no placing
+        foreach ($tokens as [$kind]) {
+            $simple = $simple && $kind !== 'lit' && $kind !== 'exp';
         }
-        [$int, $frac] = self::scaledDigits($abs, $percent - 3 * $scale - $exp, $fracPlaceholders);
-        if ($exponent !== null && strlen(ltrim($int, '0')) > max($intPlaceholders, 1)) {
-            $exp++; // 9.96 rounded to 10.0: one more for the exponent
-            [$int, $frac] = self::scaledDigits($abs, $percent - 3 * $scale - $exp, $fracPlaceholders);
+
+        return self::$parsed[$format] = [
+            'tokens' => $tokens, 'ints' => $ints, 'minInts' => $firstZero === null ? 0 : $ints - $firstZero,
+            'fracs' => $fracs, 'minFracs' => $minFracs, 'grouping' => $grouping, 'scale' => $scale,
+            'exponent' => $exponent, 'simple' => $simple,
+        ];
+    }
+
+    /**
+     * A number's digits written with a parsed section; null when a non-zero number rounds to zero
+     * (the caller then picks the zero section).
+     *
+     * @param array{tokens: list<array{0: string, 1: string}>, ints: int, minInts: int, fracs: int,
+     *     minFracs: int, grouping: bool, scale: int, exponent: ?array{0: string, 1: string, 2: int},
+     *     simple: bool} $section
+     */
+    private static function apply(string $digits, int $scale, array $section): ?string
+    {
+        $exponent = 0;
+        $wasZero = $digits === '';
+        if (!$wasZero) {
+            $scale += $section['scale'];
+            if ($section['exponent'] !== null) {
+                // As many integer digits as the section has integer placeholders; the rest is the exponent.
+                [$digits, $scale] = self::round($digits, $scale, $section['ints'] + $section['fracs']);
+                $exponent = $scale - $section['ints'];
+                $scale = $section['ints'];
+            } else {
+                [$digits, $scale] = self::round($digits, $scale, $scale + $section['fracs']);
+            }
+            if ($digits === '') {
+                return null;
+            }
         }
-        $zero = trim($int, '0') === '' && trim($frac, '0') === '';
+        [$int, $frac] = self::split($digits, $scale, $section['fracs']);
         $int = ltrim($int, '0');
-
-        // Pass 2: the text. Integer digits fill the placeholders from the right; the first placeholder
-        // also takes the digits that have none.
-        $minInt = $firstZero === null ? 0 : $intPlaceholders - $firstZero;
-        $int = str_pad($int, $minInt, '0', STR_PAD_LEFT);
-        $length = strlen($int);
-        $intIndex = 0;
-        $fracIndex = 0;
-        $printFrac = max(strlen(rtrim($frac, '0')), $fracZeros);
-        $out = '';
-        $written = 0;
-        $emit = static function (string $digits) use (&$out, &$written, $length, $grouping): void {
-            foreach ($digits === '' ? [] : str_split($digits) as $digit) {
-                $out .= $digit;
-                $written++;
-                if ($grouping && $length - $written > 0 && ($length - $written) % 3 === 0) {
-                    $out .= ',';
-                }
-            }
-        };
-        if ($intPlaceholders === 0 && $int !== '') {
-            $emit($int); // no integer placeholders: the integer digits go first
+        if (strlen($int) < $section['minInts']) {
+            $int = str_pad($int, $section['minInts'], '0', STR_PAD_LEFT);
         }
-        foreach ($tokens as [$kind, $c]) {
+        $printFracs = max(strlen(rtrim($frac, '0')), $section['minFracs']);
+        if ($section['simple']) {
+            $int = $section['grouping'] ? self::group($int) : $int;
+
+            return $printFracs > 0 ? $int . '.' . substr($frac, 0, $printFracs) : $int;
+        }
+        $length = strlen($int);
+        $ints = $section['ints'];
+        $grouping = $section['grouping'];
+        $out = '';
+        $next = 0; // the next integer digit to write
+        $intIndex = $fracIndex = 0;
+        foreach ($section['tokens'] as [$kind, $text]) {
             switch ($kind) {
                 case 'lit':
-                    $out .= $c;
+                    $out .= $text;
                     break;
                 case 'int':
-                    $index = $length - $intPlaceholders + $intIndex; // the digit of this placeholder
-                    if ($intIndex === 0) {
-                        $emit($index >= 0 ? substr($int, 0, $index + 1) : '');
-                    } elseif ($index >= 0) {
-                        $emit($int[$index]);
+                    // Digits fill the placeholders from the right; the first also takes those without one.
+                    $until = $length - $ints + ++$intIndex;
+                    while ($next < $until) {
+                        $out .= $int[$next++];
+                        if ($grouping && $next < $length && ($length - $next) % 3 === 0) {
+                            $out .= ',';
+                        }
                     }
-                    $intIndex++;
                     break;
                 case 'point':
-                    if ($printFrac > 0) {
-                        $out .= '.';
+                    if ($ints === 0) {
+                        $out .= $int; // no integer placeholders: the integer digits go before the point
                     }
+                    $out .= $printFracs > 0 ? '.' : '';
                     break;
                 case 'frac':
-                    if ($fracIndex < $printFrac) {
-                        $out .= $frac[$fracIndex] ?? '0';
-                    }
+                    $out .= $fracIndex < $printFracs ? ($frac[$fracIndex] ?? '0') : '';
                     $fracIndex++;
                     break;
-                case 'exp':
-                    if ($exponent !== null) {
-                        $sign = $exp < 0 ? '-' : ($exponent['sign'] === '+' ? '+' : '');
-                        $out .= $exponent['letter'] . $sign . str_pad((string) abs($exp), $exponent['digits'], '0', STR_PAD_LEFT);
-                    }
-                    break;
+                default: // 'exp'
+                    [$letter, $sign, $zeros] = $section['exponent'] ?? ['E', '', 1];
+                    $out .= $letter . ($exponent < 0 ? '-' : ($sign === '+' ? '+' : ''))
+                        . str_pad((string) abs($exponent), $zeros, '0', STR_PAD_LEFT);
             }
         }
 
-        return ['text' => $out, 'zero' => $zero];
+        return $out;
+    }
+
+    // ---- digits ------------------------------------------------------------
+
+    /**
+     * The significant digits of |value| and the position of its decimal point: an integer's exact
+     * digits, a float's first $significant digits (correctly rounded by sprintf).
+     *
+     * @return array{0: string, 1: int}
+     */
+    private static function digits(int|float $value, int $significant = 15): array
+    {
+        if (is_int($value)) {
+            $text = ltrim((string) $value, '-');
+
+            return $value === 0 ? ['', 0] : [rtrim($text, '0'), strlen($text)];
+        }
+        if ($value == 0) {
+            return ['', 0];
+        }
+        [$mantissa, $exponent] = explode('e', sprintf('%.' . ($significant - 1) . 'e', abs($value)));
+
+        return [rtrim($mantissa[0] . substr($mantissa, 2), '0'), (int) $exponent + 1];
+    }
+
+    /**
+     * Digits rounded half away from zero to the first $keep of them (as .NET rounds its digit buffer).
+     *
+     * @return array{0: string, 1: int}
+     */
+    private static function round(string $digits, int $scale, int $keep): array
+    {
+        if ($keep >= strlen($digits)) {
+            return [$digits, $scale];
+        }
+        if ($keep < 0 || ($keep === 0 && $digits[0] < '5')) {
+            return ['', 0];
+        }
+        if ($digits[$keep] < '5') {
+            $digits = rtrim(substr($digits, 0, $keep), '0');
+
+            return [$digits, $digits === '' ? 0 : $scale];
+        }
+        // Round up: drop the 9s that carry, then add one to the digit before them.
+        $kept = rtrim(substr($digits, 0, $keep), '9');
+        if ($kept === '') {
+            return ['1', $scale + 1];
+        }
+
+        return [substr($kept, 0, -1) . chr(ord($kept[-1]) + 1), $scale];
+    }
+
+    /**
+     * The integer and fraction digits of a number, the fraction with $decimals digits.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private static function split(string $digits, int $scale, int $decimals): array
+    {
+        if ($digits === '') {
+            return ['0', str_repeat('0', $decimals)];
+        }
+        if ($scale <= 0) {
+            $frac = str_repeat('0', min(-$scale, $decimals)) . $digits;
+
+            return ['0', str_pad(substr($frac, 0, $decimals), $decimals, '0')];
+        }
+        $int = strlen($digits) >= $scale ? substr($digits, 0, $scale) : str_pad($digits, $scale, '0');
+
+        return [$int, str_pad(substr($digits, $scale, $decimals), $decimals, '0')];
+    }
+
+    /** Digits written out in full: 0.00123, 1200, 12.5. */
+    private static function plain(string $digits, int $scale): string
+    {
+        if ($digits === '') {
+            return '0';
+        }
+        if ($scale <= 0) {
+            return '0.' . str_repeat('0', -$scale) . $digits;
+        }
+        if ($scale >= strlen($digits)) {
+            return str_pad($digits, $scale, '0');
+        }
+
+        return substr($digits, 0, $scale) . '.' . substr($digits, $scale);
+    }
+
+    private static function group(string $int): string
+    {
+        $length = strlen($int);
+        if ($length <= 3) {
+            return $int;
+        }
+        $first = $length % 3 ?: 3;
+        $out = substr($int, 0, $first);
+        for ($i = $first; $i < $length; $i += 3) {
+            $out .= ',' . substr($int, $i, 3);
+        }
+
+        return $out;
     }
 }

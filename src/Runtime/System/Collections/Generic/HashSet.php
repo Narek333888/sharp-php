@@ -125,29 +125,31 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
     {
         $version = $this->version;
         $removals = $this->removals;
+        // Insertion order is the slot order while no slot is tracked. Items removed while enumerating
+        // (which .NET allows) are skipped; an addition throws at the next step, also after the last item.
         if ($this->slots === null) {
-            // Insertion order is the slot order. Items removed while enumerating (which .NET
-            // allows) are skipped.
             foreach ($this->items as $key => $item) {
-                if ($removals !== $this->removals && !array_key_exists($key, $this->items)) {
-                    continue;
+                if ($version !== $this->version) {
+                    $this->assertNoAdditions($version, $removals);
+                    if (!array_key_exists($key, $this->items)) {
+                        continue;
+                    }
                 }
                 yield $item;
+            }
+        } else {
+            foreach ($this->orderedHashes($this->items) as $key) {
                 if ($version !== $this->version) {
-                    $this->assertVersion($version);
+                    $this->assertNoAdditions($version, $removals);
+                    if (!array_key_exists($key, $this->items)) {
+                        continue;
+                    }
                 }
+                yield $this->items[$key];
             }
-
-            return;
         }
-        foreach ($this->orderedHashes($this->items) as $key) {
-            if (!array_key_exists($key, $this->items)) {
-                continue;
-            }
-            yield $this->items[$key];
-            if ($version !== $this->version) {
-                $this->assertVersion($version);
-            }
+        if ($version !== $this->version) {
+            $this->assertNoAdditions($version, $removals);
         }
     }
 

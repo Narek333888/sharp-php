@@ -17,12 +17,19 @@ final class Console
 
     /**
      * Console.WriteLine(value) or Console.WriteLine("{0} + {1}", a, b)
+     *
+     * @sharp-typed-numbers $value
+     * @sharp-typed-numbers $args
      */
     public static function WriteLine(mixed $value = '', mixed ...$args): void
     {
         echo self::text($value, array_values($args)), PHP_EOL;
     }
 
+    /**
+     * @sharp-typed-numbers $value
+     * @sharp-typed-numbers $args
+     */
     public static function Write(mixed $value, mixed ...$args): void
     {
         echo self::text($value, array_values($args));

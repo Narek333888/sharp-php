@@ -83,6 +83,7 @@ final class Op
             is_bool($value) => $value ? 'True' : 'False',
             is_int($value) => (string) $value,
             is_float($value) => self::float($value),
+            $value instanceof TypedNumber => $value->text(),
             $value instanceof FlagsEnum && $value instanceof \UnitEnum => str_replace('_', ', ', $value->name),
             $value instanceof \UnitEnum => $value->name,
             is_object($value) && method_exists($value, 'ToString') => self::str($value->ToString()),
@@ -112,16 +113,14 @@ final class Op
      * Scientific notation when the exponent reaches the precision (17 for the shortest digits, as .NET:
      * 1E+16 is 10000000000000000, 1E+17 is 1E+17) or is below -4.
      */
-    /** @internal "G" with a precision, for NumberFormat. */
-    public static function formatGeneral(float $value, int $precision): string
-    {
-        return self::general($value, $precision);
-    }
-
     private static function general(float $value, ?int $precision, int $shortestLimit = 17): string
     {
-        // var_export() writes the shortest round-trip digits (serialize_precision -1).
+        // var_export() writes the shortest round-trip digits (serialize_precision -1). Without an exponent
+        // they are .NET's text already: PHP and .NET both switch to an exponent below 1E-04 and from 1E+17.
         $repr = $precision === null ? var_export($value, true) : sprintf('%.' . (max($precision, 1) - 1) . 'E', $value);
+        if ($precision === null && $shortestLimit === 17 && !str_contains($repr, 'E')) {
+            return str_ends_with($repr, '.0') ? substr($repr, 0, -2) : $repr;
+        }
         if (preg_match('/^(-?)(\d+)(?:\.(\d+))?(?:E([+-]\d+))?$/', $repr, $m) !== 1) {
             return $repr;
         }
@@ -264,6 +263,17 @@ final class Op
     }
 
     /**
+     * A decimal as .NET's ToString() writes it: without an exponent (0.0000000001); with up to 15
+     * significant digits, as SharpPHP's decimal is a double.
+     *
+     * @internal
+     */
+    public static function decimalText(?float $value): string
+    {
+        return $value === null ? '' : NumberFormat::decimalText($value);
+    }
+
+    /**
      * A double as .NET's ToString() writes it: the shortest digits that read back as the same double
      * (0.30000000000000004, 1E+21, 5E-324).
      *
@@ -292,12 +302,26 @@ final class Op
      */
     public static function formatDecimal(mixed $value, string $format): string
     {
-        return is_int($value) || is_float($value) ? NumberFormat::format($value, $format, decimal: true) : self::format($value, $format);
+        return is_int($value) || is_float($value) ? NumberFormat::format($value, $format, 'decimal') : self::format($value, $format);
+    }
+
+    /**
+     * value.ToString(format) of a float: "G" and "R" give its single-precision digits, custom formats
+     * start from 7 significant digits.
+     *
+     * @internal
+     */
+    public static function formatSingle(mixed $value, string $format): string
+    {
+        return is_int($value) || is_float($value) ? NumberFormat::format($value, $format, 'float') : self::format($value, $format);
     }
 
     /** Standard and custom C# format strings: F2, N0, D5, X, P1, E3, 0.00, yyyy-MM-dd ... */
     public static function format(mixed $value, string $format): string
     {
+        if ($value instanceof TypedNumber) {
+            return $value->format($format);
+        }
         if ($value instanceof \DateTimeInterface) {
             return $value->format(self::dateFormat($format));
         }

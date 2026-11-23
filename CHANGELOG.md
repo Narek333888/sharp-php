@@ -1,5 +1,87 @@
 # Changelog
 
+## 0.10.0 (unreleased)
+
+Checked against .NET 10 itself: the same programs run in .NET and in SharpPHP, and their output is compared.
+Fixtures `net_numbers`, `net_semantics` and `net_collections` have .NET 10's output as their expected output.
+
+**Numbers**
+
+- `double`, `float` and `decimal` are distinct types, with C#'s conversions (`double` to `float` or `decimal`
+  needs a cast; `float f = 1.5;` is CS0664; `decimal + double` is CS0019); `float` is computed in single
+  precision (`16777217f` is `16777216`)
+- A double prints as .NET Core does, with the shortest digits that read back as it: `0.1 + 0.2` is
+  `0.30000000000000004`, `1e16` is `10000000000000000` (it printed `0.3` and `1E+16`); a float with its single
+  precision digits (`1f / 3` is `0.33333334`); a decimal as before (`0.1m + 0.2m` is `0.3`), but without an
+  exponent (`0.0000000001m` printed `1E-10`)
+- Numbers keep their C# type where they are written as text by `string.Format`, `Console.WriteLine("{0}", x)`,
+  `string.Join`, `string.Concat`, `StringBuilder.Append`, `AppendFormat`, `AppendJoin`, `Insert`,
+  `TextWriter.Write` and `Convert.ToString`, and in anonymous types' `ToString()`: `{0:F1}` of `2.25m` is `2.3`
+  (it rounded as a double, `2.2`)
+- `double.Epsilon` was the smallest normal double; `float.MaxValue`, `MinValue`, `Epsilon` were double's;
+  `int.MaxValue` and friends are typed as their type
+- Format strings as .NET's: standard formats round a double half to even (`2.5:F0` is `2`), a decimal half
+  away from zero (`2.5m:F0` is `3`); custom formats in full (`#.##`, `0.0%`, `‰`, `"0.0;(0.0);zero"`,
+  `'literal'`, `\#`, `E+0`, scaling commas `#,##0,,`, `(###) ###-####`); `P` is `25.6%` (was `25.6 %`);
+  `NaN` and `∞` in every format; a float's custom formats start from 7 digits; the `B` (binary) format;
+  `string.Format("{0,5}")` pads by characters (it counted bytes). Checked against .NET 10 with about
+  4,000 values and formats
+- `double.Parse` reads `"1,234.5"`, `"NaN"`, `"∞"`; `(int)3e10` saturates to `int.MaxValue` (as .NET 9+), a
+  constant out of range is CS0221 (`(long)1e19`); `(int)3.9` is the constant 3
+- `Math.Max`/`Min` with NaN are NaN, `Math.Min(-0.0, 0.0)` is -0; `Math.Sign(NaN)` throws; `Math.Clamp` checks
+  min <= max; `1 / -0.0` is -Infinity in every expression
+- `new Random(seed)` gives .NET's sequence (the same numbers as C#)
+
+**Language**
+
+- Nullable values have C#'s lifted operators: `null + 5` is null (it was 5), `null < 5` is false (it was
+  true), `-null` is null, also in `+=` and `++`; `bool?` `&` and `|` are three-valued
+- A method that hides a base method (`new`, or no `override`) is called by the static type (it was always the
+  derived one); `override` of a non-virtual method is CS0506; a missing `override` of an abstract method CS0534
+- A static constructor runs at the class's first use (it ran when the file was loaded, before `Main`)
+- Exception filters: a `catch` whose `when` is false lets the next clauses try (the exception escaped)
+- `obj?.Value = 5` (C# 14) assigns when `obj` is not null (it was a PHP fatal error)
+- `[CallerMemberName]`, `[CallerLineNumber]`, `[CallerFilePath]`, `[CallerArgumentExpression]`
+- Reference types accept null at run time, as in C# (a `record` or method with a `string` parameter threw
+  when given null)
+- `(string)x` is a reference conversion: null stays null (it became ""), a non-string is
+  `InvalidCastException`, `(string)5` is CS0030
+- `default(Point)` of a struct is a struct with default fields (it was null); `default(Guid)` and
+  `default(TimeSpan)` are `Guid.Empty` and `TimeSpan.Zero` (`default(Guid)` threw)
+- `GetType()` of a `long`, `char`, `double`, ... variable and of arrays is the C# type (`Int64`, `Double[]`)
+- `new[] { 1, 2L }` is a `long[]`, C#'s best common type (it was a compile error, SP0266)
+- `Console.WriteLine(chars)` writes a `char[]`'s characters; arrays print as `System.Int32[]`
+
+**Collections, LINQ, tasks, JSON**
+
+- `Dictionary` and `HashSet` enumerate in .NET's order after removals (a new entry takes the slot freed
+  last); adding during `foreach` throws `InvalidOperationException` (also `Queue`, `Stack`), removing from a
+  `Dictionary` does not, as in .NET
+- `TryGetValue(key, out var v)`, `TryDequeue`, `list.Find(...)`, `GetValueOrDefault(key)` of value types
+  give 0 / false, not null
+- `Min`, `Max`, `Average` skip nulls (`int?[] { 1, null, 3 }.Average()` was 1.33, is 2); throw for no elements
+  only for value types (`new string[0].Max()` is null); `Sum` of ints is checked (`OverflowException`)
+- `AggregateException`: `Task.Wait()` and `.Result` throw it around the task's exceptions, `Task.WhenAll`
+  gathers all of them, `Task.Exception` is one; `await` throws the exception itself
+- JSON is written as System.Text.Json writes it: `\u0022`, `\u003C`, non-ASCII escaped, numbers as .NET
+  (`0.30000000000000004`, `1E+21`); a null property was `""`
+- Type names have .NET's arity (`List\`1`); `Queue<T>`/`Stack<T>` `ToString()`; `Enum.GetNames<T>()` works
+- `StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries` (a [Flags] enum of the library)
+
+**Strings**
+
+- `ToUpper`/`ToLower` map one character to one character, as .NET (`"ß".ToUpper()` was `"SS"`)
+- `Split(',', 2)` takes a count, as in C# (an int was read as options); `Split()` splits at any white space
+- `string.Compare(a, b, StringComparison.Ordinal)` returns .NET's values (`31` for "a" and "B")
+- `x % 0` and `x / 0` of integers: "Attempted to divide by zero."
+
+**Breaking, for code that was not valid C#**
+
+- `float f = 1.5;`, `decimal m = 1.5;` (CS0664), `decimal + double` (CS0019), `(string)5` (CS0030),
+  `override` without `virtual` (CS0506)
+- `Split(',', (int)A | (int)B)` is now a count, as in C#: write
+  `StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries`
+
 ## 0.9.0
 
 **Integral types are checked as in C#** (they were all one type, so `byte b = 10000;` compiled and printed 10000):
