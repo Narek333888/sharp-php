@@ -18,19 +18,54 @@ final class Math
         return abs($value);
     }
 
+    /** As .NET: NaN when either is NaN, and 0.0 is larger than -0.0. */
     public static function Max(int|float $a, int|float $b): int|float
     {
-        return max($a, $b);
+        if (is_int($a) && is_int($b)) {
+            return $a >= $b ? $a : $b;
+        }
+        if (is_nan((float) $a) || is_nan((float) $b)) {
+            return NAN;
+        }
+        if ($a == $b) {
+            return self::isNegativeZero($a) ? $b : $a;
+        }
+
+        return $a > $b ? $a : $b;
     }
 
+    /** As .NET: NaN when either is NaN, and -0.0 is smaller than 0.0. */
     public static function Min(int|float $a, int|float $b): int|float
     {
-        return min($a, $b);
+        if (is_int($a) && is_int($b)) {
+            return $a <= $b ? $a : $b;
+        }
+        if (is_nan((float) $a) || is_nan((float) $b)) {
+            return NAN;
+        }
+        if ($a == $b) {
+            return self::isNegativeZero($a) ? $a : $b;
+        }
+
+        return $a < $b ? $a : $b;
     }
 
+    /** ArgumentException when min > max, as in .NET; a NaN value stays NaN. */
     public static function Clamp(int|float $value, int|float $min, int|float $max): int|float
     {
-        return max($min, min($max, $value));
+        if ($min > $max) {
+            throw new ArgumentException(sprintf("'%s' cannot be greater than %s.", \SharpPhp\Runtime\Op::str($min), \SharpPhp\Runtime\Op::str($max)));
+        }
+        if (is_float($value) && is_nan($value)) {
+            return NAN;
+        }
+
+        return $value < $min ? $min : ($value > $max ? $max : $value);
+    }
+
+    private static function isNegativeZero(int|float $x): bool
+    {
+        return is_float($x) && $x === 0.0 && fdiv(1.0, $x) < 0;
     }
 
     public static function Pow(float $x, float $y): float
@@ -89,6 +124,10 @@ final class Math
 
     public static function Sign(int|float $value): int
     {
+        if (is_float($value) && is_nan($value)) {
+            throw new ArithmeticException('Function does not accept floating point Not-a-Number values.');
+        }
+
         return $value <=> 0;
     }
 

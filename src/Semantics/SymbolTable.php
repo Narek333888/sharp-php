@@ -452,6 +452,9 @@ final class SymbolTable
                 continue;
             }
             $isCase = $constant->isEnumCase();
+            if ($isCase && str_contains((string) $constant->getDocComment(), '@internal')) {
+                continue; // a combination of a flags enum's cases (StringSplitOptions: A | B)
+            }
             $type = $isCase ? Type::class($symbol->fqn) : $this->valueType($constant->getValue());
             $symbol->addMember(new MemberSymbol($isCase ? 'case' : 'const', $constant->getName(), true, $type, $symbol));
         }

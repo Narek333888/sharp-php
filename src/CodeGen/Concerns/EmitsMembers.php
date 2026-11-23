@@ -829,6 +829,20 @@ trait EmitsMembers
     {
         $type = $member->type->substitute($subst);
 
+        // Math.Abs, Max, Min and Clamp: of the arguments' type (int for ints, double when one is a double).
+        if (in_array($member->name, ['Abs', 'Max', 'Min', 'Clamp'], true) && strcasecmp($member->owner->fqn, Names::RUNTIME_NAMESPACE . '\\System\\Math') === 0
+            && $values !== [] && ($type->isUnknown() || $type->kind === 'float')) {
+            $types = array_map(static fn (Emitted $v): Type => $v->type, array_values($values));
+            if (array_filter($types, static fn (Type $t): bool => !$t->isNumeric() || $t->nullable) === []) {
+                $ints = array_filter($types, static fn (Type $t): bool => $t->isInt());
+                if (count($ints) === count($types)) {
+                    return array_reduce($types, fn (?Type $carry, Type $t): Type => $carry === null ? $t->withNullable(false) : $this->unify($carry, $t->withNullable(false))) ?? Type::int();
+                }
+
+                return Type::float();
+            }
+        }
+
         // LINQ's Sum, Min and Max: of the elements, or of what the selector returns (int for
         // words.Max(w => w.Length)); Aggregate: of the seed, or of the elements.
         if (in_array($member->name, ['Sum', 'Min', 'Max', 'Aggregate'], true) && self::isRuntimeLibrary($member->owner)

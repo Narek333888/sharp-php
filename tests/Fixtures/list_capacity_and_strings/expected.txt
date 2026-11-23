@@ -13,3 +13,4 @@ pq123x1True
 a||b
 a|b
 a|b
+ a | ,b  RemoveEmptyEntries, TrimEntries None,RemoveEmptyEntries,TrimEntries

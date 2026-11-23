@@ -41,6 +41,11 @@ class Task
 
     private ?\Throwable $error = null;
 
+    /** @var list<\Throwable> every exception of a faulted task (WhenAll gathers those of all its tasks) */
+    private array $errors = [];
+
+    private ?\SharpPhp\Runtime\System\AggregateException $aggregate = null;
+
     /** @var list<\Closure(): void> */
     private array $continuations = [];
 
@@ -62,18 +67,22 @@ class Task
         get => $this->state === self::FAULTED && $this->error instanceof \SharpPhp\Runtime\System\OperationCanceledException;
     }
 
-    /** The exception that ended the task, or null. */
-    public ?\Throwable $Exception {
-        get => $this->error;
+    /**
+     * The exceptions that ended the task, in an AggregateException, as in .NET; null when it did not
+     * fail (or was canceled).
+     */
+    public ?\SharpPhp\Runtime\System\AggregateException $Exception {
+        get => $this->error === null || $this->IsCanceled ? null : ($this->aggregate ??= new \SharpPhp\Runtime\System\AggregateException($this->errors));
     }
 
     /**
-     * The result; waits for it when the task is still running (and throws its exception).
+     * The result; waits for it when the task is still running. A failed task throws an
+     * AggregateException around its exceptions, as in .NET (await throws the exception itself).
      *
      * @var T
      */
     public mixed $Result {
-        get => self::await($this);
+        get => $this->waitFor();
     }
 
     /**
@@ -166,14 +175,26 @@ class Task
                 if (--$remaining > 0) {
                     return;
                 }
+                // As .NET: the exceptions of every failed task; canceled only when none failed.
+                $errors = [];
+                $canceled = null;
                 foreach ($tasks as $t) {
-                    if ($t->error !== null) {
-                        $all->fail($t->error);
-
-                        return;
+                    if ($t->error === null) {
+                        continue;
+                    }
+                    if ($t->IsCanceled) {
+                        $canceled ??= $t->error;
+                    } else {
+                        array_push($errors, ...$t->errors);
                     }
                 }
-                $all->succeed(array_map(static fn (self $t): mixed => $t->result, $tasks));
+                if ($errors !== []) {
+                    $all->failWith($errors);
+                } elseif ($canceled !== null) {
+                    $all->fail($canceled);
+                } else {
+                    $all->succeed(array_map(static fn (self $t): mixed => $t->result, $tasks));
+                }
             });
         }
 
@@ -205,10 +226,23 @@ class Task
         return $any;
     }
 
-    /** Waits (blocking) until the task has finished; throws its exception. */
+    /** Waits (blocking) until the task has finished; a failed task throws an AggregateException around its exceptions. */
     public function Wait(): void
     {
-        self::await($this);
+        $this->waitFor();
+    }
+
+    /** @return T */
+    private function waitFor(): mixed
+    {
+        try {
+            /** @var T $result */
+            $result = self::await($this);
+
+            return $result;
+        } catch (\Throwable) {
+            throw new \SharpPhp\Runtime\System\AggregateException($this->errors);
+        }
     }
 
     public function ToString(): string
@@ -282,9 +316,16 @@ class Task
     /** @internal */
     public function fail(\Throwable $error): void
     {
+        $this->failWith([$error]);
+    }
+
+    /** @param non-empty-list<\Throwable> $errors */
+    private function failWith(array $errors): void
+    {
         if ($this->state === self::PENDING) {
             $this->state = self::FAULTED;
-            $this->error = $error;
+            $this->error = $errors[0];
+            $this->errors = $errors;
             $this->completed();
         }
     }

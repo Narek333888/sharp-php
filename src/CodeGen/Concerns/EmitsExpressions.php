@@ -451,6 +451,13 @@ trait EmitsExpressions
             case '|':
             case '^':
                 $prec = ['&' => Prec::BAND, '|' => Prec::BOR, '^' => Prec::BXOR][$op];
+                if ($this->conversions->isEnum($lt) && $lt->withNullable(false)->equals($rt->withNullable(false)) && !$lt->nullable
+                    && $this->symbols->isSubtypeOf((string) $lt->class, Names::RUNTIME_NAMESPACE . '\\FlagsEnum')) {
+                    // A [Flags] enum of the runtime library: it has a case for each combination.
+                    $enum = $this->classRef((string) $lt->class);
+
+                    return Emitted::value("$enum::from(" . $this->wrap($l, Prec::ATOM) . "->value $op " . $this->wrap($r, Prec::ATOM) . '->value)', $lt);
+                }
                 if ($this->conversions->isEnum($lt) || $this->conversions->isEnum($rt)) {
                     // PHP failed at run time ("Unsupported operand types"): an enum value is an object.
                     throw $this->error('SP1010', "Combining enum values with '$op' ([Flags] enums) is not supported: SharpPHP's enums are PHP enums, which have no combined values; combine their numbers instead: (int)A | (int)B", $at);

@@ -51,6 +51,13 @@ final class ErrorHandler
         if ($e instanceof \Error && self::isNullAccess($e->getMessage())) {
             return (new NullReferenceException())->withLocation($e->getFile(), $e->getLine());
         }
+        // x / 0 and x % 0 of integers (intdiv, %), and long.MinValue / -1.
+        if ($e instanceof \DivisionByZeroError) {
+            return (new System\DivideByZeroException())->withLocation($e->getFile(), $e->getLine());
+        }
+        if ($e instanceof \ArithmeticError) {
+            return (new System\OverflowException('Arithmetic operation resulted in an overflow.'))->withLocation($e->getFile(), $e->getLine());
+        }
 
         return $e;
     }

@@ -39,13 +39,8 @@ final class Op
 
             return intdiv($a, $b);
         }
-        $a = self::number($a, '/', $b);
-        $b = self::number($b, '/', $a);
-        if ($b == 0) {
-            return is_nan((float) $a) || $a == 0 ? NAN : ($a > 0 ? INF : -INF);
-        }
-
-        return $a / $b;
+        // IEEE division: 1 / -0.0 is -Infinity, 0.0 / 0.0 is NaN.
+        return fdiv((float) self::number($a, '/', $b), (float) self::number($b, '/', $a));
     }
 
     public static function mod(mixed $a, mixed $b): int|float|null
@@ -88,6 +83,7 @@ final class Op
             is_bool($value) => $value ? 'True' : 'False',
             is_int($value) => (string) $value,
             is_float($value) => self::float($value),
+            $value instanceof FlagsEnum && $value instanceof \UnitEnum => str_replace('_', ', ', $value->name),
             $value instanceof \UnitEnum => $value->name,
             is_object($value) && method_exists($value, 'ToString') => self::str($value->ToString()),
             $value instanceof \Throwable => TypeName::of($value) . ': ' . $value->getMessage(),

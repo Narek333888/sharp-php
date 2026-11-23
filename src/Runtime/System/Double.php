@@ -11,28 +11,48 @@ final class Double
 {
     public const float MaxValue = PHP_FLOAT_MAX;
     public const float MinValue = -PHP_FLOAT_MAX;
-    public const float Epsilon = PHP_FLOAT_MIN;
+    /** The smallest positive double (a subnormal one), as .NET's; PHP_FLOAT_MIN is the smallest normal one. */
+    public const float Epsilon = 4.9406564584124654E-324;
     public const float NaN = NAN;
     public const float PositiveInfinity = INF;
     public const float NegativeInfinity = -INF;
 
+    /**
+     * As .NET's double.Parse (NumberStyles.Float | AllowThousands, en-US): white space around, a leading
+     * sign, group separators in the integer part ("1,234.5"), an exponent, "NaN", "∞" and "-∞".
+     */
     public static function Parse(string $s): float
     {
-        $value = filter_var(trim($s), FILTER_VALIDATE_FLOAT);
-        if ($value === false) {
-            throw new FormatException("The input string '$s' was not in a correct format.");
-        }
-
-        return $value;
+        return self::read($s) ?? throw new FormatException("The input string '$s' was not in a correct format.");
     }
 
     /** @param-out float $result */
     public static function TryParse(?string $s, ?float &$result): bool
     {
-        $value = $s === null ? false : filter_var(trim($s), FILTER_VALIDATE_FLOAT);
-        $result = $value === false ? 0.0 : $value;
+        $value = $s === null ? null : self::read($s);
+        $result = $value ?? 0.0;
 
-        return $value !== false;
+        return $value !== null;
+    }
+
+    private static function read(string $s): ?float
+    {
+        $s = trim($s, " \t\n\r\v\f");
+        switch ($s) {
+            case 'NaN':
+                return NAN;
+            case '∞':
+            case '+∞':
+                return INF;
+            case '-∞':
+                return -INF;
+        }
+        if (preg_match('/^[+-]?(?:\d[\d,]*(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/', $s) !== 1) {
+            return null;
+        }
+        $value = (float) str_replace(',', '', $s);
+
+        return is_finite($value) ? $value : ($value > 0 ? INF : -INF);
     }
 
     public static function IsNaN(float $value): bool

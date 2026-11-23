@@ -42,12 +42,12 @@ final class Char
     /** @sharp-return char */
     public static function ToUpper(string $c): string
     {
-        return mb_strtoupper($c);
+        return String_::upper($c);
     }
 
     /** @sharp-return char */
     public static function ToLower(string $c): string
     {
-        return mb_strtolower($c);
+        return String_::lower($c);
     }
 }

@@ -15,7 +15,13 @@ namespace SharpPhp\Runtime\System;
  */
 final class Enum_
 {
-    /** @return list<string> */
+    /**
+     * Enum.GetNames<Color>() or Enum.GetNames(typeof(Color)).
+     *
+     * @sharp-template TEnum
+     * @sharp-reified TEnum $enumClass
+     * @return list<string>
+     */
     public static function GetNames(?Type $enumType = null, ?string $enumClass = null): array
     {
         return array_map(static fn (\UnitEnum $case): string => $case->name, self::cases($enumType, $enumClass));
@@ -94,7 +100,13 @@ final class Enum_
             throw new ArgumentException('Type provided must be an Enum.' . ($enumType !== null ? " ({$enumType->FullName})" : ' (pass the enum type: Enum.GetValues<Color>())'));
         }
 
-        return $class::cases();
+        $cases = $class::cases();
+        if (is_subclass_of($class, \SharpPhp\Runtime\FlagsEnum::class)) {
+            // Not the combinations of a flags enum's flags (StringSplitOptions.RemoveEmptyEntries_TrimEntries).
+            $cases = array_values(array_filter($cases, static fn (\UnitEnum $c): bool => !str_contains((string) (new \ReflectionEnumUnitCase($c::class, $c->name))->getDocComment(), '@internal')));
+        }
+
+        return $cases;
     }
 
     /** @param list<\UnitEnum> $cases */

@@ -115,12 +115,52 @@ final class String_
         }
 
         return match (true) {
-            $ignoreCase === StringComparison::Ordinal => strcmp($a, $b) <=> 0,
+            $ignoreCase === StringComparison::Ordinal => self::compareOrdinal($a, $b, firstCharFirst: true),
             // As .NET: OrdinalIgnoreCase compares the upper-case forms.
-            $ignoreCase === StringComparison::OrdinalIgnoreCase => strcmp(mb_strtoupper($a), mb_strtoupper($b)) <=> 0,
-            $ignoreCase === true || ($ignoreCase instanceof StringComparison && $ignoreCase->ignoresCase()) => strcmp(mb_strtolower($a), mb_strtolower($b)) <=> 0,
+            $ignoreCase === StringComparison::OrdinalIgnoreCase => self::compareOrdinal(self::upper($a), self::upper($b), firstCharFirst: false),
+            $ignoreCase === true || ($ignoreCase instanceof StringComparison && $ignoreCase->ignoresCase()) => strcmp(self::lower($a), self::lower($b)) <=> 0,
             default => Op::compareStrings($a, $b),
         };
+    }
+
+    /**
+     * .NET's ordinal comparison: the difference of the first chars when they differ (an empty string's
+     * is 0: "" against "a" is -97), else of the first chars that differ, else of the lengths.
+     */
+    private static function compareOrdinal(string $a, string $b, bool $firstCharFirst): int
+    {
+        if ($a === $b) {
+            return 0;
+        }
+        $x = mb_str_split($a);
+        $y = mb_str_split($b);
+        if ($firstCharFirst && ($x[0] ?? '') !== ($y[0] ?? '')) {
+            return (isset($x[0]) ? mb_ord($x[0]) : 0) - (isset($y[0]) ? mb_ord($y[0]) : 0);
+        }
+        for ($i = 0, $n = min(count($x), count($y)); $i < $n; $i++) {
+            if ($x[$i] !== $y[$i]) {
+                return mb_ord($x[$i]) - mb_ord($y[$i]);
+            }
+        }
+
+        return count($x) - count($y);
+    }
+
+    /**
+     * Upper case as .NET's ToUpper: one char for one char ("ß" stays "ß", "ǆ" is "Ǆ"), never PHP's
+     * full mapping ("ß" to "SS", "ﬁ" to "FI").
+     *
+     * @internal
+     */
+    public static function upper(string $s): string
+    {
+        return mb_convert_case($s, MB_CASE_UPPER_SIMPLE, 'UTF-8');
+    }
+
+    /** Lower case as .NET's ToLower: one char for one char, and no final sigma ("ΣΑΣ" is "σασ"). @internal */
+    public static function lower(string $s): string
+    {
+        return mb_convert_case($s, MB_CASE_LOWER_SIMPLE, 'UTF-8');
     }
 
     /** string.Equals(a, b) and a.Equals(b), optionally with a StringComparison. */
@@ -130,7 +170,7 @@ final class String_
             return $a === $b;
         }
 
-        return mb_strtolower($a) === mb_strtolower($b);
+        return self::upper($a) === self::upper($b);
     }
 
     // ---- instance members (receiver first) ---------------------------
@@ -142,22 +182,22 @@ final class String_
 
     public static function ToUpper(string $s): string
     {
-        return mb_strtoupper($s);
+        return self::upper($s);
     }
 
     public static function ToLower(string $s): string
     {
-        return mb_strtolower($s);
+        return self::lower($s);
     }
 
     public static function ToUpperInvariant(string $s): string
     {
-        return mb_strtoupper($s);
+        return self::upper($s);
     }
 
     public static function ToLowerInvariant(string $s): string
     {
-        return mb_strtolower($s);
+        return self::lower($s);
     }
 
     public static function Trim(string $s, ?string $chars = null): string
@@ -183,7 +223,7 @@ final class String_
     public static function StartsWith(string $s, string $value, ?StringComparison $comparisonType = null): bool
     {
         if ($comparisonType?->ignoresCase() === true) {
-            return mb_strtolower(mb_substr($s, 0, mb_strlen($value))) === mb_strtolower($value);
+            return self::upper(mb_substr($s, 0, mb_strlen($value))) === self::upper($value);
         }
 
         return str_starts_with($s, $value);
@@ -194,7 +234,7 @@ final class String_
         if ($comparisonType?->ignoresCase() === true) {
             $length = mb_strlen($value);
 
-            return $length === 0 || mb_strtolower(mb_substr($s, -$length)) === mb_strtolower($value);
+            return $length === 0 || self::upper(mb_substr($s, -$length)) === self::upper($value);
         }
 
         return str_ends_with($s, $value);
@@ -248,22 +288,54 @@ final class String_
     }
 
     /**
-     * text.Split(',') / text.Split(", ") / text.Split(new[] { ',', ';' })
+     * text.Split(',') / text.Split(", ") / text.Split(new[] { ',', ';' }) / text.Split() (white space),
+     * each with a count (the most parts: the last one is the rest of the string) and options.
      *
      * @param string|list<string>|null $separator
      * @return string[]
      */
-    public static function Split(string $s, string|array|null $separator = null, StringSplitOptions|int $options = 0): array
+    public static function Split(string $s, string|array|null $separator = null, StringSplitOptions|int $countOrOptions = PHP_INT_MAX, ?StringSplitOptions $options = null): array
     {
-        $flags = $options instanceof StringSplitOptions ? $options->value : $options;
-        $separators = $separator === null ? [' '] : (array) $separator;
-        $pattern = '/' . implode('|', array_map(static fn (string $p): string => preg_quote($p, '/'), $separators)) . '/u';
-        $parts = preg_split($pattern, $s) ?: [$s];
-        if ($flags & StringSplitOptions::TrimEntries->value) {
-            $parts = array_map(static fn (string $p): string => trim($p), $parts);
+        [$count, $options] = $countOrOptions instanceof StringSplitOptions ? [PHP_INT_MAX, $countOrOptions] : [$countOrOptions, $options ?? StringSplitOptions::None];
+        if ($count < 0) {
+            throw new ArgumentOutOfRangeException('count', 'Count cannot be less than zero.');
         }
-        if ($flags & StringSplitOptions::RemoveEmptyEntries->value) {
-            $parts = array_values(array_filter($parts, static fn (string $p): bool => $p !== ''));
+        $trim = ($options->value & StringSplitOptions::TrimEntries->value) !== 0;
+        $removeEmpty = ($options->value & StringSplitOptions::RemoveEmptyEntries->value) !== 0;
+        $separators = array_values(array_filter((array) ($separator ?? []), static fn (string $p): bool => $p !== ''));
+        if ($count === 0 || ($s === '' && $removeEmpty)) {
+            return [];
+        }
+        $pattern = $separator === null || ((array) $separator === [] )
+            ? '/[\s\x{85}\x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}]/u' // char.IsWhiteSpace
+            : ($separators === [] ? null : '/' . implode('|', array_map(static fn (string $p): string => preg_quote($p, '/'), $separators)) . '/u');
+        $finish = static fn (string $p): string => $trim ? self::Trim($p) : $p;
+        if ($pattern === null || $count === 1) {
+            $only = $finish($s);
+
+            return $removeEmpty && $only === '' ? [] : [$only];
+        }
+        // The parts, each with the offset where the rest of the string after it starts.
+        $pieces = preg_split($pattern, $s, -1, PREG_SPLIT_OFFSET_CAPTURE) ?: [[$s, 0]];
+        $parts = [];
+        foreach ($pieces as $i => [$piece, $offset]) {
+            $last = $i === count($pieces) - 1;
+            if (count($parts) === $count - 1 && !$last) {
+                if ($removeEmpty && $finish($piece) === '') {
+                    continue; // empty parts before the rest are skipped
+                }
+                // The rest of the string, from this part on.
+                $rest = $finish(substr($s, $offset));
+                if (!($removeEmpty && $rest === '')) {
+                    $parts[] = $rest;
+                }
+
+                return $parts;
+            }
+            $piece = $finish($piece);
+            if (!($removeEmpty && $piece === '')) {
+                $parts[] = $piece;
+            }
         }
 
         return $parts;
