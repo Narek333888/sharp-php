@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 
 **Breaking: extension methods take their receiver as C# does.** Code that .NET 10 rejects, and that compiled
 before, is now a compile error:
