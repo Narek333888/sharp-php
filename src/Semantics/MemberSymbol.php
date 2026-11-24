@@ -31,6 +31,12 @@ final class MemberSymbol
     /** Project properties without accessor bodies: a get-only one can be assigned in a constructor. */
     public bool $isAutoProperty = false;
 
+    /**
+     * Declared internal or protected internal: public within the project (one assembly), but not for
+     * implementing an interface member, which takes a public one only (CS0737).
+     */
+    public bool $isInternal = false;
+
     /** Project fields declared readonly. */
     public bool $isReadonly = false;
 

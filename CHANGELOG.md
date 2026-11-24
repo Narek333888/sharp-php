@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.12.0
+
+**Breaking: an interface member is implemented as C# requires.** Only the name and the number of parameters were
+compared, so code that .NET 10 rejects compiled, and PHP failed when it loaded the class ("Declaration of
+Bad::GetAll() must be compatible", "Access level to Bad::Add() must be public") or did not notice at all:
+
+- The parameter types, with the interface's type arguments put in, and `ref`/`out`/`in`: `Delete(long item)` does
+  not implement `Delete(T item)` of a `BaseRepository<int>` (SP0535); nor does a non-generic method implement a
+  generic one, or a field a property. A generic class (`R<U> : BaseRepository<U>`), a generic method (`U Get<U>(U x)`
+  for `T Get<T>(T x)`), an inherited implementation (`B<int>.Add(int)`) and interfaces that inherit interfaces are
+  compared as C# does
+- The implementing member is public: SP0737 for a private, protected, `internal` or `protected internal` one (also
+  for PHP's and the runtime library's interfaces, `IDisposable.Dispose()`)
+- The same return type (property type): SP0738 for `IEnumerable<int> GetAll()` where the interface has
+  `List<T> GetAll()`, `float` for `double`, `int` for `int?`, `string` for `object`, `Task<long>` for `Task<int>`;
+  `string` for `string?` is the same type (nullable reference types are annotations)
+- A property's `set` accessor is implemented by a public `set` (SP0535, SP0277), an `init` one by an `init` (SP8854)
+- The messages name the members as C# does: `'BaseRepository<int>.Delete(int)'` (it was `BaseRepository.Delete(T)`)
+
+64 programs with .NET 10's verdict in `tests/Fixtures/csharp-rules.txt`.
+
 ## 0.11.0
 
 **Breaking: extension methods take their receiver as C# does.** Code that .NET 10 rejects, and that compiled

@@ -873,7 +873,10 @@ Like the C# compiler, SharpPHP rejects at compile time (not at runtime):
 - reading a local variable before it is definitely assigned (`break`, `continue`, `return`, `try`/`finally` and
   constant conditions such as `while (true)` are taken into account); `out` parameters not assigned before returning
 - `private`/`protected` members and constructors used from outside, assignments to get-only, init-only and `readonly` members, setters that are not accessible
-- classes that do not implement their interfaces (with matching parameter counts) or inherited abstract members
+- classes that do not implement their interfaces or inherited abstract members: an interface member is implemented by a
+  public member with the same parameter types (`ref`/`out` too) and return type, the interface's type arguments put in
+  (`Delete(long)` does not implement `Delete(T)` of a `BaseRepository<int>`, CS0535; CS0737, CS0738), and a property's
+  `set` or `init` by a public one of the same kind (CS0277, CS8854)
 - members that do not exist, also on the runtime library's types: `list.Lenght`, `text.Shout()` without an extension method
 - array initializers that do not match their size (`new int[2] { 1, 2, 3 }`), constant negative array sizes
 - operators the operand types do not have: `true + 1`, `"a" * 2`, `"a" < "b"`, `E1.A == E2.A`, `date == "x"`, `-"a"`, `!5`, `5 ?? 0` (CS0019, CS0023); `?:` whose branches have no type in common, `var v = c ? 1 : "a"` (CS0173); `i += 1.5` of an int (CS0266); a constant division by zero (CS0020)

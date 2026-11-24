@@ -416,6 +416,7 @@ final class Declarator
                     visibility: self::visibility($member->modifiers, $defaultVisibility),
                 );
                 $property->isAbstract = in_array('abstract', $member->modifiers, true);
+                $property->isInternal = self::isInternal($member->modifiers);
                 $property->isAutoProperty = $member->exprBody === null;
                 foreach ($member->accessors as $accessor) {
                     if ($accessor->body !== null || $accessor->exprBody !== null) {
@@ -474,6 +475,7 @@ final class Declarator
                     self::visibility($member->modifiers, $defaultVisibility),
                 );
                 $method->isAbstract = in_array('abstract', $member->modifiers, true);
+                $method->isInternal = self::isInternal($member->modifiers);
                 $method->constraints = $this->constraintsOf($member, $ctx, $methodTypeParams);
                 $method->isOverride = in_array('override', $member->modifiers, true);
                 $method->isVirtual = $method->isAbstract || $method->isOverride || in_array('virtual', $member->modifiers, true);
@@ -610,6 +612,12 @@ final class Declarator
         }
 
         return false;
+    }
+
+    /** @param list<string> $modifiers internal or protected internal, not public */
+    private static function isInternal(array $modifiers): bool
+    {
+        return in_array('internal', $modifiers, true) && !in_array('public', $modifiers, true) && !in_array('private', $modifiers, true);
     }
 
     /** @param list<string> $modifiers */
