@@ -64,6 +64,38 @@ final class Conversions
     }
 
     /**
+     * Whether a receiver of type $from can be the "this" argument of an extension method taking $to: C#
+     * allows an identity, implicit reference or boxing conversion only. 5.M() does not call M(this long x)
+     * or M(this int? x), though an int converts to both; it calls M(this object x) or M(this IComparable<int> x).
+     */
+    public function isReceiverConversion(Type $from, Type $to): bool
+    {
+        if (!$this->isImplicit($from, $to)) {
+            return false;
+        }
+        if ($from->isUnknown() || $from->kind === 'typeparam' || $to->isUnknown() || $to->kind === 'typeparam' || !$this->isValueType($from)) {
+            return true;
+        }
+
+        // A value type: boxed (to object or an interface it implements), or of the same type.
+        return !$this->isValueType($to) || $this->sameValueType($from, $to);
+    }
+
+    /** int and int, int? and int?; a number of PHP code (of unknown size) is of any size of its kind. */
+    private function sameValueType(Type $a, Type $b): bool
+    {
+        if ($a->nullable !== $b->nullable || $a->kind !== $b->kind) {
+            return false;
+        }
+
+        return match ($a->kind) {
+            'int' => $a->integralName() === $b->integralName() || in_array(Type::UNSIZED, [$a->integralName(), $b->integralName()], true),
+            'float' => $a->floatingName() === $b->floatingName() || in_array(Type::UNSIZED, [$a->floatingName(), $b->floatingName()], true),
+            default => $a->withNullable(false)->equals($b->withNullable(false)),
+        };
+    }
+
+    /**
      * C#'s implicit conversions between double, float and decimal: float to double only (double to float,
      * and either to decimal or back, need a cast). A float of PHP code converts to and from all.
      */

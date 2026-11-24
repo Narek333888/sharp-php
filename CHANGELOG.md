@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+**Breaking: extension methods take their receiver as C# does.** Code that .NET 10 rejects, and that compiled
+before, is now a compile error:
+
+- Explicit type arguments apply to the receiver: `"x".Print<bool>()` for `Print<T>(this T arg)` is SP1929
+  ("requires a receiver of type 'bool'"; it printed the string), as is `list.Count2<string>()` of a
+  `List<int>`; a wrong number of type arguments (`"x".Print<int, int>()`) is SP1061
+- The receiver converts to the `this` parameter only by an identity, reference or boxing conversion:
+  `5.M()` does not call `M(this long x)`, `M(this double x)` or `M(this int? x)`, a `char` or an enum not
+  `M(this int x)`, an `int?` not `M(this int x)` (SP1929); `M(this object x)` and an interface the value
+  implements still take it. Under `?.` the receiver is not null, as in C#: `s?.Length.Twice()` and `x?.Twice()`
+  of an `int? x` call `Twice(this int x)`
+- When an extension method of that name is in scope but takes another receiver, the error is SP1929 naming
+  it, as C#'s CS1929 (it was SP1061, or no error)
+- A method that a number, a `bool` or a `char` does not have (`5.Foo()`) is SP1061; it compiled and threw
+  `InvalidOperationException` at run time
+
 ## 0.10.0
 
 Checked against .NET 10 itself: the same programs run in .NET and in SharpPHP, and their output is compared.

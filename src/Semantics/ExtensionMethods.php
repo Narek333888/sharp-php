@@ -15,7 +15,11 @@ namespace SharpPhp\Semantics;
  *
  * "hi".Shout() then calls StringExtensions.Shout("hi"), when the receiver's type has no method of
  * that name (instance methods come first), the class is in a namespace the file sees (its own, one
- * around it, or an imported one), and the receiver converts to the "this" parameter.
+ * around it, or an imported one), and the receiver converts to the "this" parameter by an identity,
+ * reference or boxing conversion (see Conversions::isReceiverConversion()).
+ *
+ * Explicit type arguments ("x".Print<bool>()) choose the methods with that many type parameters, and
+ * the receiver must convert to the "this" parameter with them: Print<T>(this T arg) then takes a bool.
  */
 final class ExtensionMethods
 {
@@ -29,21 +33,15 @@ final class ExtensionMethods
      * The extension methods a receiver of type $receiver can call where $context applies: all of them,
      * or the ones named $name (case-insensitively, like PHP method names).
      *
+     * @param list<Type>|null $typeArgs the call's explicit type arguments; null when it has none
      * @return list<MemberSymbol>
      */
-    public function applicable(Type $receiver, ResolutionContext $context, ?string $name = null): array
+    public function applicable(Type $receiver, ResolutionContext $context, ?string $name = null, ?array $typeArgs = null): array
     {
-        $namespaces = array_flip($context->namespacesInScope());
-        $found = [];
-        foreach ($this->symbols->extensions() as $method) {
-            if (($name === null || strcasecmp($method->name, $name) === 0)
-                && isset($namespaces[$method->owner->csharpNamespace()])
-                && $this->accepts($method, $receiver)) {
-                $found[] = $method;
-            }
-        }
-
-        return $found;
+        return array_values(array_filter(
+            $this->named($context, $name, $typeArgs),
+            fn (MemberSymbol $method): bool => $this->accepts($method, $receiver, $typeArgs),
+        ));
     }
 
     /**
@@ -51,14 +49,53 @@ final class ExtensionMethods
      * specific (one for "this string" before one for "this object"). Empty when none applies; more than
      * one when the call is ambiguous.
      *
+     * @param list<Type>|null $typeArgs the call's explicit type arguments; null when it has none
      * @return list<MemberSymbol>
      */
-    public function best(Type $receiver, ResolutionContext $context, string $name): array
+    public function best(Type $receiver, ResolutionContext $context, string $name, ?array $typeArgs = null): array
     {
         // Property getters of extension blocks (get_Name) are found through bestProperty().
-        $candidates = array_values(array_filter($this->applicable($receiver, $context, $name), static fn (MemberSymbol $m): bool => $m->extensionProperty === null));
+        $candidates = array_values(array_filter($this->applicable($receiver, $context, $name, $typeArgs), static fn (MemberSymbol $m): bool => $m->extensionProperty === null));
 
-        return $this->mostSpecific($candidates);
+        return $this->mostSpecific($candidates, $typeArgs);
+    }
+
+    /**
+     * The extension method C# names when receiver.$name(...) finds none that applies (CS1929, "requires a
+     * receiver of type ..."): the first one in scope of that name that the receiver cannot be passed to.
+     * A generic one counts only when the call gives its type arguments, or when its "this" parameter does
+     * not use them: C# drops a method whose type arguments it cannot infer from the receiver (CS1061).
+     *
+     * @param list<Type>|null $typeArgs the call's explicit type arguments; null when it has none
+     */
+    public function rejecting(Type $receiver, ResolutionContext $context, string $name, ?array $typeArgs = null): ?MemberSymbol
+    {
+        foreach ($this->named($context, $name, $typeArgs) as $method) {
+            if ($method->extensionProperty === null && !$this->accepts($method, $receiver, $typeArgs)
+                && ($typeArgs !== null || self::thisType($method)->equals($method->params[0]->type))) {
+                return $method;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The type of the method's "this" parameter for a call with these explicit type arguments ("bool"
+     * for Print<T>(this T arg) called as Print<bool>()); its other type parameters stand for any type.
+     *
+     * @param list<Type>|null $typeArgs
+     */
+    public static function thisType(MemberSymbol $method, ?array $typeArgs = null): Type
+    {
+        $map = array_fill_keys($method->typeParams, Type::mixed());
+        foreach ($method->typeParams as $i => $param) {
+            if (isset($typeArgs[$i])) {
+                $map[$param] = $typeArgs[$i];
+            }
+        }
+
+        return $method->params[0]->type->substitute($map);
     }
 
     /**
@@ -71,7 +108,7 @@ final class ExtensionMethods
     {
         $candidates = array_values(array_filter($this->applicable($receiver, $context, 'get_' . $name), static fn (MemberSymbol $m): bool => $m->extensionProperty === $name));
 
-        return $this->mostSpecific($candidates);
+        return $this->mostSpecific($candidates, null);
     }
 
     /**
@@ -123,14 +160,37 @@ final class ExtensionMethods
     }
 
     /**
-     * @param list<MemberSymbol> $candidates
+     * The extension methods named $name (all when null) in a namespace the file sees; with explicit type
+     * arguments, the ones with that many type parameters.
+     *
+     * @param list<Type>|null $typeArgs
      * @return list<MemberSymbol>
      */
-    private function mostSpecific(array $candidates): array
+    private function named(ResolutionContext $context, ?string $name, ?array $typeArgs): array
     {
-        return array_values(array_filter($candidates, function (MemberSymbol $candidate) use ($candidates): bool {
+        $namespaces = array_flip($context->namespacesInScope());
+        $found = [];
+        foreach ($this->symbols->extensions() as $method) {
+            if (($name === null || strcasecmp($method->name, $name) === 0)
+                && isset($namespaces[$method->owner->csharpNamespace()])
+                && ($typeArgs === null || count($method->typeParams) === count($typeArgs))) {
+                $found[] = $method;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * @param list<MemberSymbol> $candidates
+     * @param list<Type>|null $typeArgs
+     * @return list<MemberSymbol>
+     */
+    private function mostSpecific(array $candidates, ?array $typeArgs): array
+    {
+        return array_values(array_filter($candidates, function (MemberSymbol $candidate) use ($candidates, $typeArgs): bool {
             foreach ($candidates as $other) {
-                if ($other !== $candidate && $this->moreSpecific($other, $candidate)) {
+                if ($other !== $candidate && $this->moreSpecific($other, $candidate, $typeArgs)) {
                     return false;
                 }
             }
@@ -139,24 +199,32 @@ final class ExtensionMethods
         }));
     }
 
-    /** Whether a receiver of type $receiver can be passed as the method's "this" parameter. */
-    private function accepts(MemberSymbol $method, Type $receiver): bool
+    /**
+     * Whether a receiver of type $receiver can be passed as the method's "this" parameter.
+     *
+     * @param list<Type>|null $typeArgs
+     */
+    private function accepts(MemberSymbol $method, Type $receiver, ?array $typeArgs): bool
     {
-        $thisType = self::thisType($method);
+        $thisType = self::thisType($method, $typeArgs);
         // As far as the compiler knows, a value of unknown type (object, untyped PHP code) converts to
         // anything, so it would match every extension method. C# binds it to "this object" ones only.
         if ($receiver->isUnknown()) {
             return $thisType->isUnknown();
         }
 
-        return $this->conversions->isImplicit($receiver, $thisType);
+        return $this->conversions->isReceiverConversion($receiver, $thisType);
     }
 
-    /** $a takes fewer receivers than $b: its "this" type converts to $b's, not the other way round. */
-    private function moreSpecific(MemberSymbol $a, MemberSymbol $b): bool
+    /**
+     * $a takes fewer receivers than $b: its "this" type converts to $b's, not the other way round.
+     *
+     * @param list<Type>|null $typeArgs
+     */
+    private function moreSpecific(MemberSymbol $a, MemberSymbol $b, ?array $typeArgs): bool
     {
-        $thisA = self::thisType($a);
-        $thisB = self::thisType($b);
+        $thisA = self::thisType($a, $typeArgs);
+        $thisB = self::thisType($b, $typeArgs);
         // Any type converts to and from an unknown one, so that comparison says nothing: object is the
         // least specific "this" type.
         if ($thisA->isUnknown() || $thisB->isUnknown()) {
@@ -164,11 +232,5 @@ final class ExtensionMethods
         }
 
         return $this->conversions->isImplicit($thisA, $thisB) && !$this->conversions->isImplicit($thisB, $thisA);
-    }
-
-    /** The type of the "this" parameter, the method's own type parameters standing for any type. */
-    private static function thisType(MemberSymbol $method): Type
-    {
-        return $method->params[0]->type->substitute(array_fill_keys($method->typeParams, Type::mixed()));
     }
 }

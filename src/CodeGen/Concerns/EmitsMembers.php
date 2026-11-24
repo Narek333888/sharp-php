@@ -8,6 +8,7 @@ use SharpPhp\CodeGen\Emitted;
 use SharpPhp\CodeGen\Prec;
 use SharpPhp\Compiler\CompileError;
 use SharpPhp\Compiler\SemanticModel;
+use SharpPhp\Semantics\ExtensionMethods;
 use SharpPhp\Semantics\MemberSymbol;
 use SharpPhp\Semantics\Names;
 use SharpPhp\Semantics\ParameterSymbol;
@@ -438,7 +439,7 @@ trait EmitsMembers
      */
     private function extensionPropertyAccess(Emitted $target, MemberAccessExpr $e): ?Emitted
     {
-        $found = $this->extensions->bestProperty($target->type, $this->ctx, $e->name);
+        $found = $this->extensions->bestProperty($this->receiverType($target, $e), $this->ctx, $e->name);
         if ($found === []) {
             return null;
         }
@@ -993,6 +994,10 @@ trait EmitsMembers
             if ($extension !== null) {
                 return $extension;
             }
+            // Dyn::call() answers System.Object's methods of a number, a bool or a char; C# knows no other.
+            if (!in_array($name, ['Equals', 'CompareTo', 'GetHashCode'], true)) {
+                throw $this->noSuchMethod($target, $callee, $this->receiverType($target, $callee)->describe());
+            }
             [$code] = $this->arguments($args, []);
             $dyn = $this->runtime('Dyn');
 
@@ -1009,7 +1014,7 @@ trait EmitsMembers
             }
 
             return $this->callExtension($target, $callee, $call)
-                ?? throw $this->error('SP1061', "'delegate' does not contain a definition for '$name'", $callee);
+                ?? throw $this->noSuchMethod($target, $callee, 'delegate');
         }
 
         if ($t->kind === 'typeparam' && in_array($name, self::DYNAMIC_METHODS, true)) {
@@ -1048,7 +1053,7 @@ trait EmitsMembers
             }
             // SharpPHP's own library is known in full: list.Foo() is an error, as in C#, not a PHP call.
             if ((!$symbol->external || self::isRuntimeLibrary($symbol)) && !$this->answersAnyName($symbol, '__call')) {
-                throw $this->error('SP1061', "'{$symbol->csharpName()}' does not contain a definition for '$name'", $callee);
+                throw $this->noSuchMethod($target, $callee, $symbol->csharpName());
             }
             // A PHP class answers any name through __call (a SharpPHP class too when it inherits __call).
             $code = $this->untypedPhpArguments($args);
@@ -1103,7 +1108,7 @@ trait EmitsMembers
         }
         $enumerable = $this->symbols->find(Names::RUNTIME_NAMESPACE . '\\System\\Linq\\Enumerable');
         $linq = $enumerable !== null ? $this->findMethod($enumerable, $callee->name) : null;
-        if ($linq === null || !$linq->isStatic || $this->extensions->best($target->type, $this->ctx, $callee->name) !== []) {
+        if ($linq === null || !$linq->isStatic || $this->extensions->best($target->type, $this->ctx, $callee->name, $this->explicitTypeArgs($callee)) !== []) {
             return null;
         }
         $chars = Emitted::value($this->runtime('System\\String_') . '::chars(' . $target->code . ')', Type::array(Type::char())->withNullable($target->type->nullable));
@@ -1123,7 +1128,7 @@ trait EmitsMembers
         $member = $symbol !== null ? $this->findMethod($symbol, $callee->name) : null;
         if ($member === null || !$member->isStatic) {
             return $this->callExtension($target, $callee, $call)
-                ?? throw $this->error('SP1061', "'$what' does not contain a definition for '{$callee->name}'", $callee);
+                ?? throw $this->noSuchMethod($target, $callee, $what);
         }
 
         return $this->callWithReceiver($this->runtime($class), $member, $target, $callee, $call, $what, runtime: true);
@@ -1137,7 +1142,7 @@ trait EmitsMembers
      */
     private function callExtension(Emitted $target, MemberAccessExpr $callee, InvocationExpr $call): ?Emitted
     {
-        $found = $this->extensions->best($target->type, $this->ctx, $callee->name);
+        $found = $this->extensions->best($this->receiverType($target, $callee), $this->ctx, $callee->name, $this->explicitTypeArgs($callee));
         if ($found === []) {
             return null;
         }
@@ -1148,6 +1153,76 @@ trait EmitsMembers
         $this->requireAccessible($member, $callee);
 
         return $this->callWithReceiver($this->classRef($member->owner->fqn), $member, $target, $callee, $call, $member->owner->shortName(), runtime: false);
+    }
+
+    /**
+     * The receiver's type as C# binds receiver.Name to it. Under "?." it is not null: x?.Twice() of an int? x
+     * passes an int, and so does s?.Length.Twice(), the rest of the chain being skipped when s is null.
+     * SharpPHP has typed such a receiver as nullable already (int? for s?.Length).
+     */
+    private function receiverType(Emitted $target, MemberAccessExpr $access): Type
+    {
+        $type = $target->type;
+        for ($e = $access; $type->nullable;) {
+            if ($e instanceof InvocationExpr) {
+                $e = $e->callee;
+            } elseif ($e instanceof MemberAccessExpr || $e instanceof ElementAccessExpr) {
+                if ($e->nullConditional) {
+                    return $type->withNullable(false);
+                }
+                $e = $e->target;
+            } else {
+                break;
+            }
+        }
+
+        return $type;
+    }
+
+    /**
+     * The type arguments written in receiver.Method<bool>(...); null when there are none.
+     *
+     * @return list<Type>|null
+     */
+    private function explicitTypeArgs(MemberAccessExpr $callee): ?array
+    {
+        return $callee->typeArgs === [] ? null : array_map(fn (TypeRef $t): Type => $this->resolveType($t), $callee->typeArgs);
+    }
+
+    /**
+     * C#'s error for receiver.Method(...) that neither the receiver's type nor an extension method
+     * answers; $what names the receiver's type. See rejectingExtension().
+     */
+    private function noSuchMethod(Emitted $target, MemberAccessExpr $callee, string $what): CompileError
+    {
+        return $this->rejectingExtension($target, $callee, $what)
+            ?? $this->error('SP1061', "'$what' does not contain a definition for '{$callee->name}'", $callee);
+    }
+
+    /**
+     * CS1929 when an extension method of that name is in scope but takes another receiver: "x".Print<bool>()
+     * for Print<T>(this T arg), whose receiver is then a bool, or 5.Twice() for Twice(this long x), which an
+     * int is not passed to (see Conversions::isReceiverConversion()). Null when there is none.
+     */
+    private function rejectingExtension(Emitted $target, MemberAccessExpr $callee, string $what): ?CompileError
+    {
+        $typeArgs = $this->explicitTypeArgs($callee);
+        $method = $this->extensions->rejecting($this->receiverType($target, $callee), $this->ctx, $callee->name, $typeArgs);
+        if ($method === null) {
+            return null;
+        }
+        $subst = [];
+        foreach ($method->typeParams as $i => $param) {
+            if (isset($typeArgs[$i])) {
+                $subst[$param] = $typeArgs[$i];
+            }
+        }
+        $params = array_map(static fn (ParameterSymbol $p): string => $p->type->substitute($subst)->describe(), $method->params);
+        $generic = $typeArgs !== null ? '<' . implode(', ', array_map(static fn (Type $t): string => $t->describe(), $typeArgs)) . '>' : '';
+        $overload = $method->owner->csharpName() . '.' . $method->name . $generic . '(' . implode(', ', $params) . ')';
+        $receiver = ExtensionMethods::thisType($method, $typeArgs)->describe();
+
+        return $this->error('SP1929', "'$what' does not contain a definition for '{$callee->name}' and the best extension method overload '$overload' requires a receiver of type '$receiver'", $callee);
     }
 
     /**
