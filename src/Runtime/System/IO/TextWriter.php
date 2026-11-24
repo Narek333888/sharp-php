@@ -58,6 +58,10 @@ abstract class TextWriter implements IDisposable
         return Task::FromResult(null);
     }
 
+    /**
+     * writer.Flush(): passes buffered text on to the destination; StreamWriter writes it to the
+     * file, a StringWriter has nothing to flush.
+     */
     public function Flush(): void
     {
     }
@@ -70,11 +74,13 @@ abstract class TextWriter implements IDisposable
         return Task::FromResult(null);
     }
 
+    /** writer.Close(): the same as Dispose(). */
     public function Close(): void
     {
         $this->Dispose();
     }
 
+    /** writer.Dispose() (a using block): flushes the writer; StreamWriter also closes its file. */
     public function Dispose(): void
     {
         $this->Flush();

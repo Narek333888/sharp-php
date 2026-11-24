@@ -82,6 +82,10 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
         $this->store($hash, $key, $value);
     }
 
+    /**
+     * dict.TryAdd(key, value): adds the entry and returns true; returns false, keeping the stored
+     * value, when the key is already there. ArgumentNullException for a null key.
+     */
     public function TryAdd(mixed $key, mixed $value): bool
     {
         $hash = $this->hash($key);
@@ -150,6 +154,7 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
         return array_key_exists($hash, $this->keys) ? $this->values[$hash] : $defaultValue;
     }
 
+    /** dict.Clear(): removes every entry; like Remove, allowed while a foreach runs over the dictionary, as in .NET. */
     public function Clear(): void
     {
         $this->keys = [];
@@ -158,6 +163,10 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
         $this->slotsCleared();
     }
 
+    /**
+     * dict.ToString(): the .NET type name, System.Collections.Generic.Dictionary`2[System.String,System.Int32]
+     * (System.Object where a type is not known).
+     */
     public function ToString(): string
     {
         return 'System.Collections.Generic.Dictionary`2[' . TypeName::ofSpec($this->keyType ?? 'mixed') . ',' . TypeName::ofSpec($this->valueType ?? 'mixed') . ']';
@@ -207,6 +216,7 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
         return $predicate === null ? count($this->keys) : Enumerable::Count($this, $predicate);
     }
 
+    /** PHP's isset(dict[key]): whether the key is there, as dict.ContainsKey(key). */
     public function offsetExists(mixed $offset): bool
     {
         return $this->ContainsKey($offset);
@@ -223,11 +233,16 @@ class Dictionary implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonS
         return $this->values[$hash];
     }
 
+    /**
+     * dict[key] = value: adds the entry, or replaces the value of an existing key (the stored key
+     * stays); ArgumentNullException for a null key.
+     */
     public function offsetSet(mixed $offset, mixed $value): void
     {
         $this->store($this->hash($offset), $offset, $value);
     }
 
+    /** PHP's unset(dict[key]): removes the entry, as dict.Remove(key); nothing happens when the key is missing. */
     public function offsetUnset(mixed $offset): void
     {
         $this->Remove($offset);

@@ -49,6 +49,10 @@ final class AnonymousObject implements \JsonSerializable
         return $parts === [] ? '{ }' : '{ ' . implode(', ', $parts) . ' }';
     }
 
+    /**
+     * C#'s equality of anonymous objects: true for an anonymous object with the same property names, in the same order,
+     * whose values are equal one by one (by Equals).
+     */
     public function Equals(mixed $other): bool
     {
         if (!$other instanceof self) {

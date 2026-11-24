@@ -174,6 +174,10 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
         return true;
     }
 
+    /**
+     * list.RemoveAt(index): removes the element there, the later ones move down;
+     * ArgumentOutOfRangeException unless 0 <= index < Count.
+     */
     public function RemoveAt(int $index): void
     {
         $this->assertIndex($index);
@@ -181,6 +185,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
         $this->version++;
     }
 
+    /** list.RemoveAll(x => ...): removes every element that matches and returns how many were removed. */
     public function RemoveAll(\Closure $match): int
     {
         $before = count($this->items);
@@ -193,6 +198,10 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
         return $removed;
     }
 
+    /**
+     * list.Clear(): removes every element; the Capacity stays. A foreach running over the list throws
+     * InvalidOperationException at its next step, as in .NET.
+     */
     public function Clear(): void
     {
         $this->items = [];
@@ -235,6 +244,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
         return new self(array_filter($this->items, static fn (mixed $item): bool => (bool) $match($item)), $this->of);
     }
 
+    /** list.FindIndex(x => ...): the index of the first element that matches, or -1. */
     public function FindIndex(\Closure $match): int
     {
         foreach ($this->items as $i => $item) {
@@ -246,11 +256,13 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
         return -1;
     }
 
+    /** list.Exists(x => ...): whether any element matches. */
     public function Exists(\Closure $match): bool
     {
         return $this->FindIndex($match) >= 0;
     }
 
+    /** list.TrueForAll(x => ...): whether every element matches; true for an empty list. */
     public function TrueForAll(\Closure $match): bool
     {
         foreach ($this->items as $item) {
@@ -301,6 +313,10 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
         return $this->items;
     }
 
+    /**
+     * list.ToString(): the .NET type name, System.Collections.Generic.List`1[System.Int32]
+     * (System.Object when the element type is not known).
+     */
     public function ToString(): string
     {
         return 'System.Collections.Generic.List`1[' . TypeName::ofSpec($this->of ?? 'mixed') . ']';
@@ -359,6 +375,10 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
         return $this->items[$offset];
     }
 
+    /**
+     * list[i] = value: replaces the element; ArgumentOutOfRangeException unless 0 <= i < Count (it
+     * does not add). PHP's list[] = value adds, as Add.
+     */
     public function offsetSet(mixed $offset, mixed $value): void
     {
         if ($offset === null) {
@@ -373,6 +393,7 @@ class List_ implements \ArrayAccess, \IteratorAggregate, \Countable, \JsonSerial
         $this->version++;
     }
 
+    /** PHP's unset(list[i]): removes the element, as list.RemoveAt(i). */
     public function offsetUnset(mixed $offset): void
     {
         $this->RemoveAt($offset);

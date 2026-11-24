@@ -520,8 +520,8 @@ trait EmitsDeclarations
     }
 
     /**
-     * static int Count => _items.Count;  =>  public static function get_Count(): int { return ...; }
-     * A setter becomes set_Count(int $value): void.
+     * PHP's asymmetric visibility for a property whose set accessor is less visible than the property:
+     * " private(set)" for `public int X { get; private set; }`, nothing when the setter is as visible.
      */
     private function asymmetricVisibility(string $visibility, string $setVisibility): string
     {
@@ -530,6 +530,11 @@ trait EmitsDeclarations
         return $rank[$setVisibility] < $rank[$visibility] ? " $setVisibility(set)" : '';
     }
 
+    /**
+     * A static property with accessors as a pair of static methods, as PHP has no hooks on static properties:
+     * `static int Count => _items.Count;` => `public static function get_Count(): int`, and a setter
+     * `set_Count(int $value): void` with the set accessor's visibility. Uses of the property call them.
+     */
     private function emitStaticAccessors(PropertyDecl $property, \SharpPhp\Semantics\MemberSymbol $member, string $visibility, string $setVisibility): void
     {
         $phpType = (string) $this->typeDecl($member->type);
@@ -677,6 +682,13 @@ trait EmitsDeclarations
         $this->w->line('}');
     }
 
+    /**
+     * A method (or a local function, compiled to a method) with its PHP signature and body: abstract, final for
+     * sealed, #[\Override] when it overrides a base class method, a result type that allows null as in C# (not for
+     * ToString or a method PHP code declared). An async body runs as a Task, an iterator's as a Sequence.
+     * SP0501 (no body), SP8701 (default interface method), SP0115 (nothing to override), SP1983, SP1988, SP1994 and
+     * SP1624 (async), SP1623 and SP1624 (iterators), SP0177 (out parameter unassigned), SP0161 (a path returns none).
+     */
     private function emitMethod(MethodDecl $method, bool $inInterface): void
     {
         $this->w->sourceLine = $method->line;
@@ -1033,7 +1045,6 @@ trait EmitsDeclarations
         return array_keys($required);
     }
 
-    /** A System.Object member with the given body (signatures as in Op::str/Op::equals). */
     /**
      * A record implements \\JsonSerializable, unless a record it derives from already does or it
      * declares jsonSerialize itself.
@@ -1048,6 +1059,7 @@ trait EmitsDeclarations
         return $base === null || !$base->isRecord || $base->external;
     }
 
+    /** A System.Object member with the given body (signatures as in Op::str/Op::equals). */
     private function emitObjectMember(string $name, string $body): void
     {
         $this->w->line(match ($name) {
@@ -1060,6 +1072,11 @@ trait EmitsDeclarations
         $this->w->line('}');
     }
 
+    /**
+     * A record's ToString() when it declares none, as C#'s PrintMembers writes it: the public instance fields and
+     * properties, base record members first, each as its type writes itself: `Person { Name = Bob, Age = 3 }`, and
+     * `Person { }` without members.
+     */
     private function emitRecordToString(TypeDecl $decl): void
     {
         $this->w->sourceLine = $decl->line;
@@ -1141,6 +1158,11 @@ trait EmitsDeclarations
         $this->w->line('}');
     }
 
+    /**
+     * An enum as an int-backed PHP enum, a member without a value being the previous one plus 1:
+     * `enum Color { Red, Green = 5, Blue }` => `case Red = 0; case Green = 5; case Blue = 6;`.
+     * SP0266 when a value is not an integer constant (only literal arithmetic is folded).
+     */
     private function emitEnum(TypeDecl $decl, TypeSymbol $symbol): void
     {
         $this->w->line('enum ' . Names::shortName($symbol->fqn) . ': int');
@@ -1248,6 +1270,12 @@ trait EmitsDeclarations
         }
     }
 
+    /**
+     * Whether a field or auto-property initializer is written as the PHP property's default value (see storageFor())
+     * rather than assigned in the constructor or the static initializer: folded constants, typeof, nameof, default,
+     * operators (not ++, --, /, % or ??) and conditionals over such operands, array initializers of them, and names
+     * of constants (const fields, enum cases).
+     */
     private function isConstantExpression(Expr $expr): bool
     {
         if ($this->evaluateConstant($expr) !== self::notConstant()) {

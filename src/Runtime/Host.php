@@ -111,6 +111,10 @@ final class Host
         echo self::errorPage($showDetails ? $details : null);
     }
 
+    /**
+     * The HTML page of an HTTP 500 response: the error's details, escaped, when fail() passes them (display_errors on),
+     * else a note that they are in the server log; with light and dark styles.
+     */
     private static function errorPage(?string $details): string
     {
         $body = $details === null

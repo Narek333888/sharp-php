@@ -71,6 +71,10 @@ final class CancellationToken
         $this->source?->register($callback);
     }
 
+    /**
+     * token.Equals(other): true when both come from the same CancellationTokenSource, or neither
+     * can be canceled (CancellationToken.None, default).
+     */
     public function Equals(mixed $other): bool
     {
         return $other instanceof self && $other->source === $this->source;

@@ -9,6 +9,12 @@ namespace SharpPhp\Runtime;
  */
 final class TypeCheck
 {
+    /**
+     * Whether $value is of the type spec of a generic argument ("int", "?string", a class name): "?" allows null, null
+     * fits reference types only (not int, float, bool, char or an enum), "float" takes an int too (C#'s implicit int to
+     * double), "char" is a one-character string, and a class is an instanceof check. A null or "mixed" spec takes
+     * anything.
+     */
     public static function matches(mixed $value, ?string $spec): bool
     {
         if ($spec === null || $spec === 'mixed') {
@@ -48,6 +54,11 @@ final class TypeCheck
         return $value;
     }
 
+    /**
+     * The value to store in a generic collection of element type $spec (List<int>.Add(x)): the value itself, an int as
+     * a float for a float spec, or an ArgumentException when it is not of the type. Exact scalar matches return before
+     * any function call.
+     */
     public static function check(mixed $value, ?string $spec, string $collection = ''): mixed
     {
         // The common case first, without function calls: a value of exactly the element type.

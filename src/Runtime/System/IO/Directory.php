@@ -15,6 +15,10 @@ use SharpPhp\Runtime\System\DateTime;
  */
 final class Directory
 {
+    /**
+     * Directory.Exists(path): whether a directory is there; false (never an exception) for null,
+     * "", a file or a missing path.
+     */
     public static function Exists(?string $path): bool
     {
         return $path !== null && $path !== '' && is_dir($path);
@@ -98,6 +102,10 @@ final class Directory
         }
     }
 
+    /**
+     * Directory.GetParent(path): the directory that contains path (made absolute first, a trailing
+     * separator dropped); null for a root.
+     */
     public static function GetParent(string $path): ?DirectoryInfo
     {
         $parent = Path::GetDirectoryName(Path::GetFullPath($path));
@@ -105,11 +113,16 @@ final class Directory
         return $parent === null ? null : new DirectoryInfo($parent);
     }
 
+    /** Directory.GetCurrentDirectory(): the working directory of the PHP process, as an absolute path. */
     public static function GetCurrentDirectory(): string
     {
         return (string) getcwd();
     }
 
+    /**
+     * Directory.SetCurrentDirectory(path): changes the working directory of the PHP process, which
+     * relative paths start from; DirectoryNotFoundException when it cannot.
+     */
     public static function SetCurrentDirectory(string $path): void
     {
         if (!@chdir($path)) {
@@ -117,6 +130,10 @@ final class Directory
         }
     }
 
+    /**
+     * Directory.GetLastWriteTime(path): when the directory was last changed, in local time (whole
+     * seconds); DirectoryNotFoundException when there is no directory at path.
+     */
     public static function GetLastWriteTime(string $path): DateTime
     {
         if (!is_dir($path)) {

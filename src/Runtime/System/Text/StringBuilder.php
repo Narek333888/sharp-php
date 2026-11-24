@@ -113,6 +113,10 @@ final class StringBuilder implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * sb.Remove(startIndex, length): removes length characters from startIndex and returns the
+     * builder; ArgumentOutOfRangeException when they are not all inside the text.
+     */
     public function Remove(int $startIndex, int $length): self
     {
         $this->checkRange($startIndex, $length, 'startIndex');
@@ -129,6 +133,7 @@ final class StringBuilder implements \ArrayAccess
         return $this;
     }
 
+    /** sb.Clear(): empties the text (Length 0, the Capacity stays) and returns the builder. */
     public function Clear(): self
     {
         $this->text = '';
@@ -168,11 +173,13 @@ final class StringBuilder implements \ArrayAccess
         $this->text = mb_substr($this->text, 0, $index) . Op::str($value) . mb_substr($this->text, $index + 1);
     }
 
+    /** PHP's isset(sb[i]): whether i is an index inside the text. */
     public function offsetExists(mixed $offset): bool
     {
         return $offset >= 0 && $offset < mb_strlen($this->text);
     }
 
+    /** PHP's unset(sb[i]): not supported, a character cannot be unset (PHP's LogicException). */
     public function offsetUnset(mixed $offset): void
     {
         throw new \LogicException('The characters of a StringBuilder cannot be unset');

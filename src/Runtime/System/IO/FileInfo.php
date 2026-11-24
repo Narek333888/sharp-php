@@ -34,11 +34,19 @@ class FileInfo extends FileSystemInfo
         get => is_file($this->originalPath) && !is_writable($this->originalPath);
     }
 
+    /**
+     * file.Delete(): deletes the file; nothing happens when it does not exist, as in .NET
+     * (IOException when it cannot be deleted).
+     */
     public function Delete(): void
     {
         File::Delete($this->originalPath);
     }
 
+    /**
+     * file.CopyTo(dest) or CopyTo(dest, overwrite: true): copies the file and returns a FileInfo for the
+     * copy; IOException when dest exists (unless overwrite), FileNotFoundException when this file does not.
+     */
     public function CopyTo(string $destFileName, bool $overwrite = false): FileInfo
     {
         File::Copy($this->originalPath, $destFileName, $overwrite);
@@ -53,16 +61,25 @@ class FileInfo extends FileSystemInfo
         $this->originalPath = $destFileName;
     }
 
+    /**
+     * file.OpenText(): a StreamReader over the file (UTF-8, a byte order mark is skipped);
+     * FileNotFoundException when it does not exist.
+     */
     public function OpenText(): StreamReader
     {
         return new StreamReader($this->originalPath);
     }
 
+    /**
+     * file.CreateText(): a StreamWriter to the file, created or emptied (UTF-8);
+     * DirectoryNotFoundException when its directory does not exist.
+     */
     public function CreateText(): StreamWriter
     {
         return new StreamWriter($this->originalPath);
     }
 
+    /** file.AppendText(): a StreamWriter that adds to the end of the file, creating it (UTF-8). */
     public function AppendText(): StreamWriter
     {
         return new StreamWriter($this->originalPath, append: true);

@@ -44,11 +44,16 @@ class Exception extends \Exception
         return $this;
     }
 
+    /**
+     * e.ToString(): the .NET type name and the message ("System.InvalidOperationException: boom"); unlike .NET, without
+     * the inner exception and the stack trace.
+     */
     public function ToString(): string
     {
         return TypeName::ofClass(static::class) . ': ' . $this->getMessage();
     }
 
+    /** e.GetType(): the exception's Type, named as in .NET (System.InvalidOperationException, App.NotFoundException). */
     public function GetType(): Type
     {
         return Type::fromValue($this);

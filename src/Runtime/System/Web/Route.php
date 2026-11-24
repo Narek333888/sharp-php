@@ -58,6 +58,10 @@ final class Route
         }
     }
 
+    /**
+     * Whether the route answers this (upper-case) HTTP method: any method when it was mapped
+     * without one; a GET route also answers HEAD.
+     */
     public function allows(string $method): bool
     {
         return $this->methods === [] || in_array($method, $this->methods, true)

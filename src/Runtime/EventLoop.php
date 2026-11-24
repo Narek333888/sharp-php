@@ -138,6 +138,10 @@ final class EventLoop
         return true;
     }
 
+    /**
+     * Lets curl_multi advance the HTTP requests in flight and calls the callback of each one that finished with its
+     * curl error number (0: success); true when at least one request completed.
+     */
     private static function pollRequests(): bool
     {
         $multi = self::$multi;

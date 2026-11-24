@@ -67,6 +67,10 @@ class CancellationTokenSource implements IDisposable
         return $linked;
     }
 
+    /**
+     * cts.Dispose() (a using block): forgets the callbacks registered on its tokens so far, so a later
+     * Cancel runs none of them; the source can still be canceled, also by a pending CancelAfter.
+     */
     public function Dispose(): void
     {
         $this->callbacks = [];

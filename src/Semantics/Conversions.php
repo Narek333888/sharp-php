@@ -334,6 +334,13 @@ final class Conversions
         return null;
     }
 
+    /**
+     * Implicit conversions from a class type: to a class or interface it derives from (generic arguments by variance);
+     * to a sequence (IEnumerable<T>, IList<T> ...) when it is a collection implementing that interface, as its .NET
+     * type does, with a convertible element type; to a delegate only from Closure; to a primitive or an array only from
+     * a PHP class (not an enum) outside the runtime library. A class the compiler does not know converts to classes,
+     * sequences and delegates.
+     */
     private function isImplicitFromClass(Type $from, Type $to): bool
     {
         $fromSymbol = $this->symbols->symbolForType($from);

@@ -102,6 +102,13 @@ final class ImplementationVerifier
         }
     }
 
+    /**
+     * Checks one class, struct or record after resolveHiding(): unless it is abstract, SP0513 for an abstract member
+     * and SP0534 for an inherited abstract member it does not implement; then the members of all its interfaces,
+     * inherited ones too: SP0535 when one is missing (CompareTo of IComparable<T> and Equals of IEquatable<T> too),
+     * SP0736 for a static and SP0737 for a non-public implementation, and verifyImplementation() for a SharpPHP
+     * interface.
+     */
     private function verifyType(TypeDecl $decl, TypeSymbol $symbol, SourceFile $file): void
     {
         $name = $symbol->csharpName();

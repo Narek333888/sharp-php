@@ -87,6 +87,10 @@ class HttpClient implements \SharpPhp\Runtime\System\IDisposable
         return $this->send('DELETE', $requestUri, null);
     }
 
+    /**
+     * http.Dispose() (a using block): nothing to release, as each request opens its own curl
+     * handle; the client can still send requests after it.
+     */
     public function Dispose(): void
     {
     }

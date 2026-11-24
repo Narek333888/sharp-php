@@ -16,6 +16,7 @@ final class Environment
         exit($exitCode);
     }
 
+    /** Environment.GetEnvironmentVariable("HOME"): its value (PHP's getenv()), or null when it is not set. */
     public static function GetEnvironmentVariable(string $name): ?string
     {
         $value = getenv($name);

@@ -94,41 +94,49 @@ final class TimeSpan implements \JsonSerializable
         $this->Ticks = $ticks;
     }
 
+    /** TimeSpan.FromDays(1.5): to the nearest tick; ArgumentException for NaN, OverflowException out of range. */
     public static function FromDays(float $value): self
     {
         return self::fromUnits($value, self::TicksPerDay);
     }
 
+    /** TimeSpan.FromHours(1.5): to the nearest tick; ArgumentException for NaN, OverflowException out of range. */
     public static function FromHours(float $value): self
     {
         return self::fromUnits($value, self::TicksPerHour);
     }
 
+    /** TimeSpan.FromMinutes(90): to the nearest tick; ArgumentException for NaN, OverflowException out of range. */
     public static function FromMinutes(float $value): self
     {
         return self::fromUnits($value, self::TicksPerMinute);
     }
 
+    /** TimeSpan.FromSeconds(0.5): to the nearest tick; ArgumentException for NaN, OverflowException out of range. */
     public static function FromSeconds(float $value): self
     {
         return self::fromUnits($value, self::TicksPerSecond);
     }
 
+    /** TimeSpan.FromMilliseconds(2.5): to the nearest tick; ArgumentException for NaN, OverflowException out of range. */
     public static function FromMilliseconds(float $value): self
     {
         return self::fromUnits($value, self::TicksPerMillisecond);
     }
 
+    /** TimeSpan.FromTicks(n): a length of n ticks of 100 ns, as new TimeSpan(n). */
     public static function FromTicks(int $value): self
     {
         return new self($value);
     }
 
+    /** span.Add(other), also span + other: OverflowException beyond MinValue or MaxValue, as in .NET. */
     public function Add(TimeSpan $ts): self
     {
         return self::checkedTicks($this->Ticks + $ts->Ticks);
     }
 
+    /** span.Subtract(other), also span - other: OverflowException beyond MinValue or MaxValue, as in .NET. */
     public function Subtract(TimeSpan $ts): self
     {
         return self::checkedTicks($this->Ticks - $ts->Ticks);
@@ -154,6 +162,10 @@ final class TimeSpan implements \JsonSerializable
         return new self(abs($this->Ticks));
     }
 
+    /**
+     * span.Multiply(factor): rounded to the nearest tick (half away from zero); ArgumentException for a NaN factor,
+     * OverflowException out of range.
+     */
     public function Multiply(float $factor): self
     {
         return self::fromUnits($this->Ticks * $factor, 1);
@@ -212,6 +224,10 @@ final class TimeSpan implements \JsonSerializable
         return $t1->Ticks <=> $t2->Ticks;
     }
 
+    /**
+     * span.CompareTo(other): -1, 0 or 1 by length; 1 for null, ArgumentException for a value that is not a TimeSpan, as
+     * in .NET.
+     */
     public function CompareTo(mixed $value): int
     {
         if ($value === null) {
@@ -224,11 +240,13 @@ final class TimeSpan implements \JsonSerializable
         return $this->Ticks <=> $value->Ticks;
     }
 
+    /** span.Equals(other): true for a TimeSpan of the same length in ticks. */
     public function Equals(mixed $obj): bool
     {
         return $obj instanceof self && $obj->Ticks === $this->Ticks;
     }
 
+    /** From the ticks, as Equals: equal spans have the same hash code. */
     public function GetHashCode(): int
     {
         return $this->Ticks ^ ($this->Ticks >> 32);

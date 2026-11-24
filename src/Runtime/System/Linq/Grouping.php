@@ -39,6 +39,7 @@ final class Grouping implements \IteratorAggregate, \Countable
         return $predicate === null ? count($this->items) : Enumerable::Count($this, $predicate);
     }
 
+    /** group.ToString(): the type name "System.Linq.Grouping", without .NET's type arguments. */
     public function ToString(): string
     {
         return 'System.Linq.Grouping';

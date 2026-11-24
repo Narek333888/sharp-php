@@ -79,6 +79,7 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
         return array_key_exists($this->keyOf($item), $this->items);
     }
 
+    /** set.Clear(): removes every item. Like Remove, it is allowed while a foreach runs over the set. */
     public function Clear(): void
     {
         $this->items = [];
@@ -115,6 +116,10 @@ class HashSet implements \IteratorAggregate, \Countable, \JsonSerializable
         }
     }
 
+    /**
+     * set.ToString(): the .NET type name, System.Collections.Generic.HashSet`1[System.String]
+     * (System.Object when the element type is not known).
+     */
     public function ToString(): string
     {
         return 'System.Collections.Generic.HashSet`1[' . TypeName::ofSpec($this->of ?? 'mixed') . ']';

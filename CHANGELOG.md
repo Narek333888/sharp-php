@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.1
+
+Doc comments; nothing else changes (the generated PHP, and the compiler's view of the runtime library, which reads
+the doc comments of its classes, are the same as in 0.12.0):
+
+- The 211 public methods of the runtime library that had none (`string`, `Math`, `DateTime`, `TimeSpan`, `List<T>`,
+  `Dictionary`, the IO classes, `Regex`, `StringBuilder`, ...) say which .NET member they are and how they behave,
+  also where that differs from .NET (`Math.Cbrt(64)` is 3.9999999999999996, `string.Trim()` trims PHP's set of white
+  space, `StartsWith` compares ordinally); editors show them on hover
+- The 88 long methods of the lexer, parser, declarator and code generator say what they do and which errors they report
+- Three comments that stood above the wrong method are back in place
+
 ## 0.12.0
 
 **Breaking: an interface member is implemented as C# requires.** Only the name and the number of parameters were

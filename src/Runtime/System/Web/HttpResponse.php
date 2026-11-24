@@ -59,6 +59,10 @@ final class HttpResponse implements IResult
         return $copy;
     }
 
+    /**
+     * response.WithStatusCode(404): a copy with that status code, the body, headers and cookies
+     * kept; ArgumentException outside 100 to 599.
+     */
     public function WithStatusCode(int $statusCode): self
     {
         $copy = new self($statusCode, $this->Body);
@@ -100,6 +104,7 @@ final class HttpResponse implements IResult
         return $copy;
     }
 
+    /** response.ToResponse(), for IResult: the response itself. */
     public function ToResponse(): self
     {
         return $this;

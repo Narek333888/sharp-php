@@ -68,6 +68,10 @@ trait EmitsStatements
         }
     }
 
+    /**
+     * Emits one statement by its kind, after setting the source line for the line map; an EmitStep runs its callback
+     * (the rest of a using statement). SP1010 for a statement that is not supported.
+     */
     private function statement(Stmt $s): void
     {
         $this->w->sourceLine = $s->line;
@@ -204,6 +208,11 @@ trait EmitsStatements
         return $this->constantCondition($condition, 0) === true;
     }
 
+    /**
+     * The value of a condition that is a C# constant, or null: a literal (folded), !, && and || over constants, a
+     * const field (Verbose, Config.Verbose) followed to its value; past a $depth of 16 (const fields that refer to
+     * each other) it gives up.
+     */
     private function constantCondition(Expr $e, int $depth): ?bool
     {
         if ($depth > 16) {
@@ -246,6 +255,11 @@ trait EmitsStatements
         return $member?->kind === 'const' ? $member : null;
     }
 
+    /**
+     * if / else if / else as one PHP if ... elseif ... else chain. Each branch starts from the flow state in which the
+     * conditions before it were false, and the states at the ends of the branches are merged (with the state of no
+     * branch run when there is no else); after a constant true condition, the later clauses are unreachable.
+     */
     private function ifStatement(IfStmt $s): void
     {
         $outcomes = [];
@@ -314,6 +328,11 @@ trait EmitsStatements
         $this->flow->merge([$whenFalse, ...$jumps['breaks']]);
     }
 
+    /**
+     * for (init; condition; iterators) as PHP's for, in a scope of its own; declared variables must be initialized
+     * (SP0818). The body goes to a writer of its own first, so that the iterators, which run after it, are analysed
+     * after it (definite assignment); without a condition or with a constant true one, only break leaves the loop.
+     */
     private function forStatement(ForStmt $s): void
     {
         $this->inScope(function () use ($s): void {
@@ -355,6 +374,11 @@ trait EmitsStatements
         });
     }
 
+    /**
+     * foreach as PHP's foreach over the collection's value, a string by its chars (`\mb_str_split()`). The variable
+     * has the declared type or the element type and cannot be assigned (SP1656); `var (k, v)` deconstructs into
+     * `[$k, $v]` with the element type's arguments. SP1579 when the type cannot be enumerated.
+     */
     private function foreachStatement(ForeachStmt $s): void
     {
         $collection = $this->expr($s->collection);
@@ -478,6 +502,12 @@ trait EmitsStatements
         return Type::mixed();
     }
 
+    /**
+     * A switch statement as PHP's switch: on an int or enum with only constant labels `switch ($x) { case 1: ... }`,
+     * otherwise `switch (true)` with each label's pattern condition and when clause (a subject that is not simple is
+     * stored in a temporary first). Each section has a scope of its own and must not fall through (SP0163); equal
+     * labels are SP0152. Without a default label, a non-constant pattern or both true and false, no section may run.
+     */
     private function switchStatement(SwitchStmt $s): void
     {
         $subject = $this->expr($s->subject);
@@ -695,6 +725,12 @@ trait EmitsStatements
         $this->tryStatement((new TryStmt((new Block([$rest]))->at($body), [], (new Block([$dispose]))->at($at)))->at($at));
     }
 
+    /**
+     * try / catch / finally. A catch clause also catches the PHP errors its type stands for (DivideByZeroException:
+     * DivisionByZeroError); catch (Exception e) catches every \Throwable and gives e the C# exception (ErrorHandler).
+     * With a catch of a specific type, an inner try translates engine errors (a call on null) first. Clauses with a
+     * when filter go to filteredCatches(). SP0155 (not an exception type), SP0160 (an earlier clause catches it).
+     */
     private function tryStatement(TryStmt $s): void
     {
         $this->w->line('try {');

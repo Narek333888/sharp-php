@@ -71,11 +71,13 @@ trait EnumerableMethods
         return Enumerable::SelectMany($this, $selector);
     }
 
+    /** source.Any() or source.Any(x => ...): whether there is an element (one that matches); stops at the first. */
     public function Any(?\Closure $predicate = null): bool
     {
         return Enumerable::Any($this->sequence(), $predicate);
     }
 
+    /** source.All(x => ...): whether every element matches; stops at the first that does not; true for no elements. */
     public function All(\Closure $predicate): bool
     {
         return Enumerable::All($this->sequence(), $predicate);
@@ -120,21 +122,37 @@ trait EnumerableMethods
         return Enumerable::ElementAt($this->sequence(), $index);
     }
 
+    /**
+     * Sum() and Sum(x => ...): 0 for no elements; nulls are skipped. A sum of ints or longs is
+     * checked, as in .NET: OverflowException past the type's range.
+     */
     public function Sum(?\Closure $selector = null): int|float
     {
         return Enumerable::Sum($this->sequence(), $selector);
     }
 
+    /**
+     * Average() and Average(x => ...): the mean as a double, nulls skipped. No values: InvalidOperationException
+     * for a non-nullable type (int, double, ...), null for int?, double?, ..., as in .NET.
+     */
     public function Average(?\Closure $selector = null): ?float
     {
         return Enumerable::Average($this->sequence(), $selector);
     }
 
+    /**
+     * Min() and Min(x => ...): the smallest value in Comparer<T>.Default's order; nulls are skipped. With no
+     * values: InvalidOperationException for a non-nullable value type (int, double, ...), else null, as in .NET.
+     */
     public function Min(?\Closure $selector = null): mixed
     {
         return Enumerable::Min($this->sequence(), $selector);
     }
 
+    /**
+     * Max() and Max(x => ...): the largest value in Comparer<T>.Default's order; nulls are skipped. With no
+     * values: InvalidOperationException for a non-nullable value type (int, double, ...), else null, as in .NET.
+     */
     public function Max(?\Closure $selector = null): mixed
     {
         return Enumerable::Max($this->sequence(), $selector);
@@ -227,6 +245,10 @@ trait EnumerableMethods
         return Enumerable::GroupBy($this, $keySelector);
     }
 
+    /**
+     * Aggregate((acc, x) => ...) folds from the first element (InvalidOperationException for no elements);
+     * Aggregate(seed, (acc, x) => ...) from the seed, which an empty sequence returns as it is.
+     */
     public function Aggregate(mixed $seedOrFunc, ?\Closure $func = null): mixed
     {
         return Enumerable::Aggregate($this->sequence(), $seedOrFunc, $func);

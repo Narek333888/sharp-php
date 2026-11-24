@@ -321,6 +321,13 @@ final class Declarator
         return $result;
     }
 
+    /**
+     * Phase 2 for one class, struct, interface, record or enum: resolves its type parameters, constraints and base list
+     * (SP0527, SP0509, SP0709, SP1721, SP1722), then declares its members: a record's positional properties, enum
+     * cases, fields and events (SP0066), properties and methods. Overloaded methods and constructors are SP0111, a
+     * local function clashing with a member SP0128, a finalizer in a static class SP0711; a static Main is recorded as
+     * an entry point.
+     */
     private function defineType(TypeDecl $decl, TypeSymbol $symbol, ResolutionContext $ctx): void
     {
         $file = $ctx->file;

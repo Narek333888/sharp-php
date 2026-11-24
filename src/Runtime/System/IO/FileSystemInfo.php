@@ -43,11 +43,13 @@ abstract class FileSystemInfo
             : DateTime::$UnixEpoch->ToLocalTime();
     }
 
+    /** info.ToString(): the path as it was given (new FileInfo("logs/app.log") gives "logs/app.log"), as in .NET. */
     public function ToString(): string
     {
         return $this->originalPath;
     }
 
+    /** PHP's (string) info (echo, string functions): the path as given, as ToString(). */
     public function __toString(): string
     {
         return $this->originalPath;

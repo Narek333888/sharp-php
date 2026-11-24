@@ -11,6 +11,11 @@ final class JsonNamingPolicy
 {
     public const string CamelCase = 'camelCase';
 
+    /**
+     * The name as a naming policy writes it (.NET's policy.ConvertName(name)):
+     * JsonNamingPolicy.CamelCase lowers the leading capitals, "FirstName" to "firstName",
+     * "URLValue" to "urlValue", "ID" to "id" (ASCII letters only); no policy keeps the name.
+     */
     public static function apply(?string $policy, string $name): string
     {
         if ($policy !== self::CamelCase || $name === '') {

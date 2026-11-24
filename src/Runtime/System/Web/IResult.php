@@ -10,5 +10,6 @@ namespace SharpPhp\Runtime\System\Web;
  */
 interface IResult
 {
+    /** result.ToResponse(): the HttpResponse to send; WebApp calls it on the IResult a route handler returns. */
     public function ToResponse(): HttpResponse;
 }

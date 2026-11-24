@@ -52,6 +52,10 @@ final class Path
         return $result;
     }
 
+    /**
+     * Path.EndsInDirectorySeparator(path): whether the path ends with "/" (or the platform's
+     * separator); false for null and "".
+     */
     public static function EndsInDirectorySeparator(?string $path): bool
     {
         return $path !== null && $path !== '' && (str_ends_with($path, '/') || str_ends_with($path, DIRECTORY_SEPARATOR));
@@ -125,6 +129,10 @@ final class Path
         return str_contains($path, '/') || str_contains($path, DIRECTORY_SEPARATOR) ? substr($path, $position + 1) : $path;
     }
 
+    /**
+     * Path.GetFileNameWithoutExtension(path): "b" for "/a/b.txt", "archive.tar" for
+     * "archive.tar.gz" (only the last extension goes); null for null.
+     */
     public static function GetFileNameWithoutExtension(?string $path): ?string
     {
         $name = self::GetFileName($path);
@@ -148,6 +156,10 @@ final class Path
         return $dot === false || $dot === strlen($name) - 1 ? '' : substr($name, $dot);
     }
 
+    /**
+     * Path.HasExtension(path): whether the file name ends in an extension, a dot and at least one
+     * character ("b." has none); false for null.
+     */
     public static function HasExtension(?string $path): bool
     {
         return ($path !== null) && self::GetExtension($path) !== '';
@@ -166,6 +178,10 @@ final class Path
         return $trimmed === '' && $directory !== '' ? substr($directory, 0, 1) : $trimmed;
     }
 
+    /**
+     * Path.ChangeExtension(path, ".md") (or "md"): "/a/b.md" for "/a/b.txt" and for "/a/b"; a null
+     * or "" extension removes the extension, dot included. null for a null path.
+     */
     public static function ChangeExtension(?string $path, ?string $extension): ?string
     {
         if ($path === null) {
@@ -197,6 +213,10 @@ final class Path
         return $root . implode(DIRECTORY_SEPARATOR, $parts);
     }
 
+    /**
+     * Path.IsPathRooted(path): whether the path starts with "/" or "\" or a drive letter ("C:"), on
+     * every platform; false for null and "".
+     */
     public static function IsPathRooted(?string $path): bool
     {
         return $path !== null && ($path !== '' && ($path[0] === '/' || $path[0] === '\\' || preg_match('#^[A-Za-z]:#', $path) === 1));

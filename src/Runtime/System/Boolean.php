@@ -12,6 +12,7 @@ final class Boolean
     public const string TrueString = 'True';
     public const string FalseString = 'False';
 
+    /** bool.Parse(s): "true" or "false" in any case, with spaces, tabs or line breaks around; else FormatException. */
     public static function Parse(string $s): bool
     {
         return match (strtolower(trim($s))) {

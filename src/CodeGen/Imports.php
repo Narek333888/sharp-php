@@ -27,6 +27,12 @@ final class Imports
         }
     }
 
+    /**
+     * How a class is written in this namespace block: by its short name when it is in the block's namespace or
+     * imported (a use statement is added on its first use); fully qualified (\Foo\Bar) for a global class in a
+     * namespaced block, or when its short name is taken by another import or by a class of this namespace. Names
+     * compare case-insensitively, as in PHP.
+     */
     public function name(string $fqn): string
     {
         $fqn = ltrim($fqn, '\\');

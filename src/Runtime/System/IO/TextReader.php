@@ -74,11 +74,16 @@ abstract class TextReader implements IDisposable
         return Task::FromResult($this->ReadToEnd());
     }
 
+    /** reader.Close(): the same as Dispose(). */
     public function Close(): void
     {
         $this->Dispose();
     }
 
+    /**
+     * reader.Dispose() (a using block): releases what the reader holds: StreamReader closes its
+     * file, a StringReader holds nothing.
+     */
     public function Dispose(): void
     {
     }

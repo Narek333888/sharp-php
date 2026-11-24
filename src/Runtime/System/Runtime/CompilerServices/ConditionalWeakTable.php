@@ -87,6 +87,7 @@ final class ConditionalWeakTable
         return true;
     }
 
+    /** table.Clear(): removes every entry. */
     public function Clear(): void
     {
         $this->map = new \WeakMap();

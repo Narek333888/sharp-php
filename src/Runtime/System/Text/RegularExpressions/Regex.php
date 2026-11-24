@@ -28,6 +28,10 @@ final class Regex
         $this->pcre = self::compile($pattern, $options);
     }
 
+    /**
+     * Regex.IsMatch(input, pattern) or IsMatch(input, pattern, options): whether the pattern
+     * matches somewhere in input; ArgumentException for an invalid pattern.
+     */
     public static function IsMatch(string $input, string $pattern, RegexOptions|int $options = RegexOptions::None): bool
     {
         return (new self($pattern, $options))->instanceIsMatch($input);
@@ -38,6 +42,11 @@ final class Regex
         return (new self($pattern, $options))->instanceMatch($input);
     }
 
+    /**
+     * Regex.Matches(input, pattern) or Matches(input, pattern, options): every match, left to right
+     * and not overlapping (after an empty match the search goes on one character later); empty when
+     * nothing matches. ArgumentException for an invalid pattern.
+     */
     public static function Matches(string $input, string $pattern, RegexOptions|int $options = RegexOptions::None): MatchCollection
     {
         return (new self($pattern, $options))->instanceMatches($input);
@@ -120,6 +129,7 @@ final class Regex
         return self::run(fn (): array|false => preg_split($this->pcre, $input, -1, PREG_SPLIT_DELIM_CAPTURE)) ?: [$input];
     }
 
+    /** regex.ToString(): the pattern given to the constructor, as in .NET. */
     public function ToString(): string
     {
         return $this->pattern;

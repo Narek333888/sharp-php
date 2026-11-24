@@ -128,6 +128,11 @@ final class SymbolTable
         return isset($this->project[strtolower(ltrim($fqn, '\\'))]);
     }
 
+    /**
+     * The type of a fully qualified PHP name (App\Models\User, a leading backslash allowed): an anonymous type, a
+     * project type (case-insensitive), or a PHP class, interface or enum loaded through reflection on first use. Null
+     * when there is none; a miss is remembered for that exact spelling only.
+     */
     public function find(string $fqn): ?TypeSymbol
     {
         if (isset($this->anonymous[$fqn])) {
@@ -248,6 +253,10 @@ final class SymbolTable
         return null;
     }
 
+    /**
+     * Whether $fqn is $baseFqn (compared case-insensitively) or derives from it through its base classes and
+     * interfaces, at any depth; false when $fqn is not a known type.
+     */
     public function isSubtypeOf(string $fqn, string $baseFqn): bool
     {
         $fqn = ltrim($fqn, '\\');
@@ -707,6 +716,11 @@ final class SymbolTable
         };
     }
 
+    /**
+     * The compiler's type for a declared PHP type (of a parameter, property or return value): a named type as
+     * namedType() maps it, nullable when it allows null; a union of one type and null as that type, nullable; any other
+     * union, an intersection or no declared type is mixed.
+     */
     private function reflectionType(?ReflectionType $type, TypeSymbol $self): Type
     {
         if ($type instanceof ReflectionNamedType) {
@@ -727,6 +741,12 @@ final class SymbolTable
         return Type::mixed();
     }
 
+    /**
+     * A PHP or docblock type name as the compiler's type: PHP's int and float are unsized (they convert to every C#
+     * integral or floating type), the C# names (byte, ulong, char, double, decimal ...) are those types, array is a C#
+     * array in the runtime library and a PHP array elsewhere, object and mixed are mixed, callable and Closure untyped
+     * delegates, self and static the class itself; any other name is a class.
+     */
     private function namedType(string $name, TypeSymbol $self): Type
     {
         return match (strtolower($name)) {
@@ -766,6 +786,12 @@ final class SymbolTable
         return $this->docType($m['spec'], $self);
     }
 
+    /**
+     * Parses a docblock type (PHPStan syntax): null in a union or a leading "?" makes it nullable, any other union is
+     * mixed; T[], array<K, V> and list<T> are arrays, iterable<T> and Generator<T> sequences, Closure(int): bool a
+     * delegate, Name<A, B> a generic class, refined scalars (positive-int, non-empty-string) their scalar, a template
+     * name a type parameter. Class names resolve through the file's use statements and namespace.
+     */
     private function docType(string $spec, TypeSymbol $self): Type
     {
         $spec = trim($spec);

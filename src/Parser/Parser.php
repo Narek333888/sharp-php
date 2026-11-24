@@ -413,6 +413,12 @@ final class Parser
         return (new TypeDecl('delegate', $name->text(), $modifiers, $typeParams, [], [$invoke], [], [], $constraints, $variance))->at($start);
     }
 
+    /**
+     * One type declaration (attributes skipped): its modifiers, then a class, struct, interface, enum, record (record
+     * class) or delegate, with type parameters (in/out only on interfaces), a record's positional parameters, the base
+     * list, where constraints and the body. Members of extension blocks and local functions become members of the type.
+     * A record struct and arguments to a base record are SP1010.
+     */
     private function parseTypeDecl(): TypeDecl
     {
         $this->skipAttributes();
@@ -669,6 +675,13 @@ final class Parser
         return (new Parameter($name, $type, null, 'this'))->at($type);
     }
 
+    /**
+     * One member of a type or extension block: a constructor (with a base(...) or this(...) initializer), method,
+     * property (accessors and an optional initializer, or an expression body), field(s), field-like event, finalizer, a
+     * C# 14 extension block, or a delegate type, which is hoisted to the namespace (an empty ExtensionBlock stands in
+     * for it). Nested types, conversion operators, operator overloading, indexers, explicit interface implementations
+     * and event accessors are SP1010; a body in an interface method is SP8701.
+     */
     private function parseMember(string $typeName, string $typeKind): Node
     {
         $this->skipAttributes();
@@ -951,6 +964,11 @@ final class Parser
         return $type;
     }
 
+    /**
+     * A type at the current token: a predefined type (int, string ...) or a dotted name with optional type arguments
+     * (List<int>), then "?" (where a nullable marker can be) and "[]" suffixes in any order (int?[], string[]?). Null,
+     * with the position restored, when no type starts here; a multi-dimensional array ([,]) is SP1010.
+     */
     private function tryParseType(): ?TypeRef
     {
         $start = $this->pos;
@@ -1080,6 +1098,11 @@ final class Parser
         return (new Block($this->withUsingDeclarations($statements)))->at($start);
     }
 
+    /**
+     * One statement: a block, an empty statement, a keyword statement (if, while, do, for, foreach, switch, return,
+     * break, continue, throw, try, const, using, lock), yield return or yield break, a local function, a local
+     * declaration, or else an expression statement. goto, checked, unchecked, unsafe and fixed statements are SP1010.
+     */
     public function parseStatement(): Stmt
     {
         $token = $this->current();
@@ -1288,6 +1311,10 @@ final class Parser
         return (new IfStmt($condition, $then, $else))->at($token);
     }
 
+    /**
+     * for (initializer; condition; iterators) body: the initializer is a local declaration (var i = 0, j = 10) or a
+     * comma-separated list of expressions, the iterators a list of expressions, and every part may be empty (for (;;)).
+     */
     private function parseFor(): ForStmt
     {
         $token = $this->advance();
@@ -1317,6 +1344,10 @@ final class Parser
         return (new ForStmt($declaration, $initializers, $condition, $iterators, $this->parseEmbeddedStatement()))->at($token);
     }
 
+    /**
+     * foreach (var x in items), foreach (string s in names) and the deconstructing foreach (var (key, value) in pairs);
+     * a deconstruction without var in front ("foreach ((var a, var b) in ...)") is SP1010.
+     */
     private function parseForeach(): ForeachStmt
     {
         $token = $this->advance();
@@ -1350,6 +1381,11 @@ final class Parser
         return (new ForeachStmt($type, $variable, $deconstruction, $collection, $this->parseEmbeddedStatement()))->at($token);
     }
 
+    /**
+     * switch (subject) { case pattern when guard: ... default: ... }: sections of one or more labels, each a pattern
+     * with an optional when guard or default, and the statements up to the next label (default counts as a label only
+     * before ':'). A "using var" declaration lasts to the end of its section.
+     */
     private function parseSwitchStatement(): SwitchStmt
     {
         $token = $this->advance();
@@ -1395,6 +1431,11 @@ final class Parser
         return (new SwitchStmt($subject, $sections))->at($token);
     }
 
+    /**
+     * try { } with any number of catch clauses (catch, catch (IOException), catch (IOException e), each with an
+     * optional when (filter)) and an optional finally block; a try with neither is an error ("Expected catch or
+     * finally").
+     */
     private function parseTry(): TryStmt
     {
         $token = $this->advance();
@@ -1428,6 +1469,11 @@ final class Parser
         return (new TryStmt($body, $catches, $finally))->at($token);
     }
 
+    /**
+     * A local variable declaration without its ';': "var x = 1", "int a = 1, b" or "List<string>? names = null". Null,
+     * with the position restored, when the tokens do not start one: an explicit type must be followed by a name and
+     * "=", ";" or ",", and "await x" in async code is an expression. A deconstruction (var (a, b) = ...) is SP1010.
+     */
     private function tryParseLocalDeclaration(): ?LocalDecl
     {
         $token = $this->current();
@@ -1583,6 +1629,10 @@ final class Parser
         return null;
     }
 
+    /**
+     * Whether a lambda starts at the current token, looking ahead only: a name or a balanced "( ... )" followed by
+     * "=>", after an optional static and async (async x => ..., static (a, b) => ...).
+     */
     private function isLambdaStart(): bool
     {
         $i = $this->current()->is('static') ? 1 : 0;
@@ -1616,6 +1666,11 @@ final class Parser
         return false;
     }
 
+    /**
+     * A lambda: optional static and async, one bare parameter (x => ...) or a parenthesized list of implicitly typed
+     * (a, b) and explicitly typed (int a, ref int b) parameters, then a block or an expression body. The body of an
+     * async lambda is parsed as async code, where await is an operator.
+     */
     private function parseLambda(): LambdaExpr
     {
         $start = $this->current();
@@ -1727,6 +1782,11 @@ final class Parser
         }
     }
 
+    /**
+     * The binary operator at the current token for precedence $level (0 is ||, 9 is * / %), or null; is and as belong
+     * to level 6 with the relational operators. The lexer never produces ">>": two touching '>' tokens are the shift
+     * (level 7), and a '>' touching ">=" (the start of ">>=") is not a relational operator.
+     */
     private function binaryOperatorAt(int $level): ?string
     {
         $token = $this->current();
@@ -1757,6 +1817,11 @@ final class Parser
         };
     }
 
+    /**
+     * A unary expression followed by any number of switch expressions (x switch { ... }) and with expressions of
+     * records (p with { X = 1 }), which bind tighter than any binary operator. Each item of a with initializer must be
+     * "Name = value" (SP0131).
+     */
     private function parseSwitchLevel(): Expr
     {
         $expr = $this->parseUnary();
@@ -1778,6 +1843,10 @@ final class Parser
         }
     }
 
+    /**
+     * The arms of "subject switch { pattern when guard => value, ... }" after the subject: comma-separated, each with
+     * an optional when guard, and an optional trailing comma.
+     */
     private function parseSwitchExpression(Expr $subject): SwitchExpr
     {
         $token = $this->advance();
@@ -1802,6 +1871,10 @@ final class Parser
         return (new SwitchExpr($subject, $arms))->at($token);
     }
 
+    /**
+     * A unary expression: a prefix operator (+ - ! ~ ++ --), a cast ((int)x, when isCast() says so) or await, which is
+     * SP4033 outside async code; otherwise a primary expression with its postfix operators.
+     */
     private function parseUnary(): Expr
     {
         $token = $this->current();
@@ -1862,6 +1935,12 @@ final class Parser
         }
     }
 
+    /**
+     * Whether the "(" at the current token starts a cast, looking ahead only, by C#'s rule: the parentheses hold a type
+     * and the next token can start an operand (a name, a literal, "(", "!", "~", this, new, typeof ...). After a
+     * predefined type ((int), (string[])) a keyword type or + - ++ -- may follow too: "(long)int.MaxValue" and
+     * "(int)-x" are casts, "(a)-b" is a subtraction.
+     */
     private function isCast(): bool
     {
         $start = $this->pos;
@@ -1899,6 +1978,12 @@ final class Parser
         return $isKeyword && ($next->is('-') || $next->is('+') || $next->is('++') || $next->is('--'));
     }
 
+    /**
+     * A primary expression: a literal (an integer typed by its value and suffix, a real number as float, decimal or
+     * double by its suffix), an interpolated string, nameof(...), a name with optional type arguments, a keyword
+     * expression, a parenthesized expression or a collection expression ([1, 2, 3]). Tuples and spread elements (..xs)
+     * are SP1010, anything else SP1003 ("Invalid expression term").
+     */
     private function parsePrimary(): Expr
     {
         $token = $this->current();
@@ -1978,6 +2063,11 @@ final class Parser
         throw $this->error("Invalid expression term {$token->describe()}", $token, 'SP1003');
     }
 
+    /**
+     * A primary expression that starts with a keyword: true, false, null, this, base (only before "."), new, typeof(T)
+     * (typeof(void) too), default and default(T), or a predefined type as a receiver (int.Parse, string.Empty). An
+     * anonymous method (delegate { ... }) is SP1010, any other keyword SP1003.
+     */
     private function parseKeywordPrimary(Token $token): Expr
     {
         switch ($token->value) {
@@ -2040,6 +2130,11 @@ final class Parser
         throw $this->error("Invalid expression term '{$token->text()}'", $token, 'SP1003');
     }
 
+    /**
+     * The postfix operators after a primary expression, as many as follow: member access (. and ?.) with optional type
+     * arguments, invocation, element access ([i], and ?[i] when the '?' touches the '['), x++ and x--, and the
+     * null-forgiving x!, which is dropped.
+     */
     private function parsePostfix(Expr $expr): Expr
     {
         while (true) {
@@ -2149,6 +2244,11 @@ final class Parser
         return $args;
     }
 
+    /**
+     * After "new": an anonymous object (new { ... }), an implicitly typed array (new[] { 1, 2 }), a target-typed
+     * new(...), an array (new int[] { 1, 2 }, new int[n]) or an object creation with arguments, an object or collection
+     * initializer, or both (new List<int> { 1, 2 }). A type with none of (), [] and {} after it is an error.
+     */
     private function parseNew(): Expr
     {
         $token = $this->advance();
@@ -2254,6 +2354,11 @@ final class Parser
         return $elements;
     }
 
+    /**
+     * The { ... } of an object or collection initializer, item by item: "Name = value", "Name = { ... }" (a nested
+     * initializer), "[key] = value" (an index initializer), "{ key, value }" (an Add with several arguments) or a plain
+     * element (an Add). Mixing member and element items is SP0747, reported by the emitter.
+     */
     private function parseObjectOrCollectionInitializer(): Initializer
     {
         $start = $this->expect('{');
@@ -2289,6 +2394,11 @@ final class Parser
         return (new Initializer($items))->at($start);
     }
 
+    /**
+     * An interpolated string from the parts the lexer found: the expression text of each hole is lexed and parsed again
+     * by a new parser, at its place in the file so that errors point into the string, and kept with its alignment and
+     * format. Tokens left after a hole's expression are an error.
+     */
     private function parseInterpolatedString(Token $token): InterpolatedStringExpr
     {
         $parts = [];
@@ -2347,6 +2457,12 @@ final class Parser
         return $this->parsePrimaryPattern();
     }
 
+    /**
+     * One pattern below and/or/not: a relational pattern (> 0, <= max), a property pattern ({ Name: "x" }), a
+     * parenthesized pattern, the discard _, var x, a type pattern (string s, int, List<int>, Point { X: 0 } p) or else
+     * a constant pattern (null, 42, Color.Red) parsed at the precedence of the shift operators. A bare name (x is
+     * Circle) stays a constant pattern, which the emitter recognizes as a type.
+     */
     private function parsePrimaryPattern(): Pattern
     {
         $token = $this->current();

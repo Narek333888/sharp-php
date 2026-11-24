@@ -24,6 +24,12 @@ final class TypeName
 
     private const RESERVED = ['list', 'string', 'object', 'array', 'match', 'int', 'float', 'bool', 'mixed', 'iterable', 'callable', 'void', 'null', 'never'];
 
+    /**
+     * The .NET name of a PHP class: PHP's own exceptions as their .NET counterparts (TypeError is
+     * System.InvalidCastException), runtime classes without the SharpPhp\Runtime prefix and the "_" of names PHP
+     * reserves (String_ is System.String), namespaces joined by dots, and the generic arity
+     * (System.Collections.Generic.List`1).
+     */
     public static function ofClass(string $class): string
     {
         $class = ltrim($class, '\\');

@@ -27,11 +27,19 @@ class DirectoryInfo extends FileSystemInfo
         Directory::CreateDirectory($this->originalPath);
     }
 
+    /**
+     * dir.CreateSubdirectory("a/b"): creates the directory (and missing parents) inside this one and returns it;
+     * nothing happens when it exists, IOException when it cannot be created. A rooted path is created as given.
+     */
     public function CreateSubdirectory(string $path): DirectoryInfo
     {
         return Directory::CreateDirectory(Path::Combine($this->originalPath, $path));
     }
 
+    /**
+     * dir.Delete() or dir.Delete(recursive: true): deletes the directory; IOException when it is
+     * not empty (unless recursive), DirectoryNotFoundException when it does not exist.
+     */
     public function Delete(bool $recursive = false): void
     {
         Directory::Delete($this->originalPath, $recursive);
@@ -55,6 +63,10 @@ class DirectoryInfo extends FileSystemInfo
         return $this->GetFiles($searchPattern, $searchOption);
     }
 
+    /**
+     * dir.MoveTo(destDirName): moves (renames) the directory, which this DirectoryInfo then stands for;
+     * IOException when the destination exists, DirectoryNotFoundException when the directory does not.
+     */
     public function MoveTo(string $destDirName): void
     {
         Directory::Move($this->originalPath, $destDirName);

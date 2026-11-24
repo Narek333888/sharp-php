@@ -33,6 +33,10 @@ final class WebApp
     /** @var (\Closure(HttpRequest): mixed)|null */
     private ?\Closure $fallback = null;
 
+    /**
+     * WebApp.Create(): a new application without routes; map them with MapGet, MapPost, ... and
+     * start it with Run().
+     */
     public static function Create(): self
     {
         return new self();

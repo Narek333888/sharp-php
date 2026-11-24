@@ -43,6 +43,7 @@ final class Stopwatch
         get => intdiv($this->nanoseconds(), 100);
     }
 
+    /** Stopwatch.StartNew(): a new stopwatch, already running. */
     public static function StartNew(): self
     {
         $watch = new self();
@@ -57,11 +58,19 @@ final class Stopwatch
         return intdiv(hrtime(true), 100);
     }
 
+    /**
+     * watch.Start(): starts measuring, or goes on after a Stop (the time adds to what earlier runs
+     * measured); nothing happens while it runs.
+     */
     public function Start(): void
     {
         $this->started ??= hrtime(true);
     }
 
+    /**
+     * watch.Stop(): stops measuring and keeps the elapsed time, which Start goes on from; nothing
+     * happens when it is not running.
+     */
     public function Stop(): void
     {
         if ($this->started !== null) {

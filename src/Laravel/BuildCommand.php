@@ -21,6 +21,10 @@ final class BuildCommand extends Command
     /** @var string */
     protected $description = 'Compile the SharpPHP (.sphp) sources of the application';
 
+    /**
+     * Builds the project (only when a source changed, unless --force), then prints the number of generated PHP files,
+     * the build directory and the time taken. Compile errors are printed with their code frames and return FAILURE.
+     */
     public function handle(Project $project): int
     {
         $started = microtime(true);

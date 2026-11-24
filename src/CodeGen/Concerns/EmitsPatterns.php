@@ -160,6 +160,12 @@ trait EmitsPatterns
         return $test;
     }
 
+    /**
+     * The test of a type pattern or `is T`: `\is_int()`, `\is_float()`, `\is_string()`, `\is_bool()`, `\is_array()`,
+     * TypeCheck::matches() for a char, `instanceof` for a class, a delegate (\Closure) or a type parameter with a class
+     * constraint, `\is_iterable()` or Op::isCollection() for a collection interface, `!== null` for anything else
+     * (object). A designation is declared and assigned in the test: `o is int n` => `\is_int($n = $o)`.
+     */
     private function typeTest(Type $type, Emitted $subject, ?string $designation): Emitted
     {
         $operand = $subject->code;
@@ -201,6 +207,12 @@ trait EmitsPatterns
         }
     }
 
+    /**
+     * A switch expression as PHP's match: with only constant patterns and discards, `match ($x) { 1 => 'one',
+     * default => '?' }`; otherwise `match (true)` with each arm's pattern condition and when clause, a subject that is
+     * not simple evaluated once as an arrow function's parameter: `(fn ($t) => match (true) { ... })(subject)`. The
+     * type is the arms' types unified; arms that throw do not count.
+     */
     private function switchExpr(SwitchExpr $e, ?Type $expected): Emitted
     {
         $subject = $this->expr($e->subject);

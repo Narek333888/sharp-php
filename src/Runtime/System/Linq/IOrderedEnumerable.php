@@ -150,6 +150,7 @@ final class IOrderedEnumerable implements \IteratorAggregate, \Countable, \JsonS
         return $this->sequence();
     }
 
+    /** ordered.ToString(): the type name "System.Linq.OrderedEnumerable`2", without .NET's type arguments. */
     public function ToString(): string
     {
         return 'System.Linq.OrderedEnumerable`2';

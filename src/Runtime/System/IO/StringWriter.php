@@ -16,11 +16,13 @@ class StringWriter extends TextWriter
         $this->text .= $text;
     }
 
+    /** writer.ToString(): all the text written so far. */
     public function ToString(): string
     {
         return $this->text;
     }
 
+    /** PHP's (string) writer (echo, string functions): the text written so far, as ToString(). */
     public function __toString(): string
     {
         return $this->text;

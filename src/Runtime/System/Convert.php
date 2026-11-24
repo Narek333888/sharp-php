@@ -125,6 +125,10 @@ final class Convert
         return $number;
     }
 
+    /**
+     * Convert.ToDouble(value): a number as a double, true as 1 and false as 0, null as 0. Anything else (a char or an
+     * enum too) is turned into text and read by double.Parse ("1,234.5"): FormatException when it is no number.
+     */
     public static function ToDouble(mixed $value): float
     {
         return match (true) {
@@ -134,6 +138,10 @@ final class Convert
         };
     }
 
+    /**
+     * Convert.ToBoolean(value): a string by bool.Parse ("true" or "false" in any case, else FormatException), a number is
+     * true when it is not 0 (NaN too), null is false; any other value by PHP's (bool) cast (an object is true).
+     */
     public static function ToBoolean(mixed $value): bool
     {
         return is_string($value) ? Boolean::Parse($value) : (bool) $value;

@@ -81,12 +81,20 @@ class Queue implements \IteratorAggregate, \Countable, \JsonSerializable
         return true;
     }
 
+    /**
+     * queue.Clear(): removes every element. A foreach running over the queue throws
+     * InvalidOperationException at its next step, as in .NET.
+     */
     public function Clear(): void
     {
         $this->items = [];
         $this->version++;
     }
 
+    /**
+     * queue.ToString(): the .NET type name, System.Collections.Generic.Queue`1[System.Int32]
+     * (System.Object when the element type is not known).
+     */
     public function ToString(): string
     {
         return 'System.Collections.Generic.Queue`1[' . \SharpPhp\Runtime\TypeName::ofSpec($this->of ?? 'mixed') . ']';

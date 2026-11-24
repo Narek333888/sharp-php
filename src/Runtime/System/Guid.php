@@ -75,16 +75,19 @@ final class Guid implements \JsonSerializable
         };
     }
 
+    /** id.Equals(other): true for a Guid with the same 128 bits, however each was written ("N", "B", upper case). */
     public function Equals(mixed $other): bool
     {
         return $other instanceof self && $other->hex === $this->hex;
     }
 
+    /** From the digits, as Equals: equal Guids have the same hash code. */
     public function GetHashCode(): int
     {
         return crc32($this->hex);
     }
 
+    /** id.CompareTo(other): -1, 0 or 1, in .NET's order (by the digits as ToString() writes them). */
     public function CompareTo(self $other): int
     {
         return self::compare($this, $other);
@@ -101,11 +104,13 @@ final class Guid implements \JsonSerializable
         return strcmp($a->hex, $b->hex) <=> 0;
     }
 
+    /** The "D" form, as ToString(): what a Guid gives when PHP code uses it as a string (echo, "$id"). */
     public function __toString(): string
     {
         return $this->ToString();
     }
 
+    /** The "D" form, as System.Text.Json writes a Guid: "0f8fad5b-d9cb-469f-a165-70867728950e". */
     public function jsonSerialize(): string
     {
         return $this->ToString();

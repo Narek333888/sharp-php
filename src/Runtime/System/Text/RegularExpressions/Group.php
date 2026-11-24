@@ -27,11 +27,13 @@ class Group
         get => mb_strlen($this->Value);
     }
 
+    /** group.ToString(): the captured text, as Value ("" when the group did not take part in the match). */
     public function ToString(): string
     {
         return $this->Value;
     }
 
+    /** PHP's (string) group (echo, string functions): the captured text, as ToString(). */
     public function __toString(): string
     {
         return $this->Value;

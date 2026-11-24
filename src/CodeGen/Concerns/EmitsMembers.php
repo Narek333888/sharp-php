@@ -153,6 +153,12 @@ trait EmitsMembers
         throw $this->error('SP0070', "The event '$owner.{$member->name}' can only appear on the left hand side of += or -= (except when used from within the type '$owner')", $at);
     }
 
+    /**
+     * A member of the current class (or one it inherits) named without a receiver: a field or property
+     * `$this->name` or `self::$name`, a const or enum case `self::Name`, a static property with accessors
+     * `self::get_Name()`, a method `$this->` or `self::` for the call to complete. Checks access, events (SP0070)
+     * and that an instance member is not used in a static context (SP0120).
+     */
     private function ownMember(MemberSymbol $member, Node $at): Emitted
     {
         $this->requireAccessible($member, $at);
@@ -240,6 +246,11 @@ trait EmitsMembers
         );
     }
 
+    /**
+     * The error for a name that is a namespace, or nothing, where a value is needed: SP0103 at the leftmost name when
+     * it is not a namespace, SP0234 when the last part of a dotted name is not in its namespace, SP0118 for a namespace
+     * used like a variable. Returned for the caller to throw.
+     */
     private function namespaceError(string $dotted, Node $at): CompileError
     {
         $parts = explode('.', $dotted);
@@ -497,6 +508,12 @@ trait EmitsMembers
         return $this->symbols->findMember($symbol, $magic) !== null;
     }
 
+    /**
+     * Type.Name: a static member of the type, or a static extension property of it (C# 14): `Color.Red` =>
+     * `Color::Red`, a static field `Config::$Count`, a property with accessors `Config::get_Count()`, a method
+     * `Config::` for the call to complete; the member's type with the type's arguments substituted. SP0117 when there
+     * is no such member, SP0120 for an instance member.
+     */
     private function staticMember(Emitted $type, MemberAccessExpr $e): Emitted
     {
         $symbol = $type->symbol ?? throw new \LogicException('A type result has a symbol');
@@ -526,6 +543,13 @@ trait EmitsMembers
         };
     }
 
+    /**
+     * value.Name: a string's Length (`\mb_strlen()`), an array's Length and a collection's Count (`\count()`), an
+     * exception's Message, StackTrace and InnerException (getMessage(), ...), a field or property (`$x->Name`, `?->`
+     * for ?.), a method as a first-class callable, an extension property (C# 14), and on a value of unknown type
+     * Dyn::get() for common names. SP1061 when there is no such member (unless the class answers any name through
+     * __get or __set), SP0176 for a static member.
+     */
     private function instanceMember(Emitted $target, MemberAccessExpr $e): Emitted
     {
         $name = $e->name;
@@ -1670,6 +1694,12 @@ trait EmitsMembers
         }
     }
 
+    /**
+     * target[index]: a string's char (`s[i]` => `\mb_substr($s, $i, 1)`, read-only: SP0200), an array or list element
+     * (`$a[$i]`), or a class's indexer through ArrayAccess, keyed by its offsetGet() parameter type. Writing ($write)
+     * an array element checks the index first (Op::index()), as a C# array does not grow, and makes lambdas capture
+     * the array by reference. SP0022 (several indexes), SP0021 (no indexer), SP0200 (read-only), SP0131 (?[] written).
+     */
     private function elementAccess(ElementAccessExpr $e, bool $write = false): Emitted
     {
         if (count($e->indexes) !== 1) {

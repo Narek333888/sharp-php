@@ -18,6 +18,10 @@ use SharpPhp\Runtime\System\Threading\Tasks\Task;
  */
 final class File
 {
+    /**
+     * File.Exists(path): whether a file is there; false (never an exception) for null, "", a
+     * directory or a missing path.
+     */
     public static function Exists(?string $path): bool
     {
         return $path !== null && $path !== '' && is_file($path);
@@ -86,6 +90,10 @@ final class File
         self::write($path, pack('C*', ...$bytes), 0);
     }
 
+    /**
+     * File.AppendAllText(path, text): adds the text to the end of the file, creating it, in UTF-8
+     * unless an Encoding is given; DirectoryNotFoundException when its directory does not exist.
+     */
     public static function AppendAllText(string $path, ?string $contents, ?Encoding $encoding = null): void
     {
         self::write($path, self::encode($contents ?? '', $encoding), FILE_APPEND);
@@ -97,6 +105,10 @@ final class File
         self::write($path, self::encode(self::joinLines($contents), $encoding), FILE_APPEND);
     }
 
+    /**
+     * File.OpenText(path): a StreamReader over the file (UTF-8, a byte order mark is skipped);
+     * FileNotFoundException when the file does not exist.
+     */
     public static function OpenText(string $path): StreamReader
     {
         return new StreamReader($path);
@@ -134,6 +146,10 @@ final class File
         }
     }
 
+    /**
+     * File.Move(source, dest) or Move(source, dest, overwrite: true): moves or renames the file;
+     * IOException when dest exists (unless overwrite), FileNotFoundException when source does not.
+     */
     public static function Move(string $source, string $destination, bool $overwrite = false): void
     {
         self::requireFile($source);

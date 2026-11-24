@@ -158,6 +158,10 @@ final class DateTime implements \JsonSerializable
         return $this->AddTicks($value->Ticks);
     }
 
+    /**
+     * date.AddTicks(n): n ticks of 100 ns later (earlier when negative), with the same Kind; ArgumentOutOfRangeException
+     * when the result is before MinValue or after MaxValue, as in .NET.
+     */
     public function AddTicks(int $value): self
     {
         // Checked before adding, so that the sum cannot overflow.
@@ -168,26 +172,31 @@ final class DateTime implements \JsonSerializable
         return new self($this->Ticks + $value, $this->Kind);
     }
 
+    /** date.AddMilliseconds(-1.5): rounded to the nearest tick (100 ns); ArgumentOutOfRangeException out of range. */
     public function AddMilliseconds(float $value): self
     {
         return $this->addUnits($value, TimeSpan::TicksPerMillisecond);
     }
 
+    /** date.AddSeconds(-0.25): rounded to the nearest tick (100 ns); ArgumentOutOfRangeException out of range. */
     public function AddSeconds(float $value): self
     {
         return $this->addUnits($value, TimeSpan::TicksPerSecond);
     }
 
+    /** date.AddMinutes(90.5): rounded to the nearest tick (100 ns); ArgumentOutOfRangeException out of range. */
     public function AddMinutes(float $value): self
     {
         return $this->addUnits($value, TimeSpan::TicksPerMinute);
     }
 
+    /** date.AddHours(-1.5): rounded to the nearest tick (100 ns); ArgumentOutOfRangeException out of range. */
     public function AddHours(float $value): self
     {
         return $this->addUnits($value, TimeSpan::TicksPerHour);
     }
 
+    /** date.AddDays(1.5): rounded to the nearest tick (100 ns); ArgumentOutOfRangeException out of range. */
     public function AddDays(float $value): self
     {
         return $this->addUnits($value, TimeSpan::TicksPerDay);
@@ -208,6 +217,10 @@ final class DateTime implements \JsonSerializable
         return new self(self::daysFromCivil($newYear, $newMonth, $newDay) * TimeSpan::TicksPerDay + $this->timeTicks(), $this->Kind);
     }
 
+    /**
+     * date.AddYears(n): AddMonths(12 * n), so Feb 29 becomes Feb 28 in a common year; ArgumentOutOfRangeException
+     * outside years 1 to 9999.
+     */
     public function AddYears(int $value): self
     {
         return $this->AddMonths($value * 12);
@@ -264,6 +277,10 @@ final class DateTime implements \JsonSerializable
         return $t1->Ticks <=> $t2->Ticks;
     }
 
+    /**
+     * date.CompareTo(other): -1, 0 or 1 by the ticks, not the Kind; 1 for null, ArgumentException for a value that is not
+     * a DateTime, as in .NET.
+     */
     public function CompareTo(mixed $value): int
     {
         if ($value === null) {
@@ -276,11 +293,13 @@ final class DateTime implements \JsonSerializable
         return $this->Ticks <=> $value->Ticks;
     }
 
+    /** date.Equals(other): true for a DateTime with the same ticks; the Kind is not compared, as in .NET. */
     public function Equals(mixed $value): bool
     {
         return $value instanceof self && $value->Ticks === $this->Ticks;
     }
 
+    /** From the ticks only, as Equals: equal dates of different Kinds have the same hash code. */
     public function GetHashCode(): int
     {
         return $this->Ticks ^ ($this->Ticks >> 32);
@@ -297,6 +316,7 @@ final class DateTime implements \JsonSerializable
         return $month === 2 ? (self::IsLeapYear($year) ? 29 : 28) : [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][$month - 1];
     }
 
+    /** DateTime.IsLeapYear(year): Gregorian (2000 is one, 1900 not); ArgumentOutOfRangeException outside 1 to 9999. */
     public static function IsLeapYear(int $year): bool
     {
         if ($year < 1 || $year > 9999) {
@@ -354,21 +374,25 @@ final class DateTime implements \JsonSerializable
         return $this->formatCustom($format);
     }
 
+    /** date.ToShortDateString(): ToString("d"), en-US as all SharpPHP formatting: "1/5/2024". */
     public function ToShortDateString(): string
     {
         return $this->ToString('d');
     }
 
+    /** date.ToLongDateString(): ToString("D"), en-US: "Friday, January 5, 2024". */
     public function ToLongDateString(): string
     {
         return $this->ToString('D');
     }
 
+    /** date.ToShortTimeString(): ToString("t"), en-US: "2:03 PM". */
     public function ToShortTimeString(): string
     {
         return $this->ToString('t');
     }
 
+    /** date.ToLongTimeString(): ToString("T"), en-US: "2:03:09 PM". */
     public function ToLongTimeString(): string
     {
         return $this->ToString('T');

@@ -60,11 +60,16 @@ final class Encoding
         return $this->php === 'UTF-8' || $this->php === 'ASCII' ? mb_scrub($raw, 'UTF-8') : (string) mb_convert_encoding($raw, 'UTF-8', $this->php);
     }
 
+    /** encoding.GetByteCount(s): how many bytes GetBytes(s) gives (UTF-8: 3 for "€"), without a byte order mark. */
     public function GetByteCount(string $s): int
     {
         return count($this->GetBytes($s));
     }
 
+    /**
+     * encoding.ToString(): "System.Text." + EncodingName without spaces + "Encoding":
+     * "System.Text.UnicodeEncoding" for Encoding.Unicode, "System.Text.Unicode(UTF-8)Encoding" for UTF8.
+     */
     public function ToString(): string
     {
         return 'System.Text.' . str_replace(' ', '', $this->EncodingName) . 'Encoding';

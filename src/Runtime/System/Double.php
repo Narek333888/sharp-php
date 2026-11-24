@@ -55,11 +55,13 @@ final class Double
         return is_finite($value) ? $value : ($value > 0 ? INF : -INF);
     }
 
+    /** double.IsNaN(x): true only for NaN; test with it, as x == double.NaN is false even when x is NaN. */
     public static function IsNaN(float $value): bool
     {
         return is_nan($value);
     }
 
+    /** double.IsInfinity(x): true for PositiveInfinity and NegativeInfinity, false for NaN. */
     public static function IsInfinity(float $value): bool
     {
         return is_infinite($value);

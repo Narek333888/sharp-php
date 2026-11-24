@@ -76,6 +76,12 @@ final class Lexer
         }
     }
 
+    /**
+     * The next token after whitespace and comments: an interpolated string ($"..." and its verbatim forms), a verbatim
+     * string or identifier, an identifier or keyword, a number, a string or char literal, or the longest punctuator
+     * ("?." before a digit is "?" and a number: "a ?.5 : b"). At the end it is the end-of-file token; an unexpected
+     * character is SP1001.
+     */
     private function next(): Token
     {
         $this->skipTrivia();
@@ -148,6 +154,10 @@ final class Lexer
         throw $this->error("Unexpected character '$c'", $line, $column);
     }
 
+    /**
+     * Skips whitespace, line and block comments, and preprocessor lines (a '#' first on its line: #region, #pragma, but
+     * also #if, #else and #endif, so the code of every branch is kept). A block comment without its end is SP1001.
+     */
     private function skipTrivia(): void
     {
         while ($this->pos < $this->length) {
@@ -213,6 +223,11 @@ final class Lexer
         return substr($this->text, $start, $this->pos - $start);
     }
 
+    /**
+     * A numeric literal: 0x and 0b integers, decimal digits with '_' separators, a fraction and an exponent, and C#'s
+     * suffixes (u, l, ul for integers; f, d, m for reals). The token is an Int when the value fits a PHP int and a
+     * Float otherwise; the parser reads the suffix from the source text to type the literal (10L, 1.5m).
+     */
     private function number(int $start, int $line, int $column): Token
     {
         $text = $this->text;
@@ -279,6 +294,10 @@ final class Lexer
         }
     }
 
+    /**
+     * The text of a regular string literal after its opening quote, with its escape sequences decoded; a newline or the
+     * end of the file before the closing quote is SP1001 ("Newline in constant").
+     */
     private function regularString(): string
     {
         $line = $this->line;
@@ -302,6 +321,10 @@ final class Lexer
         }
     }
 
+    /**
+     * The text of a verbatim string after its opening quote: no escape sequences, "" is a quote, and it may span lines.
+     * Without its closing quote it is SP1001.
+     */
     private function verbatimString(): string
     {
         $line = $this->line;
@@ -326,6 +349,10 @@ final class Lexer
         }
     }
 
+    /**
+     * A char literal after its opening quote: one escape sequence or one (UTF-8) character, then the closing quote. An
+     * empty literal ('') and one of several characters ('ab') are SP1001.
+     */
     private function charLiteral(): string
     {
         $line = $this->line;
@@ -347,6 +374,10 @@ final class Lexer
         return $value;
     }
 
+    /**
+     * Decodes the escape sequence at a backslash, as UTF-8: the simple ones (\n, \t, \0, \", \e ...), \x with 1 to 4
+     * hex digits, \u with exactly 4 and \U with up to 8. An unknown escape (\q) is SP1001.
+     */
     private function escape(): string
     {
         $line = $this->line;

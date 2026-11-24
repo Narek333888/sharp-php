@@ -86,16 +86,19 @@ final class ParameterCollection implements \ArrayAccess, \IteratorAggregate, \Co
         return isset($this->items[strtolower(Op::str($key))]);
     }
 
+    /** req.Query["key"] = value: NotSupportedException, the collection is read-only. */
     public function offsetSet(mixed $offset, mixed $value): void
     {
         throw new NotSupportedException('Collection is read-only.');
     }
 
+    /** PHP's unset(req.Query["key"]): NotSupportedException, the collection is read-only. */
     public function offsetUnset(mixed $offset): void
     {
         throw new NotSupportedException('Collection is read-only.');
     }
 
+    /** req.Query.ContainsKey(key): whether the key is there, ignoring case. */
     public function ContainsKey(string $key): bool
     {
         return isset($this->items[strtolower($key)]);
@@ -116,6 +119,10 @@ final class ParameterCollection implements \ArrayAccess, \IteratorAggregate, \Co
         return new List_($this->items[strtolower($key)][1] ?? [], of: 'string');
     }
 
+    /**
+     * PHP's count(collection), which LINQ's Count() uses too: the number of keys, as Count (a key
+     * given several times counts once).
+     */
     public function count(): int
     {
         return count($this->items);
@@ -129,6 +136,10 @@ final class ParameterCollection implements \ArrayAccess, \IteratorAggregate, \Co
         }
     }
 
+    /**
+     * query.ToString(): "key=value&key=value", every value of a key in turn, the keys as first
+     * given; not URL-encoded.
+     */
     public function ToString(): string
     {
         $parts = [];

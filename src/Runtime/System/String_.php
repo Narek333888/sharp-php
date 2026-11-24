@@ -71,11 +71,16 @@ final class String_
         return implode('', array_map(Op::str(...), $values));
     }
 
+    /** string.IsNullOrEmpty(s): true for null and "" only; a string of spaces is not empty (see IsNullOrWhiteSpace). */
     public static function IsNullOrEmpty(?string $value): bool
     {
         return $value === null || $value === '';
     }
 
+    /**
+     * string.IsNullOrWhiteSpace(s): true for null, "" and strings of only spaces, tabs, line breaks, \v or \0 (PHP's
+     * trim() set: unlike .NET, \f and Unicode spaces such as U+00A0 do not count, and \0 does).
+     */
     public static function IsNullOrWhiteSpace(?string $value): bool
     {
         return $value === null || trim($value) === '';
@@ -186,46 +191,65 @@ final class String_
         return $s;
     }
 
+    /**
+     * text.ToUpper(): the simple Unicode mapping, one char for one char ("ß" stays "ß"). Culture-independent, as
+     * ToUpperInvariant: "i" is always "I", never the Turkish "İ".
+     */
     public static function ToUpper(string $s): string
     {
         return self::upper($s);
     }
 
+    /**
+     * text.ToLower(): the simple Unicode mapping, one char for one char ("ΣΑΣ" is "σασ"). Culture-independent, as
+     * ToLowerInvariant: "I" is always "i", never the Turkish "ı".
+     */
     public static function ToLower(string $s): string
     {
         return self::lower($s);
     }
 
+    /** text.ToUpperInvariant(): as ToUpper(), which does not depend on a culture in SharpPHP ("ß" stays "ß"). */
     public static function ToUpperInvariant(string $s): string
     {
         return self::upper($s);
     }
 
+    /** text.ToLowerInvariant(): as ToLower(), which does not depend on a culture in SharpPHP ("ΣΑΣ" is "σασ"). */
     public static function ToLowerInvariant(string $s): string
     {
         return self::lower($s);
     }
 
+    /**
+     * text.Trim() removes spaces, tabs, line breaks, \v and \0 from both ends (PHP's trim(): unlike .NET, not \f or
+     * Unicode spaces such as U+00A0). text.Trim(c) removes c; for a non-ASCII c PHP trims each of its UTF-8 bytes,
+     * which can damage other characters at the ends.
+     */
     public static function Trim(string $s, ?string $chars = null): string
     {
         return $chars === null ? trim($s) : trim($s, $chars);
     }
 
+    /** text.TrimStart() / text.TrimStart(c): as Trim(), at the start only. */
     public static function TrimStart(string $s, ?string $chars = null): string
     {
         return $chars === null ? ltrim($s) : ltrim($s, $chars);
     }
 
+    /** text.TrimEnd() / text.TrimEnd(c): as Trim(), at the end only. */
     public static function TrimEnd(string $s, ?string $chars = null): string
     {
         return $chars === null ? rtrim($s) : rtrim($s, $chars);
     }
 
+    /** text.Contains(value): ordinal (case-sensitive), as in .NET; with an IgnoreCase StringComparison, ignoring case. */
     public static function Contains(string $s, string $value, ?StringComparison $comparisonType = null): bool
     {
         return $comparisonType?->ignoresCase() === true ? mb_stripos($s, $value) !== false : str_contains($s, $value);
     }
 
+    /** text.StartsWith(value): ordinal (.NET compares by culture); ignoring case with an IgnoreCase StringComparison. */
     public static function StartsWith(string $s, string $value, ?StringComparison $comparisonType = null): bool
     {
         if ($comparisonType?->ignoresCase() === true) {
@@ -235,6 +259,7 @@ final class String_
         return str_starts_with($s, $value);
     }
 
+    /** text.EndsWith(value): ordinal (.NET compares by culture); ignoring case with an IgnoreCase StringComparison. */
     public static function EndsWith(string $s, string $value, ?StringComparison $comparisonType = null): bool
     {
         if ($comparisonType?->ignoresCase() === true) {
@@ -260,6 +285,10 @@ final class String_
         return $pos === false ? -1 : $pos;
     }
 
+    /**
+     * text.LastIndexOf(value): the position of the last match, or -1. Ordinal (.NET's LastIndexOf(string) compares by
+     * culture); ignoring case with an IgnoreCase StringComparison.
+     */
     public static function LastIndexOf(string $s, string $value, ?StringComparison $comparisonType = null): int
     {
         $pos = $comparisonType?->ignoresCase() === true ? mb_strripos($s, $value) : mb_strrpos($s, $value);
@@ -267,6 +296,7 @@ final class String_
         return $pos === false ? -1 : $pos;
     }
 
+    /** text.Substring(start[, length]): ArgumentOutOfRangeException for a range outside the string, as in .NET. */
     public static function Substring(string $s, int $startIndex, ?int $length = null): string
     {
         $total = mb_strlen($s);
@@ -280,6 +310,10 @@ final class String_
         return mb_substr($s, $startIndex, $length);
     }
 
+    /**
+     * text.Replace(oldValue, newValue): every occurrence, ordinal as in .NET (a null newValue removes them);
+     * ArgumentException for an empty oldValue. With an IgnoreCase StringComparison it matches ignoring case.
+     */
     public static function Replace(string $s, string $oldValue, ?string $newValue, ?StringComparison $comparisonType = null): string
     {
         if ($oldValue === '') {
@@ -347,6 +381,10 @@ final class String_
         return $parts;
     }
 
+    /**
+     * text.PadLeft(width[, c]): c (a space by default) added on the left up to width chars; unlike .NET, a
+     * negative width is no ArgumentOutOfRangeException.
+     */
     public static function PadLeft(string $s, int $totalWidth, string $paddingChar = ' '): string
     {
         $missing = $totalWidth - mb_strlen($s);
@@ -354,6 +392,10 @@ final class String_
         return $missing > 0 ? str_repeat($paddingChar, $missing) . $s : $s;
     }
 
+    /**
+     * text.PadRight(width[, c]): c (a space by default) added on the right up to width chars; unlike .NET, a
+     * negative width is no ArgumentOutOfRangeException.
+     */
     public static function PadRight(string $s, int $totalWidth, string $paddingChar = ' '): string
     {
         $missing = $totalWidth - mb_strlen($s);
@@ -361,11 +403,19 @@ final class String_
         return $missing > 0 ? $s . str_repeat($paddingChar, $missing) : $s;
     }
 
+    /**
+     * text.Insert(index, value): value inserted before the char at index. Not checked as in .NET (no
+     * ArgumentOutOfRangeException): an index past the end appends, a negative one counts from the end.
+     */
     public static function Insert(string $s, int $startIndex, string $value): string
     {
         return mb_substr($s, 0, $startIndex) . $value . mb_substr($s, $startIndex);
     }
 
+    /**
+     * text.Remove(start) drops the chars from start on, text.Remove(start, count) count chars. Not checked as in .NET (no
+     * ArgumentOutOfRangeException): a negative start counts from the end, and a count past the end stops there.
+     */
     public static function Remove(string $s, int $startIndex, ?int $count = null): string
     {
         return mb_substr($s, 0, $startIndex) . ($count === null ? '' : mb_substr($s, $startIndex + $count));
@@ -391,11 +441,16 @@ final class String_
         return $s === null ? null : mb_str_split($s);
     }
 
+    /**
+     * text.CompareTo(other): as string.Compare(text, other): by the lower-case forms, then lowercase before
+     * uppercase ("a" < "A" < "b"); any string is after null.
+     */
     public static function CompareTo(string $s, ?string $other): int
     {
         return self::Compare($s, $other);
     }
 
+    /** text.GetHashCode(): the crc32 of the text, the same in every run (.NET's string hash changes from run to run). */
     public static function GetHashCode(string $s): int
     {
         return crc32($s);

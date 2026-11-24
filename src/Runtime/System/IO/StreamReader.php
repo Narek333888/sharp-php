@@ -44,6 +44,10 @@ class StreamReader extends TextReader
         get => $this->Peek() === -1;
     }
 
+    /**
+     * reader.Peek(): the next character's code without reading it, or -1 at the end of the file
+     * (then EndOfStream is true).
+     */
     public function Peek(): int
     {
         $this->fill();
@@ -51,6 +55,10 @@ class StreamReader extends TextReader
         return $this->buffer === '' ? -1 : mb_ord(mb_substr($this->buffer, 0, 1));
     }
 
+    /**
+     * reader.Read(): the next character's code, or -1 at the end. A character above U+FFFF is one
+     * code point here, not two UTF-16 chars as in .NET.
+     */
     public function Read(): int
     {
         $this->fill();
@@ -63,6 +71,10 @@ class StreamReader extends TextReader
         return mb_ord($c);
     }
 
+    /**
+     * reader.ReadLine(): the next line without its line break (\n, \r\n or \r), "" for an empty
+     * line, or null at the end of the file.
+     */
     public function ReadLine(): ?string
     {
         $this->fill();
@@ -85,6 +97,7 @@ class StreamReader extends TextReader
         return $line;
     }
 
+    /** reader.ReadToEnd(): the rest of the file ("" at the end). */
     public function ReadToEnd(): string
     {
         while ($this->more()) {
@@ -95,6 +108,10 @@ class StreamReader extends TextReader
         return $text;
     }
 
+    /**
+     * reader.Dispose() (a using block): closes the file; a later read that needs more of the file
+     * throws ObjectDisposedException.
+     */
     public function Dispose(): void
     {
         if (is_resource($this->handle)) {

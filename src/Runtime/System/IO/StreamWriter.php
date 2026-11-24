@@ -49,6 +49,10 @@ class StreamWriter extends TextWriter
         }
     }
 
+    /**
+     * writer.Flush(): writes the pending text to the file (Write collects it until Flush, Dispose
+     * or 64 KB, or writes at once with AutoFlush).
+     */
     public function Flush(): void
     {
         if ($this->handle !== null && $this->pending !== '') {
@@ -58,6 +62,10 @@ class StreamWriter extends TextWriter
         }
     }
 
+    /**
+     * writer.Dispose() (a using block): writes the pending text and closes the file; Write then
+     * throws ObjectDisposedException. A second Dispose does nothing.
+     */
     public function Dispose(): void
     {
         $this->Flush();
@@ -67,6 +75,10 @@ class StreamWriter extends TextWriter
         $this->handle = null;
     }
 
+    /**
+     * When PHP frees a writer that was not disposed, it disposes it: the pending text still reaches
+     * the file, where .NET would lose it.
+     */
     public function __destruct()
     {
         // A writer that was never disposed still writes what it has, as .NET's finalizer would not:

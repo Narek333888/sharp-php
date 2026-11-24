@@ -69,6 +69,12 @@ trait EmitsExpressions
         return $result;
     }
 
+    /**
+     * The PHP code and type of an expression, by its syntax kind (expr() adds the implicit char to number conversion);
+     * a member access, call or element access with a ?. in its chain goes through conditionalAccess() first.
+     * $expected is the target type, used by literals, lambdas, new(), default, array creation, conditional, switch and
+     * collection expressions. SP0175 (base), SP0119 (a type keyword), SP8185 (a declaration), SP1010 for the rest.
+     */
     private function exprOf(Expr $e, ?Type $expected): Emitted
     {
         if (($e instanceof MemberAccessExpr || $e instanceof InvocationExpr || $e instanceof ElementAccessExpr)
@@ -218,6 +224,12 @@ trait EmitsExpressions
         };
     }
 
+    /**
+     * An interpolated string as a concatenation:
+     * `$"Hi {name}: {n:F2}"` => `'Hi ' . $name . ': ' . Op::format($n, 'F2')`. Each hole is written as C# writes
+     * its value (asString()), with a format through Op::format() and an alignment through Op::align(). No parts
+     * give '', and a single part is returned as it is.
+     */
     private function interpolatedString(InterpolatedStringExpr $e): Emitted
     {
         $parts = [];
@@ -263,7 +275,6 @@ trait EmitsExpressions
         return Emitted::value($this->runtime('Op') . '::align(' . $text->code . ', ' . $hole->alignment . ')', Type::string());
     }
 
-    /** Converts a value to a string the way C# would (true => "True", objects => ToString()). */
     /**
      * The type of arithmetic with a double, float or decimal operand, as C#'s numeric promotion: double
      * when one is a double, else float when one is a float, decimal with integers. A decimal with a double
@@ -519,6 +530,12 @@ trait EmitsExpressions
         return $value->type->kind === 'closure' && str_ends_with($value->code, '(...)');
     }
 
+    /**
+     * A value as C# writes it as text, for concatenation and interpolation: a string, a char and a non-nullable int
+     * as they are; a double, float or decimal through Op::doubleText(), singleText() or decimalText()
+     * (0.30000000000000004, 0.3); an array as its .NET type name (System.Int32[]); anything else through Op::str()
+     * (true => "True", null => "", an object => its ToString()).
+     */
     private function asString(Emitted $value): Emitted
     {
         if (($value->type->isString() || $value->type->isChar()) && !$value->type->nullable) {
@@ -644,6 +661,13 @@ trait EmitsExpressions
         }
     }
 
+    /**
+     * Prefix and postfix operators. ++ and -- write the target as C# does: list[i]++ through Op::update(), an enum
+     * to its next case (`E::from($e->value + 1)`), a static property through its setter, a char by its code (PHP's
+     * 'z'++ is 'aa'), an int? stays null, a byte or short wraps (Op::narrow()); used as a value, a postfix gives the
+     * old value. -, +, ~ and ! are checked (SP0023), promoted as in C# (-x of a uint is a long), folded for constants
+     * and lifted for nullable operands; -x of a class calls its negation operator. SP1059 for ++ on a ?. chain.
+     */
     private function unary(UnaryExpr $e): Emitted
     {
         $op = $e->operator;
@@ -836,6 +860,13 @@ trait EmitsExpressions
         return $this->binaryOperation($e->operator, $left, $right, $e);
     }
 
+    /**
+     * A binary operator with C#'s rules, on operands already emitted (also for compound assignments and lifted
+     * operators): chars as numbers, operators a class defines, delegate + and - (Delegate::Combine() and Remove()),
+     * enum arithmetic, lifted operators of nullable operands, numeric promotion; + with a string concatenates
+     * (asString()), / is \intdiv() for integers and \fdiv() otherwise, a float result is rounded to single precision,
+     * == is strict but for an int with a double and for records. SP0019 (not defined), SP0020 (division by zero).
+     */
     private function binaryOperation(string $op, Emitted $l, Emitted $r, \SharpPhp\Syntax\Node $at): Emitted
     {
         $operands = [$l, $r]; // as written, for checkBinaryOperands()
@@ -1108,6 +1139,13 @@ trait EmitsExpressions
         return $symbol !== null && $symbol->isRecord;
     }
 
+    /**
+     * =, ??= and compound assignments, giving the assigned value. C# 14's `a?.B = 5` assigns only when a is not null;
+     * dict[k] += v goes through Op::update(), a static property through its setter, a delegate's += through
+     * Delegate::Combine(). A compound assignment keeps the target's type: a char through \mb_chr(), a byte or short
+     * wraps (Op::narrow()), the value must convert to it implicitly (SP0266), a nullable target is lifted; PHP's own
+     * operator (+=, .=, %=) is used where it means the same, else `$x = $x op value`.
+     */
     private function assignment(AssignExpr $e): Emitted
     {
         // order?.Total = 5, order?.Lines[0].Qty = 5, list?[0] = 5 (C# 14): assigns, and evaluates 5, only when
@@ -1376,6 +1414,12 @@ trait EmitsExpressions
         }
     }
 
+    /**
+     * The type of a value that is one of two (the branches of ?:, the arms of a switch expression, the operands of ??):
+     * the type when both are equal, the other one made nullable for null, the wider of two integers (long when neither
+     * converts to the other), an unsized float for other numbers, the nullable one of a type and its nullable form,
+     * and mixed otherwise.
+     */
     private function unify(Type $a, Type $b): Type
     {
         if ($a->equals($b)) {
@@ -1426,6 +1470,13 @@ trait EmitsExpressions
         return $type->isClass() ? $this->classRef((string) $type->class) . '::class' : self::phpString($type->runtimeSpec());
     }
 
+    /**
+     * (T)x, C#'s explicit conversions: an object (unknown type) to a number, bool or char is checked at run time
+     * (Op::cast()); an integer is narrowed by wrapping (Op::narrow()), a double truncated and saturated
+     * (Op::truncate()), a constant folded, or SP0221 when out of range; an enum to its value, a number to an enum
+     * (`E::from()`); (float) rounds to single precision; an int to a char by its code; to string only a reference
+     * conversion (SP0030 otherwise); to a class nothing for an upcast, else a checked Op::cast().
+     */
     private function cast(CastExpr $e): Emitted
     {
         $target = $this->resolveType($e->type);
@@ -1833,6 +1884,12 @@ trait EmitsExpressions
         return count($specs) === 1 ? $specs[0] : '[' . implode(', ', $specs) . ']';
     }
 
+    /**
+     * new T[n] and array initializers: a size gives `\array_fill(0, n, default)` (a size computed at run time is
+     * checked by Op::arraySize(), a negative constant is SP0248); elements give a PHP list, converted to the element
+     * type (or the target's), or for new[] to the best common type of the elements. SP0847 when a constant size and
+     * the number of elements differ.
+     */
     private function arrayCreation(ArrayCreationExpr $e, ?Type $expected): Emitted
     {
         $elementType = $e->elementType !== null
@@ -1877,6 +1934,11 @@ trait EmitsExpressions
         return Emitted::value('[' . implode(', ', $elements) . ']', Type::array($elementType ?? Type::mixed()));
     }
 
+    /**
+     * A collection expression `[1, 2, 3]`, built as its target type: a class (List<int>, HashSet<string>) is
+     * `new List_([1, 2, 3], of: 'int')`, anything else (an array, no target) a PHP array. The elements take the
+     * target's element type, or else the first element's type.
+     */
     private function collectionExpr(CollectionExpr $e, ?Type $expected): Emitted
     {
         $symbol = $expected !== null ? $this->symbolForType($expected) : null;

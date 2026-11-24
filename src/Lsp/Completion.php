@@ -450,6 +450,11 @@ final class Completion
         };
     }
 
+    /**
+     * Members completion does not offer: PHP magic methods (__get), get_ and set_ accessor methods, names ending in
+     * "()", and, of PHP and runtime classes, the methods whose docblock marks them internal and those behind C#
+     * features (offsetGet, getIterator, count, current ...).
+     */
     private function hidden(MemberSymbol $member): bool
     {
         $name = $member->name;

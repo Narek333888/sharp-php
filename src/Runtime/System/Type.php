@@ -80,21 +80,25 @@ final class Type
         return is_object($value) && !$value instanceof \Closure ? self::ofClass($value::class) : self::named(TypeName::of($value));
     }
 
+    /** type.Equals(other): true for the same type; there is one Type per name, so this compares identity. */
     public function Equals(mixed $other): bool
     {
         return $other === $this;
     }
 
+    /** From the full name, as Equals: the same type always has the same hash code. */
     public function GetHashCode(): int
     {
         return crc32($this->FullName);
     }
 
+    /** type.ToString(): its FullName ("System.Int32", "App.Models.Person"). */
     public function ToString(): string
     {
         return $this->FullName;
     }
 
+    /** The FullName, when PHP code uses a Type as a string (echo, "$type"). */
     public function __toString(): string
     {
         return $this->FullName;

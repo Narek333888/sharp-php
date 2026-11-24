@@ -245,6 +245,7 @@ class Task implements \SharpPhp\Runtime\System\IDisposable
         }
     }
 
+    /** task.ToString(): "System.Threading.Tasks.Task", also for a Task<T> (without .NET's type argument). */
     public function ToString(): string
     {
         return 'System.Threading.Tasks.Task';

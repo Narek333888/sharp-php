@@ -26,6 +26,12 @@ final class JsonSerializer
 {
     private const MAX_DEPTH = 64;
 
+    /**
+     * JsonSerializer.Serialize(value) or Serialize(value, options): the value as JSON text,
+     * compact, or indented by 2 spaces with WriteIndented; PropertyNamingPolicy renames properties
+     * (not dictionary keys). InvalidOperationException for an object cycle (nesting deeper than
+     * 64), ArgumentException for NaN and infinity, NotSupportedException for a delegate.
+     */
     public static function Serialize(mixed $value, ?JsonSerializerOptions $options = null): string
     {
         $options ??= new JsonSerializerOptions();

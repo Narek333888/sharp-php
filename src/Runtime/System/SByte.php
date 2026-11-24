@@ -14,6 +14,10 @@ final class SByte
     public const int MaxValue = 127;
     public const int MinValue = -128;
 
+    /**
+     * sbyte.Parse(" -42 "): an optional sign and digits, with spaces, tabs or line breaks around (no group separators or
+     * decimals); FormatException otherwise, OverflowException outside -128 to 127.
+     */
     public static function Parse(string $s): int
     {
         return IntegerParser::parse($s, self::MinValue, self::MaxValue, 'a signed byte');

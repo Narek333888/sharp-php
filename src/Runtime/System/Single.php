@@ -35,26 +35,31 @@ final class Single
         return $ok;
     }
 
+    /** float.IsNaN(x): true only for NaN; test with it, as x == float.NaN is false even when x is NaN. */
     public static function IsNaN(float $value): bool
     {
         return is_nan($value);
     }
 
+    /** float.IsInfinity(x): true for PositiveInfinity and NegativeInfinity, false for NaN. */
     public static function IsInfinity(float $value): bool
     {
         return is_infinite($value);
     }
 
+    /** float.IsPositiveInfinity(x): true only for PositiveInfinity (not for NegativeInfinity or NaN). */
     public static function IsPositiveInfinity(float $value): bool
     {
         return $value === INF;
     }
 
+    /** float.IsNegativeInfinity(x): true only for NegativeInfinity (not for PositiveInfinity or NaN). */
     public static function IsNegativeInfinity(float $value): bool
     {
         return $value === -INF;
     }
 
+    /** float.IsFinite(x): true unless x is NaN or an infinity. */
     public static function IsFinite(float $value): bool
     {
         return is_finite($value);

@@ -67,12 +67,20 @@ class Stack implements \IteratorAggregate, \Countable, \JsonSerializable
         return $this->items[array_key_last($this->items)];
     }
 
+    /**
+     * stack.Clear(): removes every element. A foreach running over the stack throws
+     * InvalidOperationException at its next step, as in .NET.
+     */
     public function Clear(): void
     {
         $this->items = [];
         $this->version++;
     }
 
+    /**
+     * stack.ToString(): the .NET type name, System.Collections.Generic.Stack`1[System.Int32]
+     * (System.Object when the element type is not known).
+     */
     public function ToString(): string
     {
         return 'System.Collections.Generic.Stack`1[' . \SharpPhp\Runtime\TypeName::ofSpec($this->of ?? 'mixed') . ']';

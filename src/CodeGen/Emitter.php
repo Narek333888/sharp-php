@@ -279,6 +279,11 @@ final class Emitter
         return $symbol !== null && !$symbol->isEnum() && !$symbol->isStruct;
     }
 
+    /**
+     * A written type as a Type, resolved in the file's context with the class's and method's type parameters in
+     * scope (SP0246 when it is not found); in analysis mode its classes are recorded for hover. The type arguments
+     * of a generic class must meet its constraints (SP0452, SP0453, SP0310, SP0311, SP0315).
+     */
     private function resolveType(TypeRef $ref): Type
     {
         $type = $this->resolver->resolve($ref, $this->ctx, $this->typeParamsInScope());
@@ -444,6 +449,10 @@ final class Emitter
     }
 
 
+    /**
+     * A PHP string literal: single-quoted, with \ and ' escaped, unless the value has control characters; then
+     * double-quoted, with \n, \r, \t, \v, \f, \e and \xNN escapes and \, " and $ escaped.
+     */
     private static function phpString(string $value): string
     {
         if (preg_match('/[\x00-\x1f\x7f]/', $value) !== 1) {
