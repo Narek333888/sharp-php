@@ -75,7 +75,7 @@ Open a `.sphp` file and type `Console.` inside `Main`: `WriteLine`, `Write`, `Re
 - hovering a name shows what it is, e.g. `(property) string Person.Name`;
 - **F12** or ⌘-click / Ctrl-click goes to the declaration, also in another file.
 
-**View → Output**, channel **SharpPHP**, shows `Language server running (pid ..., SharpPHP 0.11.0)` (the
+**View → Output**, channel **SharpPHP**, shows `Language server running (pid ..., SharpPHP 0.12.0)` (the
 project's version).
 
 ### Troubleshooting
