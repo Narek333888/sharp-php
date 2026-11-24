@@ -234,3 +234,7 @@ ok-ext-receiver-boxing	compiles	int? n = 5; 5.Obj(); n.Obj(); Color.Red.Obj(); n
 ok-ext-receiver-null-conditional	compiles	string s = "x"; int? x = 5; Console.WriteLine(s?.Length.Twice()); Console.WriteLine(x?.Twice());	static class Ext { public static int Twice(this int x) => x * 2; public static void Long(this long x) { } }
 ext-receiver-null-conditional-long	SP1929	int? y = 5; y?.Long();	static class Ext { public static int Twice(this int x) => x * 2; public static void Long(this long x) { } }
 int-unknown-method	SP1061	5.NoSuch();	
+null-conditional-increment	SP1059	var n = new N(); n?.Count++;	class N { public int Count; public List<int> Items = new List<int> { 1 }; }
+null-conditional-increment-indexer	SP1059	var n = new N(); n?.Items[0]++;	class N { public int Count; public List<int> Items = new List<int> { 1 }; }
+null-conditional-prefix-decrement	SP1059	var n = new N(); --n?.Count;	class N { public int Count; public List<int> Items = new List<int> { 1 }; }
+ok-null-conditional-compound	compiles	var n = new N(); n?.Count += 1; n?.Items[0] -= 1; int? c = n?.Items.Count; var d = n?.Items.Count ?? 0;	class N { public int Count; public List<int> Items = new List<int> { 1 }; }

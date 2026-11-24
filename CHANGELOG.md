@@ -18,6 +18,19 @@ before, is now a compile error:
 - A method that a number, a `bool` or a `char` does not have (`5.Foo()`) is SP1061; it compiled and threw
   `InvalidOperationException` at run time
 
+**`?.` skips the rest of the chain, as in C#.** `a?.B.C()` is null when `a` is null, and the receiver is
+evaluated once (fixture `net_null_conditional`, with .NET 10's output):
+
+- Only chains of PHP objects worked (`n?.Self().Name`). Where the rest of the chain is a helper, an extension
+  method or an indexer, null was passed on to it: `s?.Length.Twice()` threw (`Twice(null)`),
+  `s?.Trim().ToUpper()` and `n?.Arr.Length` too, and `n?.Name.Length` was 0, not null
+- Its type is lifted: `n?.Name.Length ?? -1` compiles (it was SP0019, the chain being typed `int`)
+- C# 14's null-conditional assignment works through a chain and with an indexer: `n?.Next.Name = "x"`,
+  `n?.Items[0] += 5`, `arr?[0] = 1` (PHP's "Can't use nullsafe operator in write context"); the value is
+  evaluated only when the receiver is not null
+- `n?.Count++` and `--n?.Items[0]` are SP1059, as C#'s CS1059 (the PHP was invalid: "Can't use nullsafe
+  operator in write context")
+
 ## 0.10.0
 
 Checked against .NET 10 itself: the same programs run in .NET and in SharpPHP, and their output is compared.

@@ -1,0 +1,89 @@
+// A ?. chain as C# evaluates it: a?.B.C() is null when a is null (the rest of the chain is skipped, also
+// helpers, extension methods and indexers), a.B.C() otherwise; the receiver is evaluated once. Checked against
+// .NET 10: expected.txt is its output.
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+public class Node
+{
+    public string Name = "node";
+    public Node? Next;
+    public string? Tag;
+    public List<int> Items = new List<int> { 1, 2, 3 };
+    public int[] Arr = new[] { 4, 5 };
+    public Dictionary<string, int> Map = new Dictionary<string, int> { ["a"] = 1 };
+    public string Hello() => "hi";
+    public Node Self() => this;
+    public int? Maybe => null;
+    public int NextLen => Next?.Name.Length ?? -1;
+    public int? FromRoot = Program.Root?.Name.Length;
+    public static int? StaticFromRoot = Program.Root?.Name.Length.Twice();
+}
+
+public static class Ext
+{
+    public static int Twice(this int x) => x * 2;
+    public static string Shout(this string s) => s.ToUpper() + "!";
+}
+
+public class Program
+{
+    public static Node? Root = null;
+    static int calls = 0;
+    static int evals = 0;
+    static Node? Get(Node? n) { calls++; return n; }
+    static int Val(int v) { evals++; return v; }
+
+    static void Show(string label, object? value) => Console.WriteLine(label + ": " + (value == null ? "null" : value.ToString()));
+
+    public static void Main(string[] args)
+    {
+        foreach (var n in new Node?[] { null, new Node { Next = new Node { Name = "second" } } })
+        {
+            string? s = n?.Name;
+            Show("len.Twice", s?.Length.Twice());
+            Show("trim.upper", s?.Trim().ToUpper());
+            Show("shout.len", s?.Shout().Length);
+            Show("name.len", n?.Name.Length);
+            Show("self.name", n?.Self().Name);
+            Show("items.count", n?.Items.Count);
+            Show("items[0]", n?.Items[0]);
+            Show("arr.len", n?.Arr.Length);
+            Show("arr[1]", n?.Arr[1]);
+            Show("where.count", n?.Items.Where(x => x > 1).Count());
+            Show("first", n?.Items.FirstOrDefault(x => x > 10));
+            Show("next.name.len", n?.Next?.Name.Length);
+            Show("next.next.name", n?.Next?.Next?.Name.ToUpper());
+            Show("hello.len.str", n?.Hello().Length.ToString());
+            Show("map", n?.Map["a"]);
+            Show("coalesce", n?.Name.Length ?? -1);
+            Show("get", Get(n)?.Name.Length);
+            Show("lambda", new[] { 1 }.Select(i => n?.Name.Length.Twice()).First());
+            int? len = s?.Length;
+            Show("len", len);
+            Show("index", s?[0].ToString());
+            Show("maybe", n?.Maybe.HasValue);
+            Show("next.len", n?.NextLen);
+            Show("from root", new Node().FromRoot);
+
+            // Assignments (C# 14): only when the receiver is not null, and only then is the value evaluated.
+            n?.Items.Add(9);
+            n?.Arr[1] = Val(50);
+            n?.Items[0] += Val(5);
+            n?.Map["a"] += 1;
+            n?.Next.Tag ??= "tagged";
+            n?.Next.Name += "!";
+            Show("after", n == null ? null : string.Join(",", n.Arr) + " " + string.Join(",", n.Items) + " " + n.Map["a"] + " " + n.Next?.Tag + " " + n.Next?.Name);
+            Show("assigned", n?.Next.Name = "x");
+        }
+        int[]? arr = new[] { 1, 2 };
+        int[]? none = null;
+        arr?[0] = 10;
+        none?[0] = Val(10);
+        Show("array", string.Join(",", arr));
+        Show("static", Node.StaticFromRoot);
+        Show("calls", calls);
+        Show("evals", evals);
+    }
+}

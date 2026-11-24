@@ -1156,27 +1156,12 @@ trait EmitsMembers
     }
 
     /**
-     * The receiver's type as C# binds receiver.Name to it. Under "?." it is not null: x?.Twice() of an int? x
-     * passes an int, and so does s?.Length.Twice(), the rest of the chain being skipped when s is null.
-     * SharpPHP has typed such a receiver as nullable already (int? for s?.Length).
+     * The receiver's type as C# binds receiver.Name to it: under "?." not null, x?.Twice() of an int? x passing
+     * an int. (A ?. further down the chain, as in s?.Length.Twice(), is split off before: see conditionalAccess().)
      */
     private function receiverType(Emitted $target, MemberAccessExpr $access): Type
     {
-        $type = $target->type;
-        for ($e = $access; $type->nullable;) {
-            if ($e instanceof InvocationExpr) {
-                $e = $e->callee;
-            } elseif ($e instanceof MemberAccessExpr || $e instanceof ElementAccessExpr) {
-                if ($e->nullConditional) {
-                    return $type->withNullable(false);
-                }
-                $e = $e->target;
-            } else {
-                break;
-            }
-        }
-
-        return $type;
+        return $access->nullConditional ? $target->type->withNullable(false) : $target->type;
     }
 
     /**

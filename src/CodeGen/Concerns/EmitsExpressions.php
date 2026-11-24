@@ -6,6 +6,7 @@ namespace SharpPhp\CodeGen\Concerns;
 
 use SharpPhp\CodeGen\CodeWriter;
 use SharpPhp\CodeGen\Emitted;
+use SharpPhp\CodeGen\EmittedExpr;
 use SharpPhp\CodeGen\FunctionContext;
 use SharpPhp\CodeGen\LambdaContext;
 use SharpPhp\CodeGen\Prec;
@@ -70,7 +71,13 @@ trait EmitsExpressions
 
     private function exprOf(Expr $e, ?Type $expected): Emitted
     {
+        if (($e instanceof MemberAccessExpr || $e instanceof InvocationExpr || $e instanceof ElementAccessExpr)
+            && ($guarded = $this->conditionalAccess($e, $expected)) !== null) {
+            return $guarded;
+        }
+
         return match (true) {
+            $e instanceof EmittedExpr => $e->value,
             $e instanceof LiteralExpr => $this->literal($e, $expected),
             $e instanceof InterpolatedStringExpr => $this->interpolatedString($e),
             $e instanceof NameExpr => $this->valueOf($this->name($e, 'value'), $e),
@@ -102,6 +109,93 @@ trait EmitsExpressions
             $e instanceof DeclarationExpr => throw $this->error('SP8185', 'A declaration is not allowed in this context', $e),
             default => throw $this->error('SP1010', 'Unsupported expression', $e),
         };
+    }
+
+    /**
+     * A ?. chain as C# evaluates it: a?.B.C() is null when a is null, and a.B.C() otherwise, the rest of the
+     * chain being skipped. Each access is emitted on the one before it, so a guard on a?.B alone would hand
+     * null on to .C(), and to the helpers that stand for members (String_::ToUpper(null), Ext::Twice(null),
+     * \count(null)): $a === null ? null : Ext::Twice(\mb_strlen($a)) instead (see splitConditional()).
+     * Null when the chain has no ?. before its last access (a?.B is guarded by nullSafe()).
+     */
+    private function conditionalAccess(MemberAccessExpr|InvocationExpr|ElementAccessExpr $e, ?Type $expected): ?Emitted
+    {
+        $split = $this->splitConditional($e, includeTop: false, write: false);
+        if ($split === null) {
+            return null;
+        }
+        [$guard, $plain] = $split;
+        $rest = $this->exprOf($plain, $expected);
+
+        return Emitted::value("$guard ? null : " . $this->wrap($rest, Prec::TERNARY + 1), $rest->type->withNullable(), Prec::TERNARY);
+    }
+
+    /** Whether a chain of accesses and calls has a ?. in it: n?.Count, n?.Items[0], n?.Next.Count. */
+    private static function hasConditionalAccess(Expr $e): bool
+    {
+        while ($e instanceof MemberAccessExpr || $e instanceof InvocationExpr || $e instanceof ElementAccessExpr) {
+            if (!$e instanceof InvocationExpr && $e->nullConditional) {
+                return true;
+            }
+            $e = $e instanceof InvocationExpr ? $e->callee : $e->target;
+        }
+
+        return false;
+    }
+
+    /**
+     * Splits a ?. chain at its first ?.: the receiver of that access is evaluated once, and the chain is built
+     * again on its value, known not to be null, with that access made plain. Further ?. in the rest are split
+     * in turn when it is emitted. Gives the PHP condition under which the whole chain is null ("$a === null")
+     * and the chain built again; null when the chain has no ?. (none below its top, unless $includeTop).
+     *
+     * @param bool $write the chain is assigned to: an array receiver is written in place, not through a copy
+     * @return array{string, MemberAccessExpr|InvocationExpr|ElementAccessExpr}|null
+     */
+    private function splitConditional(MemberAccessExpr|InvocationExpr|ElementAccessExpr $e, bool $includeTop, bool $write): ?array
+    {
+        // The links of the chain from $e down (targets of accesses, callees of calls), and the first ?. in it.
+        $links = [];
+        $first = null;
+        for ($node = $e; $node instanceof MemberAccessExpr || $node instanceof InvocationExpr || $node instanceof ElementAccessExpr;
+            $node = $node instanceof InvocationExpr ? $node->callee : $node->target) {
+            $links[] = $node;
+            if (!$node instanceof InvocationExpr && $node->nullConditional) {
+                $first = count($links) - 1;
+            }
+        }
+        if ($first === null || ($first === 0 && !$includeTop) || $this->fn === null) {
+            return null;
+        }
+        $conditional = $links[$first];
+        assert(!$conditional instanceof InvocationExpr);
+        $receiver = $this->expr($conditional->target);
+        $known = $receiver->type->withNullable(false);
+        if ($receiver->isSimple() || ($write && $receiver->type->kind === 'array' && $receiver->isRepeatablePath())) {
+            $guard = "{$receiver->code} === null";
+            $value = new Emitted($receiver->code, $known, $receiver->prec, local: $receiver->local);
+        } else {
+            $temp = $this->currentFunction()->temp();
+            $guard = "($temp = {$receiver->code}) === null";
+            $value = Emitted::value($temp, $known);
+        }
+
+        $node = (new EmittedExpr($value))->at($conditional->target);
+        $node = $conditional instanceof MemberAccessExpr
+            ? new MemberAccessExpr($node, $conditional->name, false, $conditional->typeArgs)
+            : new ElementAccessExpr($node, $conditional->indexes, false);
+        $node->at($conditional);
+        for ($i = $first - 1; $i >= 0; $i--) {
+            $link = $links[$i];
+            $node = match (true) {
+                $link instanceof InvocationExpr => new InvocationExpr($node, $link->args),
+                $link instanceof MemberAccessExpr => new MemberAccessExpr($node, $link->name, $link->nullConditional, $link->typeArgs),
+                default => new ElementAccessExpr($node, $link->indexes, $link->nullConditional),
+            };
+            $node->at($link);
+        }
+
+        return [$guard, $node];
     }
 
     // ------------------------------------------------------------------
@@ -555,6 +649,10 @@ trait EmitsExpressions
         $op = $e->operator;
 
         if ($op === '++' || $op === '--') {
+            // n?.Count++ is not C# 14's null-conditional assignment, which takes = and compound operators only.
+            if (self::hasConditionalAccess($e->operand)) {
+                throw $this->error('SP1059', 'The operand of an increment or decrement operator must be a variable, property or indexer', $e);
+            }
             $update = $this->collectionElementUpdate($e->operand, $op === '++' ? '+' : '-', null, $e, $e->postfix && $this->discarded !== $e);
             if ($update !== null) {
                 return $update;
@@ -1012,15 +1110,14 @@ trait EmitsExpressions
 
     private function assignment(AssignExpr $e): Emitted
     {
-        // order?.Total = 5 (C# 14): assigns, and evaluates 5, only when order is not null; the value is null otherwise.
-        if ($e->target instanceof MemberAccessExpr && $e->target->nullConditional) {
-            $receiver = $this->expr($e->target->target);
-            $temp = $this->currentFunction()->temp('target');
-            $this->scope->declare(substr($temp, 1), $receiver->type->withNullable(false));
-            $plain = (new MemberAccessExpr((new NameExpr(substr($temp, 1), []))->at($e->target->target), $e->target->name, false, $e->target->typeArgs))->at($e->target);
+        // order?.Total = 5, order?.Lines[0].Qty = 5, list?[0] = 5 (C# 14): assigns, and evaluates 5, only when
+        // order (list) is not null; the value is null otherwise.
+        if (($e->target instanceof MemberAccessExpr || $e->target instanceof ElementAccessExpr)
+            && ($split = $this->splitConditional($e->target, includeTop: true, write: true)) !== null) {
+            [$guard, $plain] = $split;
             $assigned = $this->assignment((new AssignExpr($e->operator, $plain, $e->value))->at($e));
 
-            return Emitted::value("(($temp = {$receiver->code}) === null ? null : " . $this->wrap($assigned, Prec::TERNARY + 1) . ')', $assigned->type->withNullable());
+            return Emitted::value("($guard ? null : " . $this->wrap($assigned, Prec::TERNARY + 1) . ')', $assigned->type->withNullable());
         }
         if ($e->operator !== '=' && $e->operator !== '??=') {
             $update = $this->collectionElementUpdate($e->target, substr($e->operator, 0, -1), $e->value, $e);
